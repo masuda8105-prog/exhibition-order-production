@@ -1,0 +1,325 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111827"><title>展示会 注文管理 本番仕様プレビュー</title><style>:root{--bg:#f4f6f8;--panel:#fff;--ink:#111827;--muted:#667085;--line:#e4e7ec;--accent:#111827;--accentSoft:#f0f2f5;--ok:#067647;--okSoft:#ecfdf3;--warn:#b54708;--warnSoft:#fffaeb;--danger:#b42318;--dangerSoft:#fef3f2;--radius:18px;--shadow:0 8px 28px rgba(16,24,40,.08)}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;-webkit-font-smoothing:antialiased}body{min-height:100vh}button,input,select,textarea{font:inherit}button{touch-action:manipulation}.hidden{display:none!important}
+.app{max-width:760px;margin:auto;min-height:100vh;padding-bottom:92px}.topbar{position:sticky;top:0;z-index:20;padding:14px 14px 10px;background:rgba(244,246,248,.96);backdrop-filter:blur(14px);border-bottom:1px solid rgba(228,231,236,.9)}.brandRow{display:flex;align-items:center;justify-content:space-between}.eyebrow{font-size:11px;font-weight:900;letter-spacing:.08em;color:var(--muted)}h1{font-size:21px;margin:1px 0 0}.syncLine{display:flex;align-items:center;gap:6px;margin:6px 0 10px;font-size:12px;color:var(--muted)}.syncDot{width:8px;height:8px;border-radius:50%;background:#98a2b3}.syncDot.online{background:var(--ok)}.syncDot.busy{background:var(--warn)}.syncDot.error{background:var(--danger)}.linkBtn{margin-left:auto;border:0;background:none;color:var(--muted);font-size:12px}.iconBtn{width:40px;height:40px;border:1px solid var(--line);background:#fff;border-radius:50%;font-size:19px}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.metric{background:#fff;border:1px solid var(--line);border-radius:14px;padding:9px 10px;text-align:left;color:var(--ink)}.metric small{display:block;color:var(--muted);font-size:11px}.metric b{font-size:20px;line-height:1.15}.metric.warn b{color:var(--warn)}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:10px;padding:4px;background:#e9edf2;border-radius:14px}.tabs button{border:0;background:transparent;border-radius:10px;padding:10px 2px;color:var(--muted);font-weight:900;font-size:12px}.tabs button.active{background:#fff;color:var(--ink);box-shadow:0 2px 8px rgba(16,24,40,.05)}.tabs span{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;border-radius:99px;background:#eef1f5;font-size:10px;margin-left:2px}.tabs .active span{background:#111827;color:#fff}
+main{padding:12px}.toolbar{display:flex;gap:8px}.searchWrap{flex:1;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:0 12px}.searchWrap input{border:0;outline:0;min-width:0;width:100%;height:48px;background:transparent}.secondary,.primary,.dangerBtn{border:0;border-radius:14px;min-height:48px;padding:0 14px;font-weight:900}.primary{background:var(--accent);color:#fff}.secondary{background:#fff;color:var(--ink);border:1px solid var(--line)}.dangerBtn{background:var(--dangerSoft);color:var(--danger);border:1px solid #fecdca}.compact{min-height:48px}.activeFilter{margin-top:8px;display:flex;gap:7px;align-items:center;color:var(--muted);font-size:12px}.activeFilter button{border:0;background:#fff;border-radius:99px;padding:6px 9px}.orders{display:grid;gap:9px;margin-top:10px}.empty{padding:62px 16px;text-align:center;color:var(--muted)}
+.orderCard{background:#fff;border:1px solid var(--line);border-radius:17px;padding:13px}.orderTop{display:flex;justify-content:space-between;gap:8px}.receiptNo{font-size:12px;font-weight:900;color:var(--accent)}.store{font-size:16px;font-weight:950}.amount{font-weight:950;white-space:nowrap}.chips{display:flex;flex-wrap:wrap;gap:5px;margin:9px 0}.chip{display:inline-flex;align-items:center;border-radius:99px;background:#f2f4f7;padding:5px 8px;font-size:11px;font-weight:850;color:#475467}.chip.ok{background:var(--okSoft);color:var(--ok)}.chip.warn{background:var(--warnSoft);color:var(--warn)}.chip.danger{background:var(--dangerSoft);color:var(--danger)}.cardNote{font-size:12px;color:var(--muted);margin-bottom:9px}.cardAction{width:100%;border:0;min-height:46px;border-radius:13px;background:#111827;color:#fff;font-weight:900}.cardAction.soft{background:#eef1f5;color:#111827}.syncBadge{font-size:10px;color:var(--warn)}
+.newOrderBtn{position:fixed;z-index:25;left:max(14px,calc((100vw - 760px)/2 + 14px));right:max(14px,calc((100vw - 760px)/2 + 14px));bottom:max(14px,env(safe-area-inset-bottom));height:58px;border:0;border-radius:18px;background:#111827;color:#fff;font-weight:950;font-size:16px;box-shadow:0 12px 30px rgba(17,24,39,.24)}
+.sheet{position:fixed;inset:0;z-index:50;background:rgba(16,24,40,.5);display:flex;align-items:flex-end;justify-content:center}.sheetPanel{width:min(760px,100%);max-height:96vh;overflow:auto;background:var(--bg);border-radius:24px 24px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom))}.sheetHead{position:sticky;top:0;z-index:4;background:rgba(244,246,248,.96);backdrop-filter:blur(12px);display:flex;justify-content:space-between;align-items:center;padding:14px;border-bottom:1px solid var(--line)}.sheetHead small{font-size:11px;color:var(--muted);font-weight:850}.sheetHead h2{font-size:18px;margin:1px 0 0}.step{padding:14px}.stepIntro{margin:0 0 12px;color:var(--muted);font-size:13px}.section{background:#fff;border:1px solid var(--line);border-radius:18px;padding:13px;margin-bottom:10px}.sectionTitle{font-weight:950;margin-bottom:9px}.field{margin-bottom:11px}.field:last-child{margin-bottom:0}.field label{display:block;font-size:12px;font-weight:900;margin:0 0 5px}.field input,.field select,.field textarea{width:100%;min-height:48px;background:#fff;border:1px solid #d0d5dd;border-radius:13px;padding:11px 12px;outline:0}.field textarea{min-height:72px;resize:vertical}.field input:focus,.field select:focus,.field textarea:focus{border-color:#667085;box-shadow:0 0 0 3px rgba(17,24,39,.07)}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}.choiceGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.choice{min-height:80px;border:1px solid var(--line);border-radius:15px;background:#fff;padding:13px;text-align:left;color:var(--ink)}.choice b{display:block;margin-bottom:3px}.choice small{color:var(--muted);font-size:11px;line-height:1.4}.choice.on{border:2px solid #111827;padding:12px;background:#f8fafc}.choice.full{grid-column:1/-1}.seg{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;padding:4px;border-radius:13px;background:#eef1f5}.seg button{border:0;background:transparent;min-height:42px;border-radius:10px;font-weight:850;color:var(--muted)}.seg button.on{background:#fff;color:#111827;box-shadow:0 1px 5px rgba(16,24,40,.06)}
+.productSearch{position:sticky;top:70px;z-index:2;background:var(--bg);padding-bottom:8px}.productSearchRow{display:flex;gap:7px}.productSearchRow input{flex:1;min-width:0;height:50px;border:1px solid #d0d5dd;border-radius:14px;padding:0 12px}.productResults{display:grid;gap:7px;max-height:44vh;overflow:auto}.productRow{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px}.productRow b{display:block}.productRow small{color:var(--muted)}.addBtn{border:0;border-radius:11px;background:#eef1f5;color:#111827;padding:9px 11px;font-weight:900}.cart{background:#fff;border:1px solid var(--line);border-radius:16px;padding:11px}.cartLine{display:grid;grid-template-columns:1fr auto;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}.cartLine:last-child{border-bottom:0}.qty{display:flex;align-items:center;gap:5px}.qty button{width:32px;height:32px;border:1px solid var(--line);background:#fff;border-radius:9px}.totalRow{display:flex;justify-content:space-between;font-weight:950;padding-top:10px}.stickyActions{position:sticky;bottom:0;display:grid;grid-template-columns:1fr 1.6fr;gap:8px;padding:14px;background:linear-gradient(to top,var(--bg) 78%,rgba(244,246,248,0))}.stickyActions.one{grid-template-columns:1fr}.quickDates{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:7px}.quickDates button{min-height:42px;border:1px solid var(--line);border-radius:11px;background:#fff;font-weight:850}.quickDates button.on{background:#111827;color:#fff}.errorBox{margin:10px 14px 0;padding:10px 12px;border-radius:12px;background:var(--dangerSoft);color:var(--danger);font-size:12px;font-weight:850}.hintBox{padding:10px 11px;border-radius:12px;background:#f8fafc;color:var(--muted);font-size:12px;line-height:1.5}.success{text-align:center;padding:26px 14px}.successMark{width:60px;height:60px;border-radius:50%;display:grid;place-items:center;margin:0 auto 11px;background:var(--okSoft);color:var(--ok);font-size:30px}.success h3{margin:0 0 5px}.summary{background:#fff;border:1px solid var(--line);border-radius:16px;text-align:left;padding:12px;margin-top:14px}.summaryRow{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}.summaryRow:last-child{border-bottom:0}.summaryRow span{color:var(--muted)}
+.login{min-height:100vh;display:grid;place-items:center;padding:18px}.loginBox{width:min(390px,100%);background:#fff;border:1px solid var(--line);border-radius:22px;padding:22px;box-shadow:var(--shadow)}.brandMark{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;background:#111827;color:#fff;font-weight:950}.loginBox h1{margin-top:13px}.loginBox p{color:var(--muted);margin-top:3px}.loginBox label{display:block;font-size:12px;font-weight:850;margin-top:12px}.loginBox input{width:100%;height:48px;border:1px solid #d0d5dd;border-radius:13px;padding:0 12px;margin-top:5px}.loginBox button{width:100%;margin-top:10px}.errorText{color:var(--danger);font-size:12px;margin-top:9px}.toast{position:fixed;z-index:100;left:50%;bottom:88px;transform:translate(-50%,18px);background:#111827;color:#fff;border-radius:99px;padding:9px 13px;font-size:12px;font-weight:850;opacity:0;pointer-events:none;transition:.18s}.toast.show{opacity:1;transform:translate(-50%,0)}
+.printArea{display:none}.printSheet{font-family:"Noto Sans JP",sans-serif;color:#111}.printSheet h2{margin:0 0 12px}.printMeta{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}.printItems{width:100%;border-collapse:collapse}.printItems th,.printItems td{border:1px solid #aaa;padding:6px;text-align:left}.printItems th:nth-child(3),.printItems td:nth-child(3),.printItems th:nth-child(4),.printItems td:nth-child(4){text-align:right}.printFoot{margin-top:16px;font-size:12px}
+@media(max-width:430px){.choiceGrid,.two{grid-template-columns:1fr}.choice.full{grid-column:auto}.sheetPanel{border-radius:20px 20px 0 0}.metrics{gap:5px}.metric{padding:8px}.newOrderBtn{left:12px;right:12px}.orderCard{border-radius:15px}.stickyActions{grid-template-columns:1fr 1.35fr}}
+@media print{body>*:not(#printArea){display:none!important}#printArea{display:block!important;background:#fff;padding:18mm}.printArea .printSheet{display:block}.printArea{font-size:11pt}}
+</style><script>/*
+ * 本番接続設定。
+ * publishable/anon key はブラウザ公開用。service_role や Slack webhook は絶対にここへ書かない。
+ * 最初は onlineEnabled:false で操作確認し、本番切替時に true にする。
+ */
+window.EXHIBITION_CONFIG = Object.freeze({
+  onlineEnabled: false,
+  supabaseUrl: 'https://qdexhwgzawisiklekfzm.supabase.co',
+  anonKey: 'sb_publishable__mWzF7WQI5BimtlT4Rmglg_9IRh25LV',
+  createFunctionName: 'exhibition-order',
+  slackFunctionName: 'exhibition-slack',
+  eventId: 'neo-tokyo-2026',
+  eventName: 'NEO TOKYO 2026',
+  eventDate: '2026-10-06',
+  productCsv: 'product_master.csv',
+  currency: 'JPY',
+  pollSeconds: 8,
+  accounts: ['名古屋眼鏡','内田屋','三共社','ヤブシタ','エンパイヤ','スドー','オリエント','その他'],
+  staffNames: ['堂前','小野村','宮川','増田','上阪（優）','上阪（政）','徳井','尾形','植村','西村']
+});
+</script></head><body>
+<div id="toast" class="toast" aria-live="polite"></div>
+<section id="loginView" class="login hidden">
+  <div class="loginBox">
+    <div class="brandMark">SN</div>
+    <h1>展示会 注文管理</h1>
+    <p>スタッフ専用</p>
+    <label>メール<input id="loginEmail" type="email" autocomplete="username"></label>
+    <label>パスワード<input id="loginPassword" type="password" autocomplete="current-password"></label>
+    <button id="loginBtn" class="primary">ログイン</button>
+    <button id="demoBtn" class="secondary">端末だけで操作確認</button>
+    <div id="loginMsg" class="errorText"></div>
+  </div>
+</section>
+
+<div id="appView" class="app hidden">
+  <header class="topbar">
+    <div class="brandRow">
+      <div><div class="eyebrow" id="eventName">EXHIBITION</div><h1>注文管理</h1></div>
+      <button id="refreshBtn" class="iconBtn" aria-label="更新">↻</button>
+    </div>
+    <div class="syncLine"><span id="syncDot" class="syncDot"></span><span id="syncText">端末モード</span><button id="logoutBtn" class="linkBtn hidden">ログアウト</button></div>
+    <div class="metrics">
+      <button class="metric" data-filter="today"><small>今日受取</small><b id="metricToday">0</b></button>
+      <button class="metric" data-filter="future"><small>明日以降</small><b id="metricFuture">0</b></button>
+      <button class="metric warn" data-filter="unpaid"><small>未会計</small><b id="metricUnpaid">0</b></button>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="active" class="active">要対応 <span id="countActive">0</span></button>
+      <button data-tab="waiting">受取・発送 <span id="countWaiting">0</span></button>
+      <button data-tab="done">完了 <span id="countDone">0</span></button>
+    </nav>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <div class="searchWrap"><span>⌕</span><input id="orderSearch" type="search" placeholder="店舗・受付番号・電話・品番"></div>
+      <button id="filterBtn" class="secondary compact">絞込</button>
+    </div>
+    <div id="activeFilter" class="activeFilter hidden"></div>
+    <section id="orders" class="orders"></section>
+  </main>
+  <button id="newOrderBtn" class="newOrderBtn">＋ 新しい注文</button>
+</div>
+
+<div id="sheet" class="sheet hidden" role="dialog" aria-modal="true">
+  <div class="sheetPanel">
+    <header class="sheetHead"><div><small id="stepLabel"></small><h2 id="sheetTitle">新しい注文</h2></div><button id="closeSheet" class="iconBtn">×</button></header>
+    <div id="sheetError" class="errorBox hidden"></div>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+
+<div id="printArea" class="printArea"></div>
+
+<script type="module">const ORDER_TYPE = Object.freeze({ NORMAL:'normal', SPOT:'spot' });
+const HANDOFF = Object.freeze({ NOW:'now', LATER:'later', HOTEL:'hotel', SHIP:'ship' });
+const PAYMENT = Object.freeze({ CREDIT:'credit', CASH:'cash', NONE:'none' });
+const PREP = Object.freeze({ NONE:'none', PREPARING:'preparing', READY:'ready' });
+
+function needsReceipt(order){
+  return order?.type === ORDER_TYPE.SPOT && [HANDOFF.LATER,HANDOFF.HOTEL,HANDOFF.SHIP].includes(order?.handoff);
+}
+
+function totalOf(order){
+  return (order?.items||[]).reduce((sum,item)=>sum + Number(item.price||0)*Number(item.qty||0),0);
+}
+
+function validate(order){
+  const errors=[];
+  if(!(order?.items||[]).length) errors.push('商品を1点以上追加してください。');
+  if(!String(order?.store||'').trim()) errors.push('店舗名は必須です。');
+  if(!String(order?.phone||'').trim()) errors.push('電話番号は必須です。');
+  if(order?.type===ORDER_TYPE.NORMAL){
+    if(!String(order?.account||'').trim()) errors.push('帳合先は必須です。');
+    if(!String(order?.staff||'').trim()) errors.push('受注担当者は必須です。');
+  }
+  if(order?.type===ORDER_TYPE.SPOT){
+    if(!String(order?.customer||'').trim()) errors.push('お客様名は必須です。');
+    if(![PAYMENT.CREDIT,PAYMENT.CASH].includes(order?.paymentMethod)) errors.push('会計方法を選択してください。');
+    if(!Object.values(HANDOFF).includes(order?.handoff)) errors.push('受け渡し方法を選択してください。');
+    if(order?.handoff===HANDOFF.LATER && !order?.pickupDate) errors.push('受取予定日を選択してください。');
+    if(order?.handoff===HANDOFF.HOTEL){
+      if(!String(order?.hotelName||'').trim()) errors.push('ホテル名は必須です。');
+      if(!String(order?.guestName||'').trim()) errors.push('宿泊者名は必須です。');
+    }
+    if(order?.handoff===HANDOFF.SHIP && !String(order?.shipAddress||'').trim()) errors.push('配送先住所は必須です。');
+  }
+  return errors;
+}
+
+function isDone(order){
+  if(order?.deleted) return false;
+  if(order?.type===ORDER_TYPE.NORMAL) return Boolean(order?.submitted);
+  if(order?.handoff===HANDOFF.HOTEL || order?.handoff===HANDOFF.SHIP) return Boolean(order?.paid && order?.shipped);
+  return Boolean(order?.paid && order?.delivered);
+}
+
+function groupOf(order){
+  if(isDone(order)) return 'done';
+  if(order?.type===ORDER_TYPE.SPOT){
+    if(order?.handoff===HANDOFF.LATER && order?.prepared===PREP.READY) return 'waiting';
+    if([HANDOFF.HOTEL,HANDOFF.SHIP].includes(order?.handoff) && order?.prepared===PREP.READY) return 'waiting';
+  }
+  return 'active';
+}
+
+function nextAction(order){
+  if(isDone(order)) return {key:'done',label:'対応済み'};
+  if(order?.type===ORDER_TYPE.NORMAL) return {key:'submit',label:'注文書を提出'};
+  if(order?.handoff===HANDOFF.NOW){
+    if(!order?.paid) return {key:'pay',label:'会計済みにする'};
+    if(!order?.delivered) return {key:'deliver',label:'商品を渡して完了'};
+  }
+  if(order?.handoff===HANDOFF.LATER){
+    if(order?.prepared!==PREP.READY) return {key:'prepare',label:order?.prepared===PREP.PREPARING?'商品準備完了':'商品準備を開始'};
+    if(!order?.paid) return {key:'pay',label:'会計済みにする'};
+    if(!order?.delivered) return {key:'deliver',label:'商品を渡して完了'};
+  }
+  if([HANDOFF.HOTEL,HANDOFF.SHIP].includes(order?.handoff)){
+    if(order?.prepared!==PREP.READY) return {key:'prepare',label:order?.prepared===PREP.PREPARING?'商品準備完了':'商品準備を開始'};
+    if(!order?.paid) return {key:'pay',label:'会計済みにする'};
+    if(!order?.shipped) return {key:'ship',label:'発送して完了'};
+  }
+  return {key:'detail',label:'内容を確認'};
+}
+
+function labelOrder(order){
+  if(order?.type===ORDER_TYPE.NORMAL) return '国内通常注文';
+  const region=order?.customerRegion==='overseas'?'海外':'国内';
+  const h={now:'即時現売り',later:'後日受取',hotel:'ホテル配送',ship:'指定先配送'}[order?.handoff]||'現売り';
+  return `${region}・${h}`;
+}
+
+function handoffLabel(order){
+  if(order?.type===ORDER_TYPE.NORMAL) return '後日通常出荷';
+  if(order?.handoff===HANDOFF.NOW) return 'その場で持ち帰り';
+  if(order?.handoff===HANDOFF.LATER) return order?.pickupDate ? `${order.pickupDate} 会場受取` : '後日会場受取';
+  if(order?.handoff===HANDOFF.HOTEL) return `ホテル配送${order?.hotelName?`・${order.hotelName}`:''}`;
+  if(order?.handoff===HANDOFF.SHIP) return '指定先配送';
+  return '-';
+}
+
+function normalizeForSave(draft){
+  const now=new Date().toISOString();
+  return {
+    ...draft,
+    localId:draft.localId||`L-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`,
+    createdAt:draft.createdAt||now,
+    updatedAt:now,
+    prepared:draft.prepared||PREP.NONE,
+    paid:Boolean(draft.paid), delivered:Boolean(draft.delivered), shipped:Boolean(draft.shipped), submitted:Boolean(draft.submitted),
+    syncState:draft.syncState||'local',
+  };
+}
+
+function applyAction(order,action){
+  const next={...order,updatedAt:new Date().toISOString()};
+  if(action==='pay') next.paid=true;
+  if(action==='deliver') next.delivered=true;
+  if(action==='ship') next.shipped=true;
+  if(action==='submit') next.submitted=true;
+  if(action==='prepare') next.prepared=next.prepared===PREP.PREPARING?PREP.READY:PREP.PREPARING;
+  return next;
+}
+
+
+const cfg=window.EXHIBITION_CONFIG||{};
+const $=id=>document.getElementById(id);
+const LS_ORDERS='exhibitionOps.orders.v1',LS_SESSION='exhibitionOps.session.v1',LS_COUNTER='exhibitionOps.counter.v1';
+const state={online:false,demo:false,session:null,staff:null,orders:[],products:[],tab:'active',filter:'',draft:null,poll:null};
+const yen=n=>`¥${Math.round(Number(n||0)).toLocaleString('ja-JP')}`;
+const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const isoDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo'}).format(d);
+const today=()=>isoDate(new Date());
+const dateOffset=n=>{const d=new Date();d.setDate(d.getDate()+n);return isoDate(d)};
+
+function toast(msg){const el=$('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),2300)}
+function setSync(mode,text){$('syncDot').className=`syncDot${mode?` ${mode}`:''}`;$('syncText').textContent=text}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS_ORDERS)||'[]')}catch{return[]}}
+function localSave(){localStorage.setItem(LS_ORDERS,JSON.stringify(state.orders.slice(0,1000)))}
+function localCounter(){const n=Number(localStorage.getItem(LS_COUNTER)||0)+1;localStorage.setItem(LS_COUNTER,String(n));return n}
+function temporaryReceipt(){return `仮-${String(localCounter()).padStart(3,'0')}`}
+
+async function fetchJson(url,opts={},timeout=30000){const c=new AbortController(),t=setTimeout(()=>c.abort(),timeout);try{const r=await fetch(url,{...opts,signal:c.signal});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.message||j?.error||`HTTP_${r.status}`);return j}finally{clearTimeout(t)}}
+function sbBase(){return String(cfg.supabaseUrl||'').replace(/\/$/,'')}
+function sbHeaders(auth=true){const h={apikey:String(cfg.anonKey||''),'Content-Type':'application/json'};if(auth&&state.session?.access_token)h.Authorization=`Bearer ${state.session.access_token}`;return h}
+async function signIn(email,password){const j=await fetchJson(`${sbBase()}/auth/v1/token?grant_type=password`,{method:'POST',headers:{apikey:cfg.anonKey,'Content-Type':'application/json'},body:JSON.stringify({email,password})});j.expires_at=Math.floor(Date.now()/1000)+Number(j.expires_in||3600);state.session=j;localStorage.setItem(LS_SESSION,JSON.stringify(j));return j}
+async function loadStaff(){const id=state.session?.user?.id;if(!id)throw new Error('LOGIN_REQUIRED');const rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_staff?select=display_name,role,active&user_id=eq.${encodeURIComponent(id)}&active=is.true&limit=1`,{headers:sbHeaders()});if(!rows?.[0])throw new Error('スタッフ権限がありません。');state.staff=rows[0]}
+async function onlineCreate(order){
+  const form=new FormData();
+  const data=toOnlineOrder(order);form.append('order',JSON.stringify(data));
+  const url=`${sbBase()}/functions/v1/${cfg.createFunctionName||'exhibition-order'}`;
+  const res=await fetch(url,{method:'POST',headers:{apikey:cfg.anonKey},body:form});
+  const j=await res.json().catch(()=>({}));if(!res.ok)throw new Error(j.error||`UPLOAD_${res.status}`);return j;
+}
+async function onlinePatch(order){if(!order.remoteId)return;const body={order_data:toOnlineOrder(order),status:isDone(order)?'completed':'in_progress',updated_by_name:state.staff?.display_name||'',updated_at:new Date().toISOString()};await fetchJson(`${sbBase()}/rest/v1/exhibition_orders?id=eq.${encodeURIComponent(order.remoteId)}`,{method:'PATCH',headers:{...sbHeaders(),Prefer:'return=minimal'},body:JSON.stringify(body)})}
+async function onlineLoad(){
+  if(!state.online)return;
+  setSync('busy','同期中…');
+  try{
+    const select='id,public_token,order_no,order_data,status,created_at,updated_at,event_id,event_name,event_date';
+    const rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_orders?select=${encodeURIComponent(select)}&event_id=eq.${encodeURIComponent(cfg.eventId)}&status=neq.deleted&order=created_at.desc&limit=1000`,{headers:sbHeaders()});
+    const remote=(rows||[]).map(fromRemote).filter(Boolean);
+    const localPending=state.orders.filter(o=>o.syncState!=='synced'&&!o.remoteId);
+    const by=new Map(remote.map(o=>[o.remoteId,o]));localPending.forEach(o=>by.set(o.localId,o));state.orders=[...by.values()];localSave();setSync('online',`オンライン・${state.staff?.display_name||'スタッフ'}`);render();
+  }catch(e){console.error(e);setSync('error','同期エラー・端末データを表示');toast('オンライン同期に失敗しました')}
+}
+function toOnlineOrder(o){return {
+  schemaVersion:2,eventId:cfg.eventId,eventName:cfg.eventName,eventDate:cfg.eventDate,
+  localId:o.localId,type:o.type,handoff:o.handoff,customerRegion:o.customerRegion||'domestic',
+  customerCompany:o.store,customerName:o.customer||'',customerPhone:o.phone,account:o.account||'',staffName:o.staff||state.staff?.display_name||'',
+  paymentMethod:o.paymentMethod||'',paid:!!o.paid,prepared:o.prepared,delivered:!!o.delivered,shipped:!!o.shipped,submitted:!!o.submitted,
+  pickupDate:o.pickupDate||'',hotelName:o.hotelName||'',guestName:o.guestName||'',roomNo:o.roomNo||'',checkoutDate:o.checkoutDate||'',shippingAddress:o.shipAddress||'',notes:o.notes||'',
+  items:(o.items||[]).map(i=>({c:i.code,n:i.name,p:Number(i.price||0),q:Number(i.qty||0)})),total:totalOf(o),receiptRequired:needsReceipt(o),clientReceiptNo:o.receiptNo||'',workflowGroup:groupOf(o)
+}}
+function fromRemote(r){const d=r.order_data||{};if(Number(d.schemaVersion||0)<2||!d.type)return null;return normalizeForSave({
+  ...d,localId:d.localId||`R-${r.id}`,remoteId:r.id,publicToken:r.public_token||'',serverOrderNo:r.order_no||'',receiptNo:d.receiptRequired?(d.clientReceiptNo||r.order_no||''):null,
+  store:d.customerCompany||'',customer:d.customerName||'',phone:d.customerPhone||'',shipAddress:d.shippingAddress||'',
+  items:(d.items||[]).map(i=>({code:i.c,name:Array.isArray(i.n)?i.n[0]:i.n,price:Number(i.p||0),qty:Number(i.q||0)})),createdAt:r.created_at,updatedAt:r.updated_at,syncState:'synced'
+})}
+async function notifySlack(order,event){if(!state.online||!cfg.slackFunctionName)return;try{await fetchJson(`${sbBase()}/functions/v1/${cfg.slackFunctionName}`,{method:'POST',headers:sbHeaders(),body:JSON.stringify({event,order:toOnlineOrder(order),receiptNo:order.receiptNo||''})},15000)}catch(e){console.warn('Slack notify failed',e)}}
+
+async function saveNew(order,{submitNormal=false}={}){
+  let o=normalizeForSave({...order,syncState:state.online?'pending':'local'});if(needsReceipt(o))o.receiptNo=temporaryReceipt();
+  state.orders.unshift(o);localSave();render();
+  if(state.online){
+    try{setSync('busy','注文を送信中…');const online=await onlineCreate(o);o.remoteId=String(online.id||'');o.publicToken=String(online.token||'');o.serverOrderNo=String(online.orderNo||'');if(needsReceipt(o)&&o.serverOrderNo)o.receiptNo=o.serverOrderNo;o.syncState='synced';localSave();setSync('online',`オンライン・${state.staff?.display_name||''}`)}catch(e){console.error(e);o.syncState='pending';localSave();setSync('error','未同期データあり');toast('通信できないため端末に保存しました')}
+  }
+  if(submitNormal){o.submitted=true;await updateOrder(o,'注文書提出');await notifySlack(o,'normal_order_submitted')}
+  else await notifySlack(o,'order_created');
+  render();return o;
+}
+async function updateOrder(order,event='status_update'){
+  order.updatedAt=new Date().toISOString();if(state.online){order.syncState='pending';localSave();try{await onlinePatch(order);order.syncState='synced';await notifySlack(order,event)}catch(e){console.error(e);order.syncState='pending';toast('更新は端末に保存しました')}}localSave();render();return order
+}
+
+async function loadProducts(){
+  state.products=[
+    {code:'1054',name:'クリングス調整ヤットコ',price:6800},{code:'1055',name:'リム保持ヤットコ',price:7200},{code:'1065',name:'Small Handle Pliers',price:5200},{code:'1067',name:'LG Holding Pliers',price:5200},{code:'1052',name:'累進マークライト',price:16500},{code:'356-P',name:'プレミアムヤットコ No.356-P',price:8900},{code:'356-2',name:'先プラスチック 溝幅4.5mm',price:980}
+  ];
+  try{const r=await fetch(cfg.productCsv||'product_master.csv',{cache:'no-store'});if(r.ok){const text=await r.text();const lines=text.replace(/^\uFEFF/,'').trim().split(/\r?\n/);const head=splitCsv(lines.shift()).map(x=>x.toLowerCase());const ci=head.indexOf('code'),ni=head.indexOf('name'),pi=head.indexOf('price');const arr=lines.map(line=>{const c=splitCsv(line);return{code:c[ci]||'',name:c[ni]||'',price:Number(String(c[pi]||'0').replace(/,/g,''))||0}}).filter(x=>x.code);if(arr.length)state.products=arr}}
+  catch(e){console.warn('product csv fallback',e)}
+}
+function splitCsv(line){const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q}else if(ch===','&&!q){out.push(cur);cur=''}else cur+=ch}out.push(cur);return out}
+
+function render(){renderMetrics();renderOrders()}
+function filteredOrders(){const q=$('orderSearch').value.trim().toLowerCase();return state.orders.filter(o=>!o.deleted&&groupOf(o)===state.tab).filter(o=>{
+  if(state.filter==='today')return o.handoff===HANDOFF.LATER&&o.pickupDate===today();
+  if(state.filter==='future')return o.handoff===HANDOFF.LATER&&o.pickupDate&&o.pickupDate>today();
+  if(state.filter==='unpaid')return o.type===ORDER_TYPE.SPOT&&!o.paid;
+  return true;
+}).filter(o=>!q||[o.receiptNo,o.store,o.customer,o.phone,...(o.items||[]).flatMap(i=>[i.code,i.name])].join(' ').toLowerCase().includes(q))}
+function renderMetrics(){const open=state.orders.filter(o=>!o.deleted&&!isDone(o));$('metricToday').textContent=open.filter(o=>o.handoff===HANDOFF.LATER&&o.pickupDate===today()).length;$('metricFuture').textContent=open.filter(o=>o.handoff===HANDOFF.LATER&&o.pickupDate&&o.pickupDate>today()).length;$('metricUnpaid').textContent=open.filter(o=>o.type===ORDER_TYPE.SPOT&&!o.paid).length;['active','waiting','done'].forEach(k=>{$(`count${k[0].toUpperCase()+k.slice(1)}`).textContent=state.orders.filter(o=>!o.deleted&&groupOf(o)===k).length});document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab));if(state.filter){$('activeFilter').classList.remove('hidden');$('activeFilter').innerHTML=`絞込中：<b>${{today:'今日受取',future:'明日以降',unpaid:'未会計'}[state.filter]}</b><button id="clearFilter">解除</button>`;$('clearFilter').onclick=()=>{state.filter='';render()}}else $('activeFilter').classList.add('hidden')}
+function renderOrders(){const list=filteredOrders(),wrap=$('orders');if(!list.length){wrap.innerHTML='<div class="empty">該当する注文はありません。</div>';return}wrap.innerHTML=list.map(cardHtml).join('');wrap.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>handleCardAction(b.dataset.id,b.dataset.action));wrap.querySelectorAll('[data-detail]').forEach(b=>b.onclick=()=>showDetail(b.dataset.detail))}
+function cardHtml(o){const a=nextAction(o),pay=o.type===ORDER_TYPE.SPOT?(o.paid?'<span class="chip ok">会計済み</span>':'<span class="chip danger">未会計</span>'):'',prep=o.type===ORDER_TYPE.SPOT&&o.handoff!==HANDOFF.NOW?`<span class="chip ${o.prepared===PREP.READY?'ok':''}">${o.prepared===PREP.READY?'商品準備済み':o.prepared===PREP.PREPARING?'準備中':'未準備'}</span>`:'',sync=o.syncState==='pending'?'<span class="syncBadge">● 未同期</span>':'';return `<article class="orderCard"><div class="orderTop"><div>${o.receiptNo?`<div class="receiptNo">${esc(o.receiptNo)}</div>`:''}<div class="store">${esc(o.store)}</div></div><div class="amount">${yen(totalOf(o))}</div></div><div class="chips"><span class="chip">${esc(labelOrder(o))}</span>${pay}${prep}${sync}</div><div class="cardNote">${esc(handoffLabel(o))}${o.customer?` ／ ${esc(o.customer)}`:''}</div><button class="cardAction ${a.key==='done'?'soft':''}" data-action="${a.key}" data-id="${esc(o.localId)}">${esc(a.label)}</button><button class="linkBtn" style="margin-top:8px" data-detail="${esc(o.localId)}">詳細・修正</button></article>`}
+async function handleCardAction(id,action){const o=state.orders.find(x=>x.localId===id);if(!o)return;if(action==='done')return showDetail(id);if(action==='submit'){showSubmit(o);return}const n=applyAction(o,action);Object.assign(o,n);await updateOrder(o,action);if(isDone(o))toast('対応済みに移動しました');else if(action==='prepare'&&o.prepared===PREP.READY)toast('受取・発送待ちへ移動しました')}
+
+function openSheet(title,step=''){ $('sheetTitle').textContent=title;$('stepLabel').textContent=step;$('sheet').classList.remove('hidden');document.body.style.overflow='hidden';clearError()}
+function closeSheet(){ $('sheet').classList.add('hidden');document.body.style.overflow='';state.draft=null}
+function showError(msg){$('sheetError').textContent=msg;$('sheetError').classList.remove('hidden');$('sheetPanel')?.scrollTo({top:0,behavior:'smooth'})}
+function clearError(){$('sheetError').classList.add('hidden');$('sheetError').textContent=''}
+function freshDraft(){return{stage:'products',type:null,handoff:null,customerRegion:'domestic',items:[],store:'',phone:'',customer:'',account:'',staff:state.staff?.display_name||'',paymentMethod:PAYMENT.CREDIT,paid:false,delivered:false,shipped:false,prepared:PREP.NONE,pickupDate:dateOffset(1),notes:''}}
+function startOrder(){state.draft=freshDraft();openSheet('新しい注文','1 / 3');renderDraft()}
+function renderDraft(){clearError();if(!state.draft)return;const d=state.draft;if(d.stage==='products')renderProductStep(d);else if(d.stage==='type')renderTypeStep(d);else if(d.stage==='info')renderInfoStep(d);else if(d.stage==='success')renderSuccess(d)}
+function renderProductStep(d){$('stepLabel').textContent='1 / 3　商品';$('sheetTitle').textContent='商品を追加';$('sheetBody').innerHTML=`<div class="step"><div class="productSearch"><div class="productSearchRow"><input id="productQ" type="search" inputmode="search" placeholder="品番・商品名"><button id="clearPQ" class="secondary">×</button></div></div><div id="productResults" class="productResults"><div class="empty">品番・商品名を入力してください。</div></div><div class="section" style="margin-top:10px"><div class="sectionTitle">注文明細 <span id="cartCount">${d.items.reduce((s,i)=>s+i.qty,0)}点</span></div><div id="cartLines" class="cart"></div></div></div><div class="stickyActions one"><button id="toType" class="primary">注文内容へ進む</button></div>`;const q=$('productQ');q.oninput=()=>renderProductResults(d,q.value);$('clearPQ').onclick=()=>{q.value='';renderProductResults(d,'')};$('toType').onclick=()=>{if(!d.items.length)return showError('商品を1点以上追加してください。');d.stage='type';renderDraft()};renderCart(d)}
+function renderProductResults(d,query){const q=String(query||'').trim().toLowerCase();const wrap=$('productResults');if(!q){wrap.innerHTML='<div class="empty">品番・商品名を入力してください。</div>';return}const list=state.products.map((p,idx)=>({p,idx,rank:productRank(p,q)})).filter(x=>x.rank<9).sort((a,b)=>a.rank-b.rank||a.idx-b.idx).slice(0,35);wrap.innerHTML=list.length?list.map(({p})=>`<div class="productRow"><div><b>${esc(p.code)}</b><small>${esc(p.name)} ／ ${yen(p.price)}</small></div><button class="addBtn" data-code="${esc(p.code)}">追加</button></div>`).join(''):'<div class="empty">該当商品がありません。</div>';wrap.querySelectorAll('[data-code]').forEach(b=>b.onclick=()=>{const p=state.products.find(x=>x.code===b.dataset.code),ex=d.items.find(x=>x.code===p.code);if(ex)ex.qty++;else d.items.push({...p,qty:1});renderCart(d);toast(`${p.code} を追加`)})}
+function productRank(p,q){const c=String(p.code).toLowerCase(),n=String(p.name).toLowerCase();const qn=q.replace(/-/g,''),cn=c.replace(/-/g,'');if(c===q||cn===qn)return 0;if(c.startsWith(q)||cn.startsWith(qn))return 1;if(c.includes(q)||cn.includes(qn))return 2;if(n.includes(q))return 3;return 9}
+function renderCart(d){const wrap=$('cartLines');if(!d.items.length){wrap.innerHTML='<div class="empty" style="padding:22px">まだ商品がありません。</div>';return}wrap.innerHTML=d.items.map(i=>`<div class="cartLine"><div><b>${esc(i.code)} ${esc(i.name)}</b><small>${yen(i.price)} × ${i.qty}</small></div><div class="qty"><button data-minus="${esc(i.code)}">−</button><b>${i.qty}</b><button data-plus="${esc(i.code)}">＋</button></div></div>`).join('')+`<div class="totalRow"><span>合計</span><span>${yen(totalOf(d))}</span></div>`;wrap.querySelectorAll('[data-plus]').forEach(b=>b.onclick=()=>{d.items.find(i=>i.code===b.dataset.plus).qty++;renderCart(d)});wrap.querySelectorAll('[data-minus]').forEach(b=>b.onclick=()=>{const i=d.items.find(x=>x.code===b.dataset.minus);i.qty--;if(i.qty<=0)d.items=d.items.filter(x=>x!==i);renderCart(d)})}
+function renderTypeStep(d){$('stepLabel').textContent='2 / 3　注文方法';$('sheetTitle').textContent='注文方法';$('sheetBody').innerHTML=`<div class="step"><p class="stepIntro">一番近いものを選んでください。現売りは「今すぐ持ち帰り」を初期選択します。</p><div class="choiceGrid"><button class="choice ${d.type===ORDER_TYPE.NORMAL?'on':''}" data-type="normal"><b>国内通常注文</b><small>帳合先へ通常の注文書を提出</small></button><button class="choice ${d.type===ORDER_TYPE.SPOT?'on':''}" data-type="spot"><b>現売り</b><small>会場で会計・受け渡し</small></button></div>${d.type===ORDER_TYPE.SPOT?`<div class="section" style="margin-top:10px"><div class="sectionTitle">商品の渡し方</div><div class="choiceGrid"><button class="choice ${d.handoff===HANDOFF.NOW?'on':''}" data-handoff="now"><b>今すぐ持ち帰り</b><small>受付番号なし・その場で完了</small></button><button class="choice ${d.handoff===HANDOFF.LATER?'on':''}" data-handoff="later"><b>後日会場で受取</b><small>受付番号を発行</small></button><button class="choice ${d.handoff===HANDOFF.HOTEL?'on':''}" data-handoff="hotel"><b>ホテル配送</b><small>海外客で多いパターン</small></button><button class="choice ${d.handoff===HANDOFF.SHIP?'on':''}" data-handoff="ship"><b>指定先へ配送</b><small>ホテル以外へ発送</small></button></div></div>`:''}</div><div class="stickyActions"><button id="backProducts" class="secondary">戻る</button><button id="toInfo" class="primary">入力へ進む</button></div>`;document.querySelectorAll('[data-type]').forEach(b=>b.onclick=()=>{d.type=b.dataset.type;if(d.type===ORDER_TYPE.SPOT&&!d.handoff)d.handoff=HANDOFF.NOW;if(d.type===ORDER_TYPE.NORMAL)d.handoff=null;renderDraft()});document.querySelectorAll('[data-handoff]').forEach(b=>b.onclick=()=>{d.handoff=b.dataset.handoff;renderDraft()});$('backProducts').onclick=()=>{d.stage='products';renderDraft()};$('toInfo').onclick=()=>{if(!d.type)return showError('注文方法を選択してください。');d.stage='info';renderDraft()}}
+function renderInfoStep(d){const normal=d.type===ORDER_TYPE.NORMAL,now=d.handoff===HANDOFF.NOW;$('stepLabel').textContent='3 / 3　確認';$('sheetTitle').textContent=normal?'注文先情報':'お客様・会計';const accountOptions=(cfg.accounts||[]).map(x=>`<option ${d.account===x?'selected':''}>${esc(x)}</option>`).join(''),staffOptions=(cfg.staffNames||[]).map(x=>`<option ${d.staff===x?'selected':''}>${esc(x)}</option>`).join('');$('sheetBody').innerHTML=`<div class="step"><div class="section"><div class="field"><label>店舗名 *</label><input id="fStore" value="${esc(d.store)}" placeholder="〇〇眼鏡店"></div><div class="field"><label>電話番号 *</label><input id="fPhone" inputmode="tel" value="${esc(d.phone)}"></div>${normal?`<div class="field"><label>帳合先 *</label><select id="fAccount"><option value="">選択</option>${accountOptions}</select></div><div class="field"><label>受注担当者 *</label><select id="fStaff"><option value="">選択</option>${staffOptions}</select></div><div class="field"><label>お客様名（任意）</label><input id="fCustomer" value="${esc(d.customer)}"></div>`:`<div class="field"><label>お客様名 *</label><input id="fCustomer" value="${esc(d.customer)}"></div><div class="two"><div class="field"><label>お客様</label><select id="fRegion"><option value="domestic" ${d.customerRegion==='domestic'?'selected':''}>国内</option><option value="overseas" ${d.customerRegion==='overseas'?'selected':''}>海外</option></select></div><div class="field"><label>会計方法 *</label><select id="fPayment"><option value="credit" ${d.paymentMethod===PAYMENT.CREDIT?'selected':''}>クレジット</option><option value="cash" ${d.paymentMethod===PAYMENT.CASH?'selected':''}>現金</option></select></div></div>${!now?`<div class="field"><label>会計状況</label><div class="seg"><button id="payDone" class="${d.paid?'on':''}">会計済み</button><button id="payLater" class="${!d.paid?'on':''}">未会計</button></div></div>`:''}${d.handoff===HANDOFF.LATER?`<div class="field"><label>受取予定日 *</label><div class="quickDates"><button data-day="0">今日</button><button data-day="1">明日</button><button data-day="2">明後日</button></div><input id="fPickup" type="date" value="${esc(d.pickupDate)}"></div>`:''}${d.handoff===HANDOFF.HOTEL?`<div class="field"><label>ホテル名 *</label><input id="fHotel" value="${esc(d.hotelName||'')}"></div><div class="two"><div class="field"><label>宿泊者名 *</label><input id="fGuest" value="${esc(d.guestName||d.customer||'')}"></div><div class="field"><label>部屋番号（任意）</label><input id="fRoom" value="${esc(d.roomNo||'')}"></div></div><div class="field"><label>チェックアウト予定日</label><input id="fCheckout" type="date" value="${esc(d.checkoutDate||'')}"></div>`:''}${d.handoff===HANDOFF.SHIP?`<div class="field"><label>配送先住所 *</label><textarea id="fShip">${esc(d.shipAddress||'')}</textarea></div>`:''}`}</div><div class="section"><div class="sectionTitle">注文確認</div>${d.items.map(i=>`<div class="summaryRow"><span>${esc(i.code)} ${esc(i.name)} × ${i.qty}</span><b>${yen(i.price*i.qty)}</b></div>`).join('')}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div>${d.paymentMethod===PAYMENT.CASH?'<div class="hintBox">現金は釣銭を用意しない運用です。受取金額を確認してください。</div>':''}</div><div class="stickyActions"><button id="backType" class="secondary">戻る</button><button id="saveBtn" class="primary">${normal?'登録して注文書提出':now?'会計・お渡し完了で登録':'受付を登録'}</button></div>${now?'<div style="padding:0 14px"><button id="savePending" class="secondary" style="width:100%">未完了として登録</button></div>':''}`;bindInfo(d,normal,now)}
+function bindInfo(d,normal,now){const remember=()=>{d.store=$('fStore').value.trim();d.phone=$('fPhone').value.trim();d.customer=$('fCustomer')?.value.trim()||'';if(normal){d.account=$('fAccount').value;d.staff=$('fStaff').value}else{d.customerRegion=$('fRegion').value;d.paymentMethod=$('fPayment').value;if($('fPickup'))d.pickupDate=$('fPickup').value;if($('fHotel'))d.hotelName=$('fHotel').value.trim();if($('fGuest'))d.guestName=$('fGuest').value.trim();if($('fRoom'))d.roomNo=$('fRoom').value.trim();if($('fCheckout'))d.checkoutDate=$('fCheckout').value;if($('fShip'))d.shipAddress=$('fShip').value.trim()}};document.querySelectorAll('#sheetBody input,#sheetBody select,#sheetBody textarea').forEach(e=>e.onchange=remember);if($('payDone'))$('payDone').onclick=()=>{remember();d.paid=true;renderDraft()};if($('payLater'))$('payLater').onclick=()=>{remember();d.paid=false;renderDraft()};document.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{remember();d.pickupDate=dateOffset(Number(b.dataset.day));renderDraft()});$('backType').onclick=()=>{remember();d.stage='type';renderDraft()};$('saveBtn').onclick=async()=>{remember();if(now){d.paid=true;d.delivered=true;d.prepared=PREP.READY}const errs=validate(d);if(errs.length)return showError(errs[0]);$('saveBtn').disabled=true;const o=await saveNew(d,{submitNormal:normal});state.draft={...o,stage:'success'};renderDraft()};if($('savePending'))$('savePending').onclick=async()=>{remember();const errs=validate(d);if(errs.length)return showError(errs[0]);const o=await saveNew(d);state.draft={...o,stage:'success'};renderDraft()}}
+function renderSuccess(d){$('stepLabel').textContent='完了';$('sheetTitle').textContent='登録完了';$('sheetBody').innerHTML=`<div class="success"><div class="successMark">✓</div><h3>${isDone(d)?'対応完了':'注文を登録しました'}</h3><p>${d.receiptNo?`受付番号 ${esc(d.receiptNo)}`:needsReceipt(d)?'受付番号は通信復旧後に確定します。':'受付番号は不要です。'}</p><div class="summary"><div class="summaryRow"><span>店舗</span><b>${esc(d.store)}</b></div><div class="summaryRow"><span>区分</span><b>${esc(labelOrder(d))}</b></div>${d.receiptNo?`<div class="summaryRow"><span>受付番号</span><b>${esc(d.receiptNo)}</b></div>`:''}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div></div><div class="stickyActions one"><button id="backDash" class="primary">管理画面へ戻る</button></div>`;$('backDash').onclick=()=>{closeSheet();state.tab=groupOf(d);render()}}
+
+function showDetail(id){const o=state.orders.find(x=>x.localId===id);if(!o)return;openSheet('注文詳細','');$('sheetBody').innerHTML=`<div class="step"><div class="section"><div class="summaryRow"><span>店舗</span><b>${esc(o.store)}</b></div><div class="summaryRow"><span>区分</span><b>${esc(labelOrder(o))}</b></div><div class="summaryRow"><span>電話</span><b>${esc(o.phone)}</b></div>${o.receiptNo?`<div class="summaryRow"><span>受付番号</span><b>${esc(o.receiptNo)}</b></div>`:''}${o.type===ORDER_TYPE.SPOT?`<div class="summaryRow"><span>会計</span><b>${o.paid?'会計済み':'未会計'}・${o.paymentMethod===PAYMENT.CASH?'現金':'クレジット'}</b></div>`:''}<div class="summaryRow"><span>受け渡し</span><b>${esc(handoffLabel(o))}</b></div></div><div class="section"><div class="sectionTitle">商品</div>${o.items.map(i=>`<div class="summaryRow"><span>${esc(i.code)} ${esc(i.name)} × ${i.qty}</span><b>${yen(i.price*i.qty)}</b></div>`).join('')}</div><button id="printBtn" class="secondary" style="width:100%;margin-bottom:8px">PDF保存・印刷</button><button id="deleteBtn" class="dangerBtn" style="width:100%">削除</button></div><div class="stickyActions one"><button id="detailClose" class="primary">閉じる</button></div>`;$('detailClose').onclick=closeSheet;$('printBtn').onclick=()=>printOrder(o);$('deleteBtn').onclick=async()=>{if(!confirm('この注文を削除しますか？'))return;o.deleted=true;await updateOrder(o,'deleted');closeSheet();render()}}
+function showSubmit(o){openSheet('注文書提出','国内通常注文');$('sheetBody').innerHTML=`<div class="step"><div class="hintBox">この内容を注文書として提出します。提出後は「完了」へ移動します。</div><div class="section" style="margin-top:10px"><div class="summaryRow"><span>店舗</span><b>${esc(o.store)}</b></div><div class="summaryRow"><span>帳合先</span><b>${esc(o.account)}</b></div><div class="summaryRow"><span>担当</span><b>${esc(o.staff)}</b></div>${o.items.map(i=>`<div class="summaryRow"><span>${esc(i.code)} ${esc(i.name)} × ${i.qty}</span><b>${yen(i.price*i.qty)}</b></div>`).join('')}</div><button id="previewPrint" class="secondary" style="width:100%">PDF保存・印刷</button></div><div class="stickyActions"><button id="submitCancel" class="secondary">戻る</button><button id="submitOrder" class="primary">注文書を提出</button></div>`;$('previewPrint').onclick=()=>printOrder(o);$('submitCancel').onclick=closeSheet;$('submitOrder').onclick=async()=>{o.submitted=true;await updateOrder(o,'normal_order_submitted');closeSheet();state.tab='done';toast('注文書を提出しました');render()}}
+function printOrder(o){$('printArea').innerHTML=`<div class="printSheet"><h2>展示会 注文書</h2><div class="printMeta"><div><b>店舗名</b><br>${esc(o.store)}</div><div><b>電話番号</b><br>${esc(o.phone)}</div><div><b>帳合先</b><br>${esc(o.account||'-')}</div><div><b>受注担当</b><br>${esc(o.staff||state.staff?.display_name||'-')}</div></div><table class="printItems"><thead><tr><th>品番・商品</th><th>数量</th><th>単価</th><th>金額</th></tr></thead><tbody>${o.items.map(i=>`<tr><td>${esc(i.code)} ${esc(i.name)}</td><td>${i.qty}</td><td>${yen(i.price)}</td><td>${yen(i.price*i.qty)}</td></tr>`).join('')}</tbody><tfoot><tr><th colspan="3">合計</th><th>${yen(totalOf(o))}</th></tr></tfoot></table><div class="printFoot">${esc(cfg.eventName||'展示会')} ／ ${new Date().toLocaleString('ja-JP')}</div></div>`;window.print()}
+
+function showFilter(){openSheet('絞り込み','');$('sheetBody').innerHTML=`<div class="step"><div class="choiceGrid"><button class="choice" data-f="today"><b>今日受取</b></button><button class="choice" data-f="future"><b>明日以降</b></button><button class="choice" data-f="unpaid"><b>未会計</b></button><button class="choice" data-f=""><b>すべて</b></button></div></div>`;document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.f;closeSheet();render()})}
+
+async function bootOnline(){try{const saved=JSON.parse(localStorage.getItem(LS_SESSION)||'null');if(saved?.access_token){state.session=saved;await loadStaff();state.online=true;showApp();await onlineLoad();startPoll();return}showLogin()}catch(e){console.warn(e);showLogin()}}
+function showLogin(){$('loginView').classList.remove('hidden');$('appView').classList.add('hidden')}
+function showApp(){$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('eventName').textContent=cfg.eventName||'EXHIBITION';$('logoutBtn').classList.toggle('hidden',!state.online);setSync(state.online?'online':'','端末モード');render()}
+function startPoll(){clearInterval(state.poll);state.poll=setInterval(()=>onlineLoad(),Math.max(5,Number(cfg.pollSeconds||8))*1000)}
+async function login(){const e=$('loginEmail').value.trim(),p=$('loginPassword').value;if(!e||!p)return $('loginMsg').textContent='メールとパスワードを入力してください。';$('loginMsg').textContent='';$('loginBtn').disabled=true;try{await signIn(e,p);await loadStaff();state.online=true;showApp();await onlineLoad();startPoll()}catch(err){console.error(err);$('loginMsg').textContent='ログインできませんでした。アカウントを確認してください。'}finally{$('loginBtn').disabled=false}}
+function demo(){state.demo=true;state.online=false;state.orders=localLoad();showApp();setSync('','端末モード・オンライン未接続')}
+function logout(){localStorage.removeItem(LS_SESSION);state.session=null;state.staff=null;state.online=false;clearInterval(state.poll);showLogin()}
+
+$('loginBtn').onclick=login;$('demoBtn').onclick=demo;$('logoutBtn').onclick=logout;$('refreshBtn').onclick=()=>state.online?onlineLoad():render();$('newOrderBtn').onclick=startOrder;$('closeSheet').onclick=closeSheet;$('sheet').onclick=e=>{if(e.target===$('sheet'))closeSheet()};$('filterBtn').onclick=showFilter;$('orderSearch').oninput=renderOrders;$('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(!b)return;state.tab=b.dataset.tab;state.filter='';render()};document.querySelectorAll('.metric').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;state.tab=b.dataset.filter==='unpaid'?'active':'waiting';render()});
+
+await loadProducts();state.orders=localLoad();if(cfg.onlineEnabled)await bootOnline();else demo();</script></body></html>

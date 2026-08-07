@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>展示会 注文管理</title>
+<link rel="stylesheet" href="styles.css">
+<script src="online-config.js"></script>
+</head>
+<body>
+<div id="toast" class="toast" aria-live="polite"></div>
+<section id="loginView" class="login hidden">
+  <div class="loginBox">
+    <div class="brandMark">SN</div>
+    <h1>展示会 注文管理</h1>
+    <p>スタッフ専用</p>
+    <label>メール<input id="loginEmail" type="email" autocomplete="username"></label>
+    <label>パスワード<input id="loginPassword" type="password" autocomplete="current-password"></label>
+    <button id="loginBtn" class="primary">ログイン</button>
+    <button id="demoBtn" class="secondary">端末だけで操作確認</button>
+    <div id="loginMsg" class="errorText"></div>
+  </div>
+</section>
+
+<div id="appView" class="app hidden">
+  <header class="topbar">
+    <div class="brandRow">
+      <div><div class="eyebrow" id="eventName">EXHIBITION</div><h1>注文管理</h1></div>
+      <button id="refreshBtn" class="iconBtn" aria-label="更新">↻</button>
+    </div>
+    <div class="syncLine"><span id="syncDot" class="syncDot"></span><span id="syncText">端末モード</span><button id="logoutBtn" class="linkBtn hidden">ログアウト</button></div>
+    <div class="metrics">
+      <button class="metric" data-filter="today"><small>今日受取</small><b id="metricToday">0</b></button>
+      <button class="metric" data-filter="future"><small>明日以降</small><b id="metricFuture">0</b></button>
+      <button class="metric warn" data-filter="unpaid"><small>未会計</small><b id="metricUnpaid">0</b></button>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="active" class="active">要対応 <span id="countActive">0</span></button>
+      <button data-tab="waiting">受取・発送 <span id="countWaiting">0</span></button>
+      <button data-tab="done">完了 <span id="countDone">0</span></button>
+    </nav>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <div class="searchWrap"><span>⌕</span><input id="orderSearch" type="search" placeholder="店舗・受付番号・電話・品番"></div>
+      <button id="filterBtn" class="secondary compact">絞込</button>
+    </div>
+    <div id="activeFilter" class="activeFilter hidden"></div>
+    <section id="orders" class="orders"></section>
+  </main>
+  <button id="newOrderBtn" class="newOrderBtn">＋ 新しい注文</button>
+</div>
+
+<div id="sheet" class="sheet hidden" role="dialog" aria-modal="true">
+  <div class="sheetPanel">
+    <header class="sheetHead"><div><small id="stepLabel"></small><h2 id="sheetTitle">新しい注文</h2></div><button id="closeSheet" class="iconBtn">×</button></header>
+    <div id="sheetError" class="errorBox hidden"></div>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+
+<div id="printArea" class="printArea"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
