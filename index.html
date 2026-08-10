@@ -31,13 +31,13 @@
     </div>
     <div class="syncLine"><span id="syncDot" class="syncDot"></span><span id="syncText">端末モード</span><button id="logoutBtn" class="linkBtn hidden">ログアウト</button></div>
     <div class="metrics">
-      <button class="metric" data-filter="today"><small>今日受取</small><b id="metricToday">0</b></button>
-      <button class="metric" data-filter="future"><small>明日以降</small><b id="metricFuture">0</b></button>
+      <button class="metric danger" data-filter="unshared"><small>本社未共有</small><b id="metricUnshared">0</b></button>
+      <button class="metric" data-filter="pickup"><small>受取待ち</small><b id="metricPickup">0</b></button>
       <button class="metric warn" data-filter="unpaid"><small>未会計</small><b id="metricUnpaid">0</b></button>
     </div>
     <nav class="tabs" id="tabs">
       <button data-tab="active" class="active">要対応 <span id="countActive">0</span></button>
-      <button data-tab="waiting">受取・発送 <span id="countWaiting">0</span></button>
+      <button data-tab="waiting">受取待ち <span id="countWaiting">0</span></button>
       <button data-tab="done">完了 <span id="countDone">0</span></button>
     </nav>
   </header>
@@ -47,6 +47,7 @@
       <div class="searchWrap"><span>⌕</span><input id="orderSearch" type="search" placeholder="店舗・受付番号・電話・品番"></div>
       <button id="filterBtn" class="secondary compact">絞込</button>
     </div>
+    <button id="printMenuBtn" class="secondary printMenuButton">印刷・PDF</button>
     <div id="activeFilter" class="activeFilter hidden"></div>
     <section id="orders" class="orders"></section>
   </main>

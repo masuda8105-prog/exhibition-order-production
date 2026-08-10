@@ -1,12 +1,78 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {ORDER_TYPE,HANDOFF,PAYMENT,PREP,needsReceipt,validate,isDone,groupOf,nextAction,applyAction} from '../workflow.js';
+import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,validate,isDone,groupOf,nextAction,applyAction} from '../workflow.js';
+
 const item={code:'1054',name:'x',price:100,qty:1};
-test('国内通常注文は帳合先と担当必須',()=>{const o={type:ORDER_TYPE.NORMAL,items:[item],store:'A',phone:'1',account:'',staff:''};assert.equal(validate(o).length,2)});
-test('即時現売りは受付番号不要',()=>{assert.equal(needsReceipt({type:ORDER_TYPE.SPOT,handoff:HANDOFF.NOW}),false)});
-test('後日受取は受付番号必要',()=>{assert.equal(needsReceipt({type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER}),true)});
-test('即時現売りは会計済み+渡済みで完了',()=>{const o={type:ORDER_TYPE.SPOT,handoff:HANDOFF.NOW,paid:true,delivered:true};assert.equal(isDone(o),true);assert.equal(groupOf(o),'done')});
-test('後日受取は準備済みで受取待ち',()=>{const o={type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,prepared:PREP.READY,paid:true,delivered:false};assert.equal(groupOf(o),'waiting');assert.equal(nextAction(o).key,'deliver')});
-test('ホテル配送は発送済みまで完了しない',()=>{let o={type:ORDER_TYPE.SPOT,handoff:HANDOFF.HOTEL,prepared:PREP.READY,paid:true,shipped:false};assert.equal(isDone(o),false);o=applyAction(o,'ship');assert.equal(isDone(o),true)});
-test('価格未定の商品は受注できない',()=>{const o={type:ORDER_TYPE.NORMAL,items:[{code:'141-802',name:'x',price:null,qty:1}],store:'A',phone:'1',account:'X',staff:'Y'};assert.equal(validate(o).includes('価格未定の商品は注文できません。'),true)});
-test('数量0の商品は受注できない',()=>{const o={type:ORDER_TYPE.NORMAL,items:[{code:'1054',name:'x',price:100,qty:0}],store:'A',phone:'1',account:'X',staff:'Y'};assert.equal(validate(o).includes('商品数量が不正です。'),true)});
-test('通常注文は送信成功まで完了にならない',()=>{const pending={type:ORDER_TYPE.NORMAL,submitted:false,submissionState:'pending'};assert.equal(isDone(pending),false);assert.deepEqual(nextAction(pending),{key:'submit',label:'注文書を再送'});assert.equal(isDone({...pending,submitted:true,submissionState:'sent'}),true)});
+
+test('国内通常注文は卸屋・帳合先と担当必須',()=>{
+  const order={type:ORDER_TYPE.NORMAL,items:[item],store:'A',phone:'1',account:'',staff:''};
+  assert.equal(validate(order).length,2);
+});
+
+test('国内通常注文は登録時点で完了',()=>{
+  const order={type:ORDER_TYPE.NORMAL,items:[item],store:'A',phone:'1',account:'卸屋',staff:'担当'};
+  assert.equal(isDone(order),true);
+  assert.equal(groupOf(order),'done');
+});
+
+test('その場渡しは受付番号も本社共有も不要',()=>{
+  const order={type:ORDER_TYPE.SPOT,handoff:HANDOFF.NOW};
+  assert.equal(needsReceipt(order),false);
+  assert.equal(needsHeadOfficeShare(order),false);
+});
+
+test('その場渡しは会計・お渡し完了で完了',()=>{
+  const order={type:ORDER_TYPE.SPOT,handoff:HANDOFF.NOW,paid:true,delivered:true};
+  assert.equal(isDone(order),true);
+  assert.equal(groupOf(order),'done');
+});
+
+test('後日受取は本社未共有なら要対応',()=>{
+  const order={type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,headOfficeShared:false,paid:false,delivered:false};
+  assert.equal(needsReceipt(order),true);
+  assert.equal(needsHeadOfficeShare(order),true);
+  assert.equal(groupOf(order),'active');
+  assert.deepEqual(nextAction(order),{key:'share',label:'本社共有済みにする'});
+});
+
+test('後日受取は本社共有後に受取待ち',()=>{
+  const order=applyAction({type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,headOfficeShared:false},'share');
+  assert.equal(groupOf(order),'waiting');
+  assert.equal(nextAction(order).key,'deliver');
+});
+
+test('後日受取は会計・商品お渡し後に完了',()=>{
+  let order=applyAction({type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,headOfficeShared:false},'share');
+  order=applyAction(order,'deliver');
+  assert.equal(order.paid,true);
+  assert.equal(order.delivered,true);
+  assert.equal(isDone(order),true);
+});
+
+test('ホテル配送は本社共有済みで完了',()=>{
+  let order={type:ORDER_TYPE.SPOT,handoff:HANDOFF.HOTEL,headOfficeShared:false};
+  assert.equal(groupOf(order),'active');
+  order=applyAction(order,'share');
+  assert.equal(isDone(order),true);
+  assert.equal(groupOf(order),'done');
+});
+
+test('指定先配送も本社共有済みで完了',()=>{
+  const order=applyAction({type:ORDER_TYPE.SPOT,handoff:HANDOFF.SHIP,headOfficeShared:false},'share');
+  assert.equal(isDone(order),true);
+});
+
+test('価格未定の商品は受注できない',()=>{
+  const order={type:ORDER_TYPE.NORMAL,items:[{code:'141-802',name:'x',price:null,qty:1}],store:'A',phone:'1',account:'X',staff:'Y'};
+  assert.equal(validate(order).includes('価格未定の商品は注文できません。'),true);
+});
+
+test('数量0の商品は受注できない',()=>{
+  const order={type:ORDER_TYPE.NORMAL,items:[{code:'1054',name:'x',price:100,qty:0}],store:'A',phone:'1',account:'X',staff:'Y'};
+  assert.equal(validate(order).includes('商品数量が不正です。'),true);
+});
+
+test('現売りはお客様名と会計方法が必須',()=>{
+  const order={type:ORDER_TYPE.SPOT,handoff:HANDOFF.NOW,items:[item],store:'A',phone:'1',customer:'',paymentMethod:PAYMENT.NONE};
+  assert.equal(validate(order).includes('お客様名は必須です。'),true);
+  assert.equal(validate(order).includes('会計方法を選択してください。'),true);
+});

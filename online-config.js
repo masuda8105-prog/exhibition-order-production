@@ -1,14 +1,13 @@
 /*
  * 本番接続設定。
- * publishable/anon key はブラウザ公開用。service_role や Slack webhook は絶対にここへ書かない。
- * onlineEnabled:true でスタッフログインと注文送信を有効にする。
+ * publishable/anon key はブラウザ公開用。service_role は絶対にここへ書かない。
+ * onlineEnabled:true でスタッフログインと注文同期を有効にする。
  */
 window.EXHIBITION_CONFIG = Object.freeze({
   onlineEnabled: true,
   supabaseUrl: 'https://qdexhwgzawisiklekfzm.supabase.co',
   anonKey: 'sb_publishable__mWzF7WQI5BimtlT4Rmglg_9IRh25LV',
   createFunctionName: 'exhibition-order',
-  slackFunctionName: 'exhibition-slack',
   eventId: 'neo-tokyo-2026',
   eventName: 'NEO TOKYO 2026',
   eventDate: '2026-10-06',
