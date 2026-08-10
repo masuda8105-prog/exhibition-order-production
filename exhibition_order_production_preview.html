@@ -484,12 +484,12 @@ function renderProductResults(d,query){
   if(!q){wrap.innerHTML='';wrap.classList.remove('open');return}
   const list=state.products.map((product,index)=>({product,index,rank:productRank(product,q)})).filter(result=>result.rank<9).sort((a,b)=>a.rank-b.rank||a.index-b.index).slice(0,35);
   wrap.classList.add('open');
-  wrap.innerHTML=list.length?list.map(({product,rank})=>`<div class="productRow ${rank===0?'exact':''} ${product.orderable?'':'unavailable'}" role="option"><div><div class="productCodeLine"><b>${esc(product.code)}</b>${rank===0?'<span class="matchBadge">完全一致</span>':''}</div><small>${esc(product.name)} ／ ${product.orderable?yen(product.price):'価格未定・注文不可'}</small></div><button class="addBtn" data-product-id="${esc(product.productId)}" ${product.orderable?'':'disabled'}>${product.orderable?'追加':'追加不可'}</button></div>`).join(''):'<div class="empty">該当商品がありません。</div>';
+  wrap.innerHTML=list.length?list.map(({product,rank})=>{const ordered=d.items.find(item=>item.productId===product.productId);return `<div class="productRow ${rank===0?'exact':''} ${product.orderable?'':'unavailable'}" role="option"><div><div class="productCodeLine"><b>${esc(product.code)}</b>${rank===0?'<span class="matchBadge">完全一致</span>':''}</div><small>${esc(product.name)} ／ ${product.orderable?yen(product.price):'価格未定・注文不可'}</small></div><button class="addBtn" data-product-id="${esc(product.productId)}" ${product.orderable?'':'disabled'}>${product.orderable?(ordered?`追加済み ${ordered.qty}・＋`:'追加'):'追加不可'}</button></div>`}).join(''):'<div class="empty">該当商品がありません。</div>';
   wrap.querySelectorAll('[data-product-id]').forEach(button=>button.onclick=()=>{
     const product=state.products.find(item=>item.productId===button.dataset.productId);if(!product?.orderable)return;
     const existing=d.items.find(item=>item.productId===product.productId);
     if(existing)existing.qty++;else d.items.push({...product,lineId:`line-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`,qty:1});
-    renderCart(d);$('productQ').value='';renderProductResults(d,'');toast(`${product.code} を追加`);
+    renderCart(d);renderProductResults(d,$('productQ').value);toast(`${product.code} を追加`);
   });
 }
 function productRank(p,q){const c=String(p.code).toLowerCase(),n=String(p.name).toLowerCase();const qn=q.replace(/-/g,''),cn=c.replace(/-/g,'');if(c===q||cn===qn)return 0;if(c.startsWith(q)||cn.startsWith(qn))return 1;if(c.includes(q)||cn.includes(qn))return 2;if(n.includes(q))return 3;return 9}
