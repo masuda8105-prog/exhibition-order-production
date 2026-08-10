@@ -14,6 +14,9 @@ export function totalOf(order){
 export function validate(order){
   const errors=[];
   if(!(order?.items||[]).length) errors.push('商品を1点以上追加してください。');
+  if((order?.items||[]).some(item=>!String(item?.code||'').trim()||!String(item?.name||'').trim())) errors.push('商品情報が不完全です。商品を選び直してください。');
+  if((order?.items||[]).some(item=>!Number.isFinite(Number(item?.price))||Number(item.price)<=0)) errors.push('価格未定の商品は注文できません。');
+  if((order?.items||[]).some(item=>!Number.isInteger(Number(item?.qty))||Number(item.qty)<=0)) errors.push('商品数量が不正です。');
   if(!String(order?.store||'').trim()) errors.push('店舗名は必須です。');
   if(!String(order?.phone||'').trim()) errors.push('電話番号は必須です。');
   if(order?.type===ORDER_TYPE.NORMAL){
@@ -52,7 +55,7 @@ export function groupOf(order){
 
 export function nextAction(order){
   if(isDone(order)) return {key:'done',label:'対応済み'};
-  if(order?.type===ORDER_TYPE.NORMAL) return {key:'submit',label:'注文書を提出'};
+  if(order?.type===ORDER_TYPE.NORMAL) return {key:'submit',label:order?.submissionState==='pending'?'注文書を再送':'注文書を送信'};
   if(order?.handoff===HANDOFF.NOW){
     if(!order?.paid) return {key:'pay',label:'会計済みにする'};
     if(!order?.delivered) return {key:'deliver',label:'商品を渡して完了'};

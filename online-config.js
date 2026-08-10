@@ -1,10 +1,10 @@
 /*
  * 本番接続設定。
  * publishable/anon key はブラウザ公開用。service_role や Slack webhook は絶対にここへ書かない。
- * 最初は onlineEnabled:false で操作確認し、本番切替時に true にする。
+ * onlineEnabled:true でスタッフログインと注文送信を有効にする。
  */
 window.EXHIBITION_CONFIG = Object.freeze({
-  onlineEnabled: false,
+  onlineEnabled: true,
   supabaseUrl: 'https://qdexhwgzawisiklekfzm.supabase.co',
   anonKey: 'sb_publishable__mWzF7WQI5BimtlT4Rmglg_9IRh25LV',
   createFunctionName: 'exhibition-order',

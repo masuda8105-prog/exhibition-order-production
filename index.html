@@ -17,8 +17,8 @@
     <p>スタッフ専用</p>
     <label>メール<input id="loginEmail" type="email" autocomplete="username"></label>
     <label>パスワード<input id="loginPassword" type="password" autocomplete="current-password"></label>
-    <button id="loginBtn" class="primary">ログイン</button>
-    <button id="demoBtn" class="secondary">端末だけで操作確認</button>
+    <button id="loginBtn" type="button" class="primary">ログイン</button>
+    <button id="demoBtn" type="button" class="secondary">端末モードで開始</button>
     <div id="loginMsg" class="errorText"></div>
   </div>
 </section>
@@ -55,7 +55,7 @@
 
 <div id="sheet" class="sheet hidden" role="dialog" aria-modal="true">
   <div class="sheetPanel">
-    <header class="sheetHead"><div><small id="stepLabel"></small><h2 id="sheetTitle">新しい注文</h2></div><button id="closeSheet" class="iconBtn">×</button></header>
+    <header class="sheetHead"><div><small id="stepLabel"></small><h2 id="sheetTitle">新しい注文</h2></div><button id="closeSheet" type="button" class="iconBtn" aria-label="閉じる">×</button></header>
     <div id="sheetError" class="errorBox hidden"></div>
     <div id="sheetBody"></div>
   </div>

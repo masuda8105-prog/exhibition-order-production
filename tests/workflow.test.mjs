@@ -7,3 +7,6 @@ test('後日受取は受付番号必要',()=>{assert.equal(needsReceipt({type:OR
 test('即時現売りは会計済み+渡済みで完了',()=>{const o={type:ORDER_TYPE.SPOT,handoff:HANDOFF.NOW,paid:true,delivered:true};assert.equal(isDone(o),true);assert.equal(groupOf(o),'done')});
 test('後日受取は準備済みで受取待ち',()=>{const o={type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,prepared:PREP.READY,paid:true,delivered:false};assert.equal(groupOf(o),'waiting');assert.equal(nextAction(o).key,'deliver')});
 test('ホテル配送は発送済みまで完了しない',()=>{let o={type:ORDER_TYPE.SPOT,handoff:HANDOFF.HOTEL,prepared:PREP.READY,paid:true,shipped:false};assert.equal(isDone(o),false);o=applyAction(o,'ship');assert.equal(isDone(o),true)});
+test('価格未定の商品は受注できない',()=>{const o={type:ORDER_TYPE.NORMAL,items:[{code:'141-802',name:'x',price:null,qty:1}],store:'A',phone:'1',account:'X',staff:'Y'};assert.equal(validate(o).includes('価格未定の商品は注文できません。'),true)});
+test('数量0の商品は受注できない',()=>{const o={type:ORDER_TYPE.NORMAL,items:[{code:'1054',name:'x',price:100,qty:0}],store:'A',phone:'1',account:'X',staff:'Y'};assert.equal(validate(o).includes('商品数量が不正です。'),true)});
+test('通常注文は送信成功まで完了にならない',()=>{const pending={type:ORDER_TYPE.NORMAL,submitted:false,submissionState:'pending'};assert.equal(isDone(pending),false);assert.deepEqual(nextAction(pending),{key:'submit',label:'注文書を再送'});assert.equal(isDone({...pending,submitted:true,submissionState:'sent'}),true)});
