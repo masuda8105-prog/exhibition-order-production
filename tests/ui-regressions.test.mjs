@@ -42,3 +42,7 @@ test('商品の渡し方はすべて1列で表示する',()=>{
   assert.match(app,/choiceGrid handoffChoices/);
   assert.match(styles,/\.handoffChoices\{grid-template-columns:1fr\}/);
 });
+
+test('注文カードには不要な印刷対象ラベルを表示しない',()=>{
+  assert.doesNotMatch(app,/印刷対象/);
+});
