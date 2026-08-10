@@ -1,6 +1,8 @@
 // Supabase Edge Function: exhibition-slack
 // Secrets: SLACK_WEBHOOK_URL を Supabase 側に設定する。ブラウザには置かない。
 
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -61,7 +63,7 @@ async function authorizeStaff(req: Request) {
   return rows?.[0] || null;
 }
 
-Deno.serve(async (req) => {
+async function handleRequest(req: Request) {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'METHOD_NOT_ALLOWED' }, 405);
   if (Number(req.headers.get('content-length') || 0) > 1_000_000) return json({ error: 'PAYLOAD_TOO_LARGE' }, 413);
@@ -152,4 +154,6 @@ Deno.serve(async (req) => {
     console.error('exhibition-slack failed', error instanceof Error ? error.message : 'UNKNOWN');
     return json({ error: 'INTERNAL_ERROR' }, 500);
   }
-});
+}
+
+export default { fetch: handleRequest };

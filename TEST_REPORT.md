@@ -37,8 +37,11 @@
 ## バックエンド確認
 
 - 既存 `exhibition-order`: 本番Origin `https://masuda8105-prog.github.io` のCORS preflightは200、その他Originは403
-- `exhibition-slack`: 現在のリモート応答は404（未デプロイ）
-- Supabase Dashboard: サインインが必要
-- ローカル実装: CORS、JWT、スタッフ権限確認、Slack注文書整形、送信成功日時応答を実装済み
+- `exhibition-slack`: Supabase Edge Functionへ本番配備済み
+- 未認証POSTは401で拒否: PASS
+- 本番OriginからのCORS preflightは200: PASS
+- Supabase Dashboard: ログイン・対象プロジェクト確認済み
+- ローカル／本番実装: CORS、JWT、スタッフ権限確認、Slack注文書整形、送信成功日時応答を実装済み
+- `SLACK_WEBHOOK_URL`: 未設定
 
-実送信の最終確認には、Supabaseへ `exhibition-slack` をデプロイし、Secret `SLACK_WEBHOOK_URL` を設定したうえで、公開URLからスタッフログインする必要があります。
+実送信の最終確認には、Secret `SLACK_WEBHOOK_URL` を設定したうえで、公開URLからスタッフログインする必要があります。
