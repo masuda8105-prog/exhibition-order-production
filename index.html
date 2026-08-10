@@ -14,11 +14,11 @@
   <div class="loginBox">
     <div class="brandMark">SN</div>
     <h1>展示会 注文管理</h1>
-    <p>スタッフ専用</p>
+    <p>登録スタッフでログインすると、全員の注文画面が自動同期されます。</p>
     <label>メール<input id="loginEmail" type="email" autocomplete="username"></label>
     <label>パスワード<input id="loginPassword" type="password" autocomplete="current-password"></label>
     <button id="loginBtn" type="button" class="primary">ログイン</button>
-    <button id="demoBtn" type="button" class="secondary">端末モードで開始</button>
+    <button id="demoBtn" type="button" class="secondary">端末モード（共有されません）</button>
     <div id="loginMsg" class="errorText"></div>
   </div>
 </section>
@@ -54,6 +54,16 @@
   <button id="newOrderBtn" class="newOrderBtn">＋ 新しい注文</button>
 </div>
 
+<section id="receiptView" class="receiptPage hidden">
+  <div class="receiptActions">
+    <button id="downloadReceiptImage" class="primary">控えを画像でダウンロード</button>
+    <button id="printPublicReceipt" class="secondary">印刷・PDF保存</button>
+    <button id="closePublicReceipt" class="secondary">閉じる</button>
+  </div>
+  <div id="receiptSaveHint" class="receiptSaveHint">画像ボタンを押すと、写真アプリやファイルへ保存できるPNG画像を作成します。</div>
+  <div id="receiptCard" class="receiptSheet"></div>
+</section>
+
 <div id="sheet" class="sheet hidden" role="dialog" aria-modal="true">
   <div class="sheetPanel">
     <header class="sheetHead"><div><small id="stepLabel"></small><h2 id="sheetTitle">新しい注文</h2></div><button id="closeSheet" type="button" class="iconBtn" aria-label="閉じる">×</button></header>
@@ -63,6 +73,8 @@
 </div>
 
 <div id="printArea" class="printArea"></div>
+<script src="vendor/qrcode.min.js"></script>
+<script src="vendor/html2canvas.min.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

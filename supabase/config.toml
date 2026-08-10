@@ -1,2 +1,2 @@
-[functions.exhibition-slack]
-verify_jwt = true
+[functions.exhibition-order]
+verify_jwt = false

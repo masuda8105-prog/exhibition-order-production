@@ -13,7 +13,7 @@ window.EXHIBITION_CONFIG = Object.freeze({
   eventDate: '2026-10-06',
   productCsv: 'product_master.csv',
   currency: 'JPY',
-  pollSeconds: 8,
+  pollSeconds: 3,
   accounts: ['名古屋眼鏡','内田屋','三共社','ヤブシタ','エンパイヤ','スドー','オリエント','その他'],
   staffNames: ['堂前','小野村','宮川','増田','上阪（優）','上阪（政）','徳井','尾形','植村','西村']
 });

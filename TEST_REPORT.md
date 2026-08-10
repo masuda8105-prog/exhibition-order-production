@@ -43,10 +43,26 @@
 - 状態更新後、移動先の「受取待ち」「完了」タブへ即時切替: PASS
 - 国内通常注文の一括印刷と全注文PDF・印刷を選択できる: PASS
 - JavaScriptコンソールエラーなし: PASS
+- 登録スタッフログイン時に全スタッフ同期を明示: PASS
+- 通常3秒、画面復帰時、通信復帰時の自動同期: PASS
+- 端末モードが他スタッフへ共有されないことを画面上に明示: PASS
 - 単一HTML版の起動とJavaScriptコンソールエラーなし: PASS
+- 「完了」の注文詳細から「この注文を修正」を開ける: PASS
+- 完了注文の備考を修正して再保存できる: PASS
+- 本社共有欄で、共有状態ボタンより上に「印刷・PDFで本社へ共有」を表示: PASS
+- 注文詳細と登録完了画面に「お客様控えQR」導線を表示: PASS
+- QRコードを実生成できる: PASS
+- 控えDOMからPNG画像用Canvasを生成できる: PASS（402×304のスモークテスト）
+- お客様控えのスマホ表示は横はみ出しなし: PASS（viewport 375px / scrollWidth 375px）
+- スマホの注文明細をカード表示に切り替え、長い商品名・数量・単価・金額を判読可能: PASS
+- 印刷幅900pxで、ロゴ・8項目の注文情報・明細・合計を1枚に配置: PASS
+- 単一HTML版へQR生成、画像生成、ロゴをすべて内包: PASS
 
 ## バックエンド確認
 
 - 既存 `exhibition-order`: 本番Origin `https://masuda8105-prog.github.io` のCORS preflightは200、その他Originは403
+- お客様控えGET API: 本番Originとpublishable keyで到達し、無効トークンを400として安全に拒否: PASS
 - Supabase Dashboard: ログイン・対象プロジェクト確認済み
 - 注文・状態更新はSupabaseへ同期し、Slack自動送信はアプリから使用しない
+- 有効な登録スタッフ4名を確認し、全員に同一注文のSELECT・UPDATEを許可するRLSポリシーを確認済み
+- 現在の `neo-tokyo-2026` 注文件数は0件のため、既存注文への影響なし
