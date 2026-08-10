@@ -15,6 +15,12 @@ export function totalOf(order){
   return (order?.items||[]).reduce((sum,item)=>sum + Number(item.price||0)*Number(item.qty||0),0);
 }
 
+export function customerNameWithHonorific(name){
+  const value=String(name??'').trim();
+  if(!value) return '-';
+  return /(?:様|さま|御中|殿)$/.test(value)?value:`${value} 様`;
+}
+
 export function validate(order){
   const errors=[];
   if(!(order?.items||[]).length) errors.push('商品を1点以上追加してください。');

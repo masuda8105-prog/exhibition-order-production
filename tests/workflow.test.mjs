@@ -1,7 +1,14 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,validate,isDone,groupOf,nextAction,applyAction} from '../workflow.js';
+import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,customerNameWithHonorific,validate,isDone,groupOf,nextAction,applyAction} from '../workflow.js';
 
 const item={code:'1054',name:'x',price:100,qty:1};
+
+test('控えのお客様名へ敬称を重複なく付ける',()=>{
+  assert.equal(customerNameWithHonorific('山田 太郎'),'山田 太郎 様');
+  assert.equal(customerNameWithHonorific('山田 太郎 様'),'山田 太郎 様');
+  assert.equal(customerNameWithHonorific('株式会社テスト 御中'),'株式会社テスト 御中');
+  assert.equal(customerNameWithHonorific(''),'-');
+});
 
 test('国内通常注文は卸屋・帳合先と担当必須',()=>{
   const order={type:ORDER_TYPE.NORMAL,items:[item],store:'A',phone:'1',account:'',staff:''};
