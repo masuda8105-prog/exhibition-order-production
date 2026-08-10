@@ -23,12 +23,22 @@ test('注文作成画面を閉じても入力途中の下書きを保持する',
   assert.match(app,/d\.productQuery=String\(query\|\|''\)/);
 });
 
-test('固定入力キーは検索欄の直下に小型配置する',()=>{
+test('固定入力キーは検索欄直下のスマホ配列で左右を切り替えられる',()=>{
   const start=app.indexOf('function renderProductStep');
   const end=app.indexOf('function bindProductKeypad',start);
   const renderProductStep=app.slice(start,end);
   assert.ok(renderProductStep.indexOf('productSearchRow')<renderProductStep.indexOf('productKeypadDock'));
   assert.ok(renderProductStep.indexOf('productKeypadDock')<renderProductStep.indexOf('productResults'));
-  assert.match(styles,/productKeypad\.numberKeys\{grid-template-columns:repeat\(7,1fr\)\}/);
-  assert.match(styles,/productKeypad\.alphaKeys\{grid-template-columns:repeat\(10,1fr\)\}/);
+  assert.match(app,/const numeric=\[\['1'\],\['2'\],\['3'\],\['4'\],\['5'\],\['6'\],\['7'\],\['8'\],\['9'\],\['-'\],\['0'\],\['⌫','backspace'\]\]/);
+  assert.match(app,/\['Q','W','E','R','T','Y','U','I','O','P'\]/);
+  assert.match(app,/id="keypadAlignLeft"/);
+  assert.match(app,/id="keypadAlignRight"/);
+  assert.match(styles,/productKeypad\.numberKeys\{grid-template-columns:repeat\(3,1fr\)\}/);
+  assert.match(styles,/productKeypadDock\.align-left/);
+  assert.match(styles,/productKeypadDock\.align-right/);
+});
+
+test('商品の渡し方はすべて1列で表示する',()=>{
+  assert.match(app,/choiceGrid handoffChoices/);
+  assert.match(styles,/\.handoffChoices\{grid-template-columns:1fr\}/);
 });
