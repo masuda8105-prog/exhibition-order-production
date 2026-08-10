@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <title>展示会 注文管理</title>
-<link rel="stylesheet" href="styles.css?v=20260810-qr3">
-<script src="online-config.js?v=20260810-qr3"></script>
+<link rel="stylesheet" href="styles.css?v=20260810-qr4">
+<script src="online-config.js?v=20260810-qr4"></script>
 </head>
 <body>
 <div id="toast" class="toast" aria-live="polite"></div>
@@ -56,11 +56,26 @@
 
 <section id="receiptView" class="receiptPage hidden">
   <div class="receiptActions">
-    <button id="downloadReceiptImage" class="primary">控えを画像でダウンロード</button>
     <button id="printPublicReceipt" class="secondary">印刷・PDF保存</button>
     <button id="closePublicReceipt" class="secondary">閉じる</button>
   </div>
-  <div id="receiptSaveHint" class="receiptSaveHint">画像ボタンを押すと、写真アプリやファイルへ保存できるPNG画像を作成します。</div>
+  <section id="receiptImagePanel" class="receiptImagePanel preparing" aria-live="polite">
+    <div class="receiptImagePanelHead">
+      <div>
+        <div class="receiptImagePanelTitle">画像の注文控え</div>
+        <span id="receiptImageStatus" class="receiptImageStatus">画像を準備中…</span>
+      </div>
+      <button id="retryReceiptImage" class="receiptImageRetry secondary small hidden" type="button">もう一度作る</button>
+    </div>
+    <div class="deviceSaveGuide">
+      <b>スマートフォンへの保存方法</b>
+      <p>下の注文控え画像を長押しして、「写真に保存」または「画像を保存」を選んでください。</p>
+    </div>
+    <div class="receiptImagePreviewFrame">
+      <div id="receiptImagePreparing" class="receiptImagePreparing">少しお待ちください</div>
+      <img id="receiptImagePreview" class="receiptImagePreview" alt="長押しして保存できるお客様控え画像">
+    </div>
+  </section>
   <div id="receiptCard" class="receiptSheet"></div>
 </section>
 
@@ -73,8 +88,8 @@
 </div>
 
 <div id="printArea" class="printArea"></div>
-<script src="vendor/qrcode.min.js?v=20260810-qr3"></script>
-<script src="vendor/html2canvas.min.js?v=20260810-qr3"></script>
-<script type="module" src="app.js?v=20260810-qr3"></script>
+<script src="vendor/qrcode.min.js?v=20260810-qr4"></script>
+<script src="vendor/html2canvas.min.js?v=20260810-qr4"></script>
+<script type="module" src="app.js?v=20260810-qr4"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@ import {ORDER_TYPE,HANDOFF,PAYMENT,PREP,needsHeadOfficeShare,needsReceipt,totalO
 const cfg=window.EXHIBITION_CONFIG||{};
 const $=id=>document.getElementById(id);
 const LS_ORDERS='exhibitionOps.orders.v1',LS_SESSION='exhibitionOps.session.v1',LS_COUNTER='exhibitionOps.counter.v1';
-const state={online:false,demo:false,session:null,staff:null,orders:[],products:[],tab:'active',filter:'',draft:null,poll:null,loading:false,syncing:false,lastSyncAt:null,syncSignalsBound:false};
+const state={online:false,demo:false,session:null,staff:null,orders:[],products:[],tab:'active',filter:'',draft:null,rememberDraftInput:null,poll:null,loading:false,syncing:false,lastSyncAt:null,syncSignalsBound:false};
 const yen=n=>Number.isFinite(Number(n))?`¥${Math.round(Number(n)).toLocaleString('ja-JP')}`:'価格未定';
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const isoDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo'}).format(d);
@@ -201,18 +201,20 @@ function showDeliveryConfirm(order){
   $('deliveryCancel').onclick=closeSheet;$('deliveryDone').onclick=async()=>{$('deliveryDone').disabled=true;Object.assign(order,applyAction(order,'deliver'));await updateOrder(order,'delivered');closeSheet();state.tab='done';render();toast('完了へ移動しました')};
 }
 
-function openSheet(title,step=''){ $('sheetTitle').textContent=title;$('stepLabel').textContent=step;$('sheet').classList.remove('hidden');document.body.style.overflow='hidden';clearError()}
-function closeSheet(){ $('sheet').classList.add('hidden');$('sheet').classList.remove('productFullscreen');document.body.style.overflow='';state.draft=null}
+function openSheet(title,step=''){state.rememberDraftInput=null;$('sheetTitle').textContent=title;$('stepLabel').textContent=step;$('sheet').classList.remove('hidden');document.body.style.overflow='hidden';clearError()}
+function hasResumableDraft(){return Boolean(state.draft&&state.draft.stage!=='success'&&!state.draft.editingId)}
+function updateNewOrderButton(){$('newOrderBtn').textContent=hasResumableDraft()?'↩ 入力途中の注文を再開':'＋ 新しい注文'}
+function closeSheet(){state.rememberDraftInput?.();state.rememberDraftInput=null;$('sheet').classList.add('hidden');$('sheet').classList.remove('productFullscreen');document.body.style.overflow='';updateNewOrderButton()}
 function showError(msg){$('sheetError').textContent=msg;$('sheetError').classList.remove('hidden');$('sheetPanel')?.scrollTo({top:0,behavior:'smooth'})}
 function clearError(){$('sheetError').classList.add('hidden');$('sheetError').textContent=''}
-function freshDraft(){return{stage:'products',type:null,handoff:null,customerRegion:'domestic',items:[],store:'',phone:'',customer:'',account:'',staff:state.staff?.display_name||'',paymentMethod:PAYMENT.CREDIT,paid:false,delivered:false,shipped:false,prepared:PREP.NONE,headOfficeShared:false,headOfficeSharedAt:'',pickupDate:dateOffset(1),notes:'',clientSubmissionId:newUuid()}}
-function startOrder(){state.draft=freshDraft();openSheet('新しい注文','1 / 3');renderDraft()}
-function startEditOrder(order){state.draft={...order,items:(order.items||[]).map(item=>({...item,lineId:item.lineId||newUuid()})),stage:'products',editingId:order.localId};openSheet('注文を修正','1 / 3');renderDraft()}
-function renderDraft(){clearError();if(!state.draft)return;const d=state.draft;$('sheet').classList.toggle('productFullscreen',d.stage==='products');if(d.stage==='products')renderProductStep(d);else if(d.stage==='type')renderTypeStep(d);else if(d.stage==='info')renderInfoStep(d);else if(d.stage==='success')renderSuccess(d)}
-function renderProductStep(d){$('stepLabel').textContent=`1 / 3　${d.editingId?'修正':'商品'}`;$('sheetTitle').textContent=d.editingId?'注文を修正':'商品を追加';$('sheetBody').innerHTML=`<div class="step productStep"><div class="productSearch"><div class="productSearchRow"><input id="productQ" type="search" inputmode="search" placeholder="品番・商品名" autocomplete="off"><button id="clearPQ" class="secondary" aria-label="検索をクリア">×</button></div><div id="productResults" class="productResults" role="listbox"></div></div><div class="section productCartSection"><div class="sectionTitle">注文明細 <span id="cartCount">${d.items.reduce((s,i)=>s+i.qty,0)}点</span></div><div id="cartLines" class="cart"></div></div><div class="productKeypadDock"><div class="keypadTitle"><div><b>固定入力キー</b><small>画面を動かさず品番を入力</small></div><span id="keypadModeLabel">数字・記号</span></div><div id="productKeypad" class="productKeypad numberKeys"></div></div></div><div class="stickyActions one"><button id="toType" class="primary">注文内容へ進む</button></div>`;const q=$('productQ');q.oninput=()=>renderProductResults(d,q.value);$('clearPQ').onclick=()=>{q.value='';renderProductResults(d,'')};bindProductKeypad(d,q);$('toType').onclick=()=>{if(!d.items.length)return showError('商品を1点以上追加してください。');d.stage='type';renderDraft()};renderCart(d)}
+function freshDraft(){return{stage:'products',productQuery:'',type:null,handoff:null,customerRegion:'domestic',items:[],store:'',phone:'',customer:'',account:'',staff:state.staff?.display_name||'',paymentMethod:PAYMENT.CREDIT,paid:false,delivered:false,shipped:false,prepared:PREP.NONE,headOfficeShared:false,headOfficeSharedAt:'',pickupDate:dateOffset(1),notes:'',clientSubmissionId:newUuid()}}
+function startOrder(){const resume=hasResumableDraft();if(!resume)state.draft=freshDraft();openSheet('新しい注文','1 / 3');renderDraft();if(resume)toast('入力途中の注文を再開しました')}
+function startEditOrder(order){if(!(state.draft?.editingId===order.localId&&state.draft.stage!=='success'))state.draft={...order,productQuery:'',items:(order.items||[]).map(item=>({...item,lineId:item.lineId||newUuid()})),stage:'products',editingId:order.localId};openSheet('注文を修正','1 / 3');renderDraft()}
+function renderDraft(){state.rememberDraftInput=null;clearError();if(!state.draft)return;const d=state.draft;$('sheet').classList.toggle('productFullscreen',d.stage==='products');if(d.stage==='products')renderProductStep(d);else if(d.stage==='type')renderTypeStep(d);else if(d.stage==='info')renderInfoStep(d);else if(d.stage==='success')renderSuccess(d)}
+function renderProductStep(d){$('stepLabel').textContent=`1 / 3　${d.editingId?'修正':'商品'}`;$('sheetTitle').textContent=d.editingId?'注文を修正':'商品を追加';$('sheetBody').innerHTML=`<div class="step productStep"><div class="productSearch"><div class="productSearchRow"><input id="productQ" type="search" inputmode="search" placeholder="品番・商品名" autocomplete="off"><button id="clearPQ" class="secondary" aria-label="検索をクリア">×</button></div><div class="productKeypadDock"><div class="keypadTitle"><b>固定入力キー</b><span id="keypadModeLabel">数字・記号</span></div><div id="productKeypad" class="productKeypad numberKeys"></div></div><div id="productResults" class="productResults" role="listbox"></div></div><div class="section productCartSection"><div class="sectionTitle">注文明細 <span id="cartCount">${d.items.reduce((s,i)=>s+i.qty,0)}点</span></div><div id="cartLines" class="cart"></div></div></div><div class="stickyActions one"><button id="toType" class="primary">注文内容へ進む</button></div>`;const q=$('productQ');q.value=d.productQuery||'';q.oninput=()=>renderProductResults(d,q.value);$('clearPQ').onclick=()=>{q.value='';renderProductResults(d,'')};bindProductKeypad(d,q);$('toType').onclick=()=>{if(!d.items.length)return showError('商品を1点以上追加してください。');d.stage='type';renderDraft()};renderCart(d);renderProductResults(d,q.value)}
 function bindProductKeypad(d,q){
   const wrap=$('productKeypad'),modeLabel=$('keypadModeLabel');let mode='number';
-  const numeric=[['1'],['2'],['3'],['⌫','backspace'],['4'],['5'],['6'],['-'],['7'],['8'],['9'],['A字','alpha'],['0','insert','wide'],['クリア','clear','wide']];
+  const numeric=[['1'],['2'],['3'],['4'],['5'],['6'],['7'],['8'],['9'],['0'],['-'],['⌫','backspace'],['A字','alpha'],['クリア','clear']];
   const alpha='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(value=>[value]).concat([['-'],['⌫','backspace'],['数字','number'],['クリア','clear']]);
   const draw=()=>{
     const keys=mode==='number'?numeric:alpha;wrap.className=`productKeypad ${mode==='number'?'numberKeys':'alphaKeys'}`;modeLabel.textContent=mode==='number'?'数字・記号':'英字 A–Z';
@@ -222,7 +224,7 @@ function bindProductKeypad(d,q){
   draw();
 }
 function renderProductResults(d,query){
-  const q=String(query||'').trim().toLowerCase(),wrap=$('productResults');
+  d.productQuery=String(query||'');const q=d.productQuery.trim().toLowerCase(),wrap=$('productResults');
   if(!q){wrap.innerHTML='';wrap.classList.remove('open');return}
   const list=state.products.map((product,index)=>({product,index,rank:productRank(product,q)})).filter(result=>result.rank<9).sort((a,b)=>a.rank-b.rank||a.index-b.index).slice(0,35);
   wrap.classList.add('open');
@@ -266,6 +268,7 @@ function bindInfo(d,normal,now){
     if(normal){d.account=$('fAccount').value;d.staff=$('fStaff').value}
     else{d.customerRegion=$('fRegion').value;d.paymentMethod=$('fPayment').value;if($('fPickup'))d.pickupDate=$('fPickup').value;if($('fHotel'))d.hotelName=$('fHotel').value.trim();if($('fGuest'))d.guestName=$('fGuest').value.trim();if($('fRoom'))d.roomNo=$('fRoom').value.trim();if($('fCheckout'))d.checkoutDate=$('fCheckout').value;if($('fShip'))d.shipAddress=$('fShip').value.trim()}
   };
+  state.rememberDraftInput=remember;
   document.querySelectorAll('#sheetBody input,#sheetBody select,#sheetBody textarea').forEach(element=>element.onchange=remember);
   if($('payDone'))$('payDone').onclick=()=>{remember();d.paid=true;renderDraft()};
   if($('payLater'))$('payLater').onclick=()=>{remember();d.paid=false;renderDraft()};
@@ -277,7 +280,7 @@ function bindInfo(d,normal,now){
   $('saveBtn').onclick=async()=>{
     remember();if(now){d.paid=true;d.delivered=true;d.prepared=PREP.READY}
     const errors=validate(d);if(errors.length)return showError(errors[0]);$('saveBtn').disabled=true;
-    try{const order=d.editingId?await saveEdited(d):await saveNew(d);if(d.editingId){closeSheet();state.tab=groupOf(order);render();toast(state.online?'修正内容を全スタッフへ反映しました':'修正内容をこの端末へ保存しました')}else{state.draft={...order,stage:'success'};renderDraft()}}
+    try{const order=d.editingId?await saveEdited(d):await saveNew(d);if(d.editingId){state.draft=null;closeSheet();state.tab=groupOf(order);render();toast(state.online?'修正内容を全スタッフへ反映しました':'修正内容をこの端末へ保存しました')}else{state.draft={...order,stage:'success'};renderDraft()}}
     catch(error){console.error(error);showError('保存できませんでした。もう一度お試しください。');$('saveBtn').disabled=false}
   };
 }
@@ -327,23 +330,52 @@ function publicOrderFromResponse(json){
   return normalizeForSave({...data,localId:data.localId||`R-${json.id||json.orderNo||'receipt'}`,remoteId:String(json.id||''),publicToken:String(json.token||''),serverOrderNo:String(json.orderNo||data.orderNo||''),orderNo:String(json.orderNo||data.orderNo||''),store:data.customerCompany||'',customer:data.customerName==='通常注文'?'':data.customerName||'',phone:data.customerPhone||'',shipAddress:data.shippingAddress||'',items:(data.items||[]).map((item,index)=>({lineId:`receipt-${index}`,code:item.c,name:Array.isArray(item.n)?item.n[0]:item.n,price:Number(item.p||0),qty:Number(item.q||0)})),syncState:'synced'});
 }
 async function fetchPublicReceipt(token){return publicOrderFromResponse(await fetchJson(`${sbBase()}/functions/v1/${cfg.createFunctionName||'exhibition-order'}?token=${encodeURIComponent(token)}`,{headers:sbHeaders(false)}))}
+let receiptImagePreviewPromise=null;
+function setReceiptImageUi(status,message='',retryable=true){
+  const panel=$('receiptImagePanel'),statusLabel=$('receiptImageStatus'),preparing=$('receiptImagePreparing'),retry=$('retryReceiptImage');
+  panel.className=`receiptImagePanel ${status}`;statusLabel.className=`receiptImageStatus ${status}`;
+  if(status==='ready'){statusLabel.textContent=message||'画像の準備ができました';preparing.textContent='少しお待ちください'}
+  else if(status==='error'){statusLabel.textContent=message||'画像を作成できませんでした';preparing.textContent=message||'画像を作成できませんでした'}
+  else{statusLabel.textContent=message||'画像を準備中…';preparing.textContent='少しお待ちください'}
+  retry.classList.toggle('hidden',status!=='error'||!retryable);
+}
+async function waitForReceiptImages(root){
+  await Promise.all([...root.querySelectorAll('img')].map(image=>{
+    if(image.complete)return Promise.resolve();
+    return new Promise(resolve=>{const done=()=>{image.removeEventListener('load',done);image.removeEventListener('error',done);resolve()};image.addEventListener('load',done,{once:true});image.addEventListener('error',done,{once:true});setTimeout(done,5000)});
+  }));
+}
+async function prepareReceiptImagePreview(){
+  if(receiptImagePreviewPromise)return receiptImagePreviewPromise;
+  const preview=$('receiptImagePreview'),card=$('receiptCard');preview.removeAttribute('src');setReceiptImageUi('preparing');
+  receiptImagePreviewPromise=(async()=>{
+    let stage;
+    try{
+      if(!window.html2canvas)throw new Error('HTML2CANVAS_UNAVAILABLE');await document.fonts?.ready;
+      stage=document.createElement('div');stage.className='receiptCaptureStage';
+      const clone=card.cloneNode(true);clone.removeAttribute('id');clone.classList.add('captureMode');stage.appendChild(clone);document.body.appendChild(stage);
+      await waitForReceiptImages(clone);
+      const area=Math.max(1,clone.scrollWidth*clone.scrollHeight),scale=Math.max(1,Math.min(2,Math.sqrt(8000000/area)));
+      const canvas=await window.html2canvas(clone,{backgroundColor:'#ffffff',scale,useCORS:true,logging:false,windowWidth:960});
+      const dataUrl=canvas.toDataURL('image/png');if(!dataUrl.startsWith('data:image/png'))throw new Error('IMAGE_ENCODE_FAILED');
+      await new Promise((resolve,reject)=>{preview.onload=resolve;preview.onerror=()=>reject(new Error('IMAGE_PREVIEW_FAILED'));preview.src=dataUrl});
+      preview.onload=null;preview.onerror=null;setReceiptImageUi('ready');
+    }catch(error){console.error(error);preview.removeAttribute('src');setReceiptImageUi('error','画像を作成できませんでした',true)}
+    finally{stage?.remove();receiptImagePreviewPromise=null}
+  })();
+  return receiptImagePreviewPromise;
+}
 function renderPublicReceipt(order){
   document.body.classList.add('receiptOnly');$('loginView').classList.add('hidden');$('appView').classList.add('hidden');$('sheet').classList.add('hidden');$('receiptView').classList.remove('hidden');$('receiptCard').innerHTML=receiptDocumentHtml(order,{customerCopy:true});
-  $('downloadReceiptImage').onclick=()=>downloadReceiptImage(order);$('printPublicReceipt').onclick=()=>window.print();$('closePublicReceipt').onclick=()=>{location.href=location.pathname};
-}
-async function downloadReceiptImage(order){
-  const button=$('downloadReceiptImage'),card=$('receiptCard');button.disabled=true;button.textContent='画像を作成中…';
-  try{if(!window.html2canvas)throw new Error('HTML2CANVAS_UNAVAILABLE');await document.fonts?.ready;card.classList.add('captureMode');const canvas=await window.html2canvas(card,{backgroundColor:'#ffffff',scale:2,useCORS:true,logging:false,windowWidth:960});const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('IMAGE_ENCODE_FAILED')),'image/png'));const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`お客様控え_${receiptOrderNumber(order)}.png`;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(link.href),1000);toast('お客様控え画像を作成しました')}
-  catch(error){console.error(error);alert('控え画像を作成できませんでした。印刷・PDF保存をお試しください。')}
-  finally{card.classList.remove('captureMode');button.disabled=false;button.textContent='控えを画像でダウンロード'}
+  $('retryReceiptImage').onclick=prepareReceiptImagePreview;$('printPublicReceipt').onclick=()=>window.print();$('closePublicReceipt').onclick=()=>{location.href=location.pathname};prepareReceiptImagePreview();
 }
 async function showPublicReceiptFromHash(){
-  const token=decodeURIComponent(location.hash.replace(/^#receipt=/,''));document.body.classList.add('receiptOnly');$('loginView').classList.add('hidden');$('appView').classList.add('hidden');$('receiptView').classList.remove('hidden');$('receiptCard').innerHTML='<div class="receiptLoading">お客様控えを読み込んでいます…</div>';
-  try{renderPublicReceipt(await fetchPublicReceipt(token))}catch(error){console.error(error);$('receiptCard').innerHTML='<div class="receiptError">お客様控えを読み込めませんでした。QRコードを発行したスタッフへ確認してください。</div>'}
+  const token=decodeURIComponent(location.hash.replace(/^#receipt=/,''));document.body.classList.add('receiptOnly');$('loginView').classList.add('hidden');$('appView').classList.add('hidden');$('receiptView').classList.remove('hidden');setReceiptImageUi('preparing','お客様控えを読み込んでいます…');
+  try{renderPublicReceipt(await fetchPublicReceipt(token))}catch(error){console.error(error);setReceiptImageUi('error','お客様控えを読み込めませんでした。QRコードを発行したスタッフへ確認してください。',false)}
 }
 async function showReceiptQr(order){
   openSheet('お客様控えQR','お客様へ表示');$('sheetBody').innerHTML='<div class="step"><div class="receiptLoading">控えを準備しています…</div></div>';
-  try{if(!order.publicToken){if(!state.online)throw new Error('ONLINE_REQUIRED');await ensureRemoteCreate(order)}if(!window.QRCode)throw new Error('QRCODE_UNAVAILABLE');const url=receiptUrlFor(order);$('sheetBody').innerHTML=`<div class="step"><div class="qrReceipt"><div class="qrOrderNo">注文番号 ${esc(receiptOrderNumber(order))}</div><p>お客様のスマートフォンで読み取ると、控えを画像でダウンロードできます。</p><div id="customerQrCode"></div><details><summary>QRを読み取れない場合</summary><div class="manualReceiptUrl">${esc(url)}</div></details><button id="openReceiptPreview" class="secondary fullButton">お客様控えを開く</button><button id="copyReceiptUrl" class="secondary fullButton">控えURLをコピー</button><button id="qrPrintBtn" class="secondary fullButton">この注文を印刷・PDF保存</button></div></div><div class="stickyActions one"><button id="qrClose" class="primary">閉じる</button></div>`;new window.QRCode($('customerQrCode'),{text:url,width:260,height:260,correctLevel:window.QRCode.CorrectLevel.M});$('openReceiptPreview').onclick=()=>window.open(url,'_blank','noopener');$('copyReceiptUrl').onclick=async()=>{try{await navigator.clipboard.writeText(url);toast('控えURLをコピーしました')}catch{prompt('このURLをコピーしてください',url)}};$('qrPrintBtn').onclick=()=>printOrder(order);$('qrClose').onclick=closeSheet}
+  try{if(!order.publicToken){if(!state.online)throw new Error('ONLINE_REQUIRED');await ensureRemoteCreate(order)}if(!window.QRCode)throw new Error('QRCODE_UNAVAILABLE');const url=receiptUrlFor(order);$('sheetBody').innerHTML=`<div class="step"><div class="qrReceipt"><div class="qrOrderNo">注文番号 ${esc(receiptOrderNumber(order))}</div><p>お客様のスマートフォンで読み取ると控え画像が表示されます。画像を長押しして保存できます。</p><div id="customerQrCode"></div><details><summary>QRを読み取れない場合</summary><div class="manualReceiptUrl">${esc(url)}</div></details><button id="openReceiptPreview" class="secondary fullButton">お客様控えを開く</button><button id="copyReceiptUrl" class="secondary fullButton">控えURLをコピー</button><button id="qrPrintBtn" class="secondary fullButton">この注文を印刷・PDF保存</button></div></div><div class="stickyActions one"><button id="qrClose" class="primary">閉じる</button></div>`;new window.QRCode($('customerQrCode'),{text:url,width:260,height:260,correctLevel:window.QRCode.CorrectLevel.M});$('openReceiptPreview').onclick=()=>window.open(url,'_blank','noopener');$('copyReceiptUrl').onclick=async()=>{try{await navigator.clipboard.writeText(url);toast('控えURLをコピーしました')}catch{prompt('このURLをコピーしてください',url)}};$('qrPrintBtn').onclick=()=>printOrder(order);$('qrClose').onclick=closeSheet}
   catch(error){console.error(error);$('sheetBody').innerHTML=`<div class="step"><div class="receiptError">${state.online?'お客様控えを準備できませんでした。同期状態を確認して再度お試しください。':'お客様控えQRは登録スタッフでログインし、オンライン同期した注文で利用できます。'}</div></div><div class="stickyActions one"><button id="qrClose" class="primary">閉じる</button></div>`;$('qrClose').onclick=closeSheet}
 }
 function showPrintMenu(){
