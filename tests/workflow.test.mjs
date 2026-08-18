@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,customerNameWithHonorific,validate,isDone,groupOf,nextAction,applyAction} from '../workflow.js';
+import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,applyAction} from '../workflow.js';
 
 const item={code:'1054',name:'x',price:100,qty:1};
 
@@ -8,6 +8,15 @@ test('控えのお客様名へ敬称を重複なく付ける',()=>{
   assert.equal(customerNameWithHonorific('山田 太郎 様'),'山田 太郎 様');
   assert.equal(customerNameWithHonorific('株式会社テスト 御中'),'株式会社テスト 御中');
   assert.equal(customerNameWithHonorific(''),'-');
+});
+
+test('お客様控えには本社共有済み・未共有を表示しない',()=>{
+  const shared={type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,headOfficeShared:true};
+  const unshared={...shared,headOfficeShared:false};
+  assert.deepEqual(receiptInternalInfo(shared,{customerCopy:true}),{showStatus:false,headOfficeShare:''});
+  assert.deepEqual(receiptInternalInfo(unshared,{customerCopy:true}),{showStatus:false,headOfficeShare:''});
+  assert.equal(receiptInternalInfo(shared).headOfficeShare,'共有済み');
+  assert.equal(receiptInternalInfo(unshared).headOfficeShare,'未共有');
 });
 
 test('国内通常注文は卸屋・帳合先と担当必須',()=>{

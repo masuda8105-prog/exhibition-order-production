@@ -21,6 +21,14 @@ export function customerNameWithHonorific(name){
   return /(?:様|さま|御中|殿)$/.test(value)?value:`${value} 様`;
 }
 
+export function receiptInternalInfo(order,{customerCopy=false}={}){
+  if(customerCopy) return {showStatus:false,headOfficeShare:''};
+  return {
+    showStatus:true,
+    headOfficeShare:needsHeadOfficeShare(order)?(order?.headOfficeShared?'共有済み':'未共有'):'',
+  };
+}
+
 export function validate(order){
   const errors=[];
   if(!(order?.items||[]).length) errors.push('商品を1点以上追加してください。');
