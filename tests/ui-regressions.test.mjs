@@ -11,7 +11,12 @@ const [index,app,styles]=await Promise.all([
 test('お客様控えは長押し保存用の画像として表示する',()=>{
   assert.match(index,/id="receiptImagePreview"/);
   assert.doesNotMatch(index,/id="downloadReceiptImage"/);
+  assert.doesNotMatch(index,/id="printPublicReceipt"/);
   assert.match(app,/preview\.src=dataUrl/);
+  assert.doesNotMatch(app,/manualReceiptUrl/);
+  assert.doesNotMatch(app,/copyReceiptUrl/);
+  assert.match(app,/internalInfo\.showCreatedAt/);
+  assert.match(app,/internalInfo\.showGuide/);
   assert.match(styles,/-webkit-touch-callout:default/);
 });
 
