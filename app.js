@@ -316,7 +316,7 @@ function receiptDocumentHtml(order,{customerCopy=false}={}){
   const itemCount=(order.items||[]).reduce((sum,item)=>sum+Number(item.qty||0),0);
   const customerName=customerCopy?customerNameWithHonorific(order.customer):order.customer||'-';
   const internalInfo=receiptInternalInfo(order,{customerCopy});
-  const info=[['店舗名',order.store],['電話番号',order.phone],['お客様名',customerName],['注文区分',labelOrder(order)],['卸屋・帳合先',order.account||'-'],['担当',order.staff||state.staff?.display_name||'-'],['受け渡し',handoffLabel(order)]];if(internalInfo.showStatus)info.push(['状態',status]);
+  const info=[['店舗名',order.store],['電話番号',order.phone],['お客様名',customerName],['注文区分',labelOrder(order)],['卸屋・帳合先',order.account||'-'],['担当',order.staff||state.staff?.display_name||'-']];if(internalInfo.showHandoff)info.push(['受け渡し',handoffLabel(order)]);if(internalInfo.showStatus)info.push(['状態',status]);
   const createdAtHtml=internalInfo.showCreatedAt?`<br><b>作成日時</b> ${new Date(order.createdAt||Date.now()).toLocaleString('ja-JP')}`:'';
   const infoHtml=info.map(([label,value])=>`<div class="receiptInfoCard"><div class="receiptInfoLabel">${esc(label)}</div><div class="receiptInfoValue">${esc(value||'-')}</div></div>`).join('');
   const itemsHtml=(order.items||[]).map(item=>`<tr><td><b>${esc(item.code)}</b></td><td>${esc(item.name)}</td><td class="num">${item.qty}</td><td class="num">${yen(item.price)}</td><td class="num"><b>${yen(item.price*item.qty)}</b></td></tr>`).join('');
@@ -387,9 +387,9 @@ async function showReceiptQr(order){
     if(!order.publicToken){if(!state.online)throw new Error('ONLINE_REQUIRED');await ensureRemoteCreate(order)}
     if(!window.QRCode)throw new Error('QRCODE_UNAVAILABLE');
     const url=receiptUrlFor(order);
-    $('sheetBody').innerHTML=`<div class="step"><div class="qrReceipt"><div class="qrOrderNo">注文番号 ${esc(receiptOrderNumber(order))}</div><p>お客様のスマートフォンで読み取ると控え画像が表示されます。画像を長押しして保存できます。</p><div id="customerQrCode"></div><button id="openReceiptPreview" class="secondary fullButton">お客様控えを開く</button><button id="qrPrintBtn" class="secondary fullButton">この注文を印刷・PDF保存</button></div></div><div class="stickyActions one"><button id="qrClose" class="primary">閉じる</button></div>`;
+    $('sheetBody').innerHTML=`<div class="step"><div class="qrReceipt"><div class="qrOrderNo">注文番号 ${esc(receiptOrderNumber(order))}</div><p>お客様のスマートフォンで読み取ると控え画像が表示されます。画像を長押しして保存できます。</p><div id="customerQrCode"></div><button id="openReceiptPreview" class="secondary fullButton">お客様控えを開く</button></div></div><div class="stickyActions one"><button id="qrClose" class="primary">閉じる</button></div>`;
     new window.QRCode($('customerQrCode'),{text:url,width:260,height:260,correctLevel:window.QRCode.CorrectLevel.M});
-    $('openReceiptPreview').onclick=()=>window.open(url,'_blank','noopener');$('qrPrintBtn').onclick=()=>printOrder(order);$('qrClose').onclick=closeSheet;
+    $('openReceiptPreview').onclick=()=>window.open(url,'_blank','noopener');$('qrClose').onclick=closeSheet;
   }
   catch(error){console.error(error);$('sheetBody').innerHTML=`<div class="step"><div class="receiptError">${state.online?'お客様控えを準備できませんでした。同期状態を確認して再度お試しください。':'お客様控えQRは登録スタッフでログインし、オンライン同期した注文で利用できます。'}</div></div><div class="stickyActions one"><button id="qrClose" class="primary">閉じる</button></div>`;$('qrClose').onclick=closeSheet}
 }

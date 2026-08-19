@@ -22,9 +22,10 @@ export function customerNameWithHonorific(name){
 }
 
 export function receiptInternalInfo(order,{customerCopy=false}={}){
-  if(customerCopy) return {showStatus:false,showCreatedAt:false,showGuide:false,headOfficeShare:''};
+  if(customerCopy) return {showStatus:false,showHandoff:false,showCreatedAt:false,showGuide:false,headOfficeShare:''};
   return {
     showStatus:true,
+    showHandoff:true,
     showCreatedAt:true,
     showGuide:true,
     headOfficeShare:needsHeadOfficeShare(order)?(order?.headOfficeShared?'共有済み':'未共有'):'',

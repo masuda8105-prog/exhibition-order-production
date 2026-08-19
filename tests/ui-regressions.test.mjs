@@ -15,8 +15,10 @@ test('お客様控えは長押し保存用の画像として表示する',()=>{
   assert.match(app,/preview\.src=dataUrl/);
   assert.doesNotMatch(app,/manualReceiptUrl/);
   assert.doesNotMatch(app,/copyReceiptUrl/);
+  assert.doesNotMatch(app,/qrPrintBtn/);
   assert.match(app,/internalInfo\.showCreatedAt/);
   assert.match(app,/internalInfo\.showGuide/);
+  assert.match(app,/internalInfo\.showHandoff/);
   assert.match(styles,/-webkit-touch-callout:default/);
 });
 
@@ -50,4 +52,6 @@ test('商品の渡し方はすべて1列で表示する',()=>{
 
 test('注文カードには不要な印刷対象ラベルを表示しない',()=>{
   assert.doesNotMatch(app,/印刷対象/);
+  assert.match(styles,/\.batchTable\{font-size:7\.5px;line-height:1\.15;table-layout:fixed\}/);
+  assert.match(styles,/\.batchTable th,\.batchTable td\{padding:2\.5px 3px\}/);
 });
