@@ -87,6 +87,15 @@ export function labelOrder(order){
   return h;
 }
 
+export function compareOrdersForPrint(a,b){
+  const categoryRank=order=>order?.type===ORDER_TYPE.NORMAL?0:({now:1,later:2,hotel:3,ship:4}[order?.handoff]??5);
+  const categoryDiff=categoryRank(a)-categoryRank(b);if(categoryDiff)return categoryDiff;
+  const compareText=(left,right)=>String(left??'').trim().localeCompare(String(right??'').trim(),'ja',{numeric:true,sensitivity:'base'});
+  const accountA=String(a?.account??'').trim(),accountB=String(b?.account??'').trim();
+  if(Boolean(accountA)!==Boolean(accountB))return accountA?-1:1;
+  return compareText(accountA,accountB)||compareText(a?.store,b?.store)||compareText(a?.customer,b?.customer)||compareText(a?.createdAt,b?.createdAt)||compareText(a?.receiptNo||a?.localId,b?.receiptNo||b?.localId);
+}
+
 export function handoffLabel(order){
   if(order?.type===ORDER_TYPE.NORMAL) return '帰社後にまとめて印刷';
   if(order?.handoff===HANDOFF.NOW) return 'その場で会計・お渡し';

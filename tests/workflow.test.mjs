@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,applyAction} from '../workflow.js';
+import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,compareOrdersForPrint,applyAction} from '../workflow.js';
 
 const item={code:'1054',name:'x',price:100,qty:1};
 
@@ -28,6 +28,17 @@ test('国内通常注文は登録時点で完了',()=>{
   const order={type:ORDER_TYPE.NORMAL,items:[item],store:'A',phone:'1',account:'卸屋',staff:'担当'};
   assert.equal(isDone(order),true);
   assert.equal(groupOf(order),'done');
+});
+
+test('一括印刷は区分順、その中で卸屋・帳合先順に並ぶ',()=>{
+  const orders=[
+    {localId:'later',type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,store:'C'},
+    {localId:'normal-b',type:ORDER_TYPE.NORMAL,account:'中央卸',store:'B'},
+    {localId:'normal-a',type:ORDER_TYPE.NORMAL,account:'あおば卸',store:'A'},
+    {localId:'now',type:ORDER_TYPE.SPOT,handoff:HANDOFF.NOW,store:'D'},
+    {localId:'normal-empty',type:ORDER_TYPE.NORMAL,account:'',store:'Z'},
+  ];
+  assert.deepEqual(orders.sort(compareOrdersForPrint).map(order=>order.localId),['normal-a','normal-b','normal-empty','now','later']);
 });
 
 test('その場渡しは受付番号も本社共有も不要',()=>{

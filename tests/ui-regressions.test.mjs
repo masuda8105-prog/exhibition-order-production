@@ -54,4 +54,6 @@ test('注文カードには不要な印刷対象ラベルを表示しない',()=
   assert.doesNotMatch(app,/印刷対象/);
   assert.match(styles,/\.batchTable\{font-size:7\.5px;line-height:1\.15;table-layout:fixed\}/);
   assert.match(styles,/\.batchTable th,\.batchTable td\{padding:2\.5px 3px\}/);
+  assert.match(app,/sort\(compareOrdersForPrint\)/);
+  assert.match(app,/<th>卸屋・帳合先<\/th>/);
 });

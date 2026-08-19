@@ -1,4 +1,4 @@
-import {ORDER_TYPE,HANDOFF,PAYMENT,PREP,needsHeadOfficeShare,needsReceipt,totalOf,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,labelOrder,handoffLabel,normalizeForSave,applyAction} from './workflow.js';
+import {ORDER_TYPE,HANDOFF,PAYMENT,PREP,needsHeadOfficeShare,needsReceipt,totalOf,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,labelOrder,compareOrdersForPrint,handoffLabel,normalizeForSave,applyAction} from './workflow.js';
 
 const cfg=window.EXHIBITION_CONFIG||{};
 const $=id=>document.getElementById(id);
@@ -325,10 +325,10 @@ function receiptDocumentHtml(order,{customerCopy=false}={}){
 }
 function printSheetHtml(order){return `<article class="printSheet printPage receiptSheet">${receiptDocumentHtml(order)}</article>`}
 function printOrders(orders,title,withCover=true){
-  const list=orders.filter(order=>!order.deleted).sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
+  const list=orders.filter(order=>!order.deleted).sort(compareOrdersForPrint);
   if(!list.length)return toast('印刷する注文がありません');
   const totalQty=list.reduce((sum,order)=>sum+(order.items||[]).reduce((value,item)=>value+Number(item.qty||0),0),0),grandTotal=list.reduce((sum,order)=>sum+totalOf(order),0);
-  const cover=withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(cfg.eventName||'展示会')}</div><h1>${esc(title)}</h1><p>出力日時 ${new Date().toLocaleString('ja-JP')}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>区分</th><th>店舗・お客様</th><th>状態</th><th>合計</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${{active:'要対応',waiting:'受取待ち',done:'完了'}[groupOf(order)]}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
+  const cover=withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(cfg.eventName||'展示会')}</div><h1>${esc(title)}</h1><p>出力日時 ${new Date().toLocaleString('ja-JP')}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>区分</th><th>卸屋・帳合先</th><th>店舗・お客様</th><th>状態</th><th>合計</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.account||'-')}</td><td>${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${{active:'要対応',waiting:'受取待ち',done:'完了'}[groupOf(order)]}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
   $('printArea').innerHTML=`${cover}${list.map(printSheetHtml).join('')}<div class="printFoot">出力日時 ${new Date().toLocaleString('ja-JP')}</div>`;
   window.print();
 }
