@@ -15,16 +15,16 @@ const [index,styles,config,workflow,app,qrcode,html2canvas,logo]=await Promise.a
 ]);
 
 const inlineWorkflow=workflow.replace(/^export\s+/gm,'');
-const inlineApp=app.replace(/^import\s+\{[^\n]+\}\s+from\s+'\.\/workflow\.js';\s*/,'');
+const inlineApp=app.replace(/^import\s+\{[^\n]+\}\s+from\s+'\.\/workflow\.js(?:\?[^']+)?';\s*/,'');
 const safeQrcode=qrcode.replaceAll('</script>','<\\/script>');
 const safeHtml2canvas=html2canvas.replaceAll('</script>','<\\/script>');
 const logoData=`data:image/jpeg;base64,${logo.toString('base64')}`;
 const preview=index
-  .replace('<link rel="stylesheet" href="styles.css?v=20260810-qr11">',`<style>\n${styles}\n</style>`)
-  .replace('<script src="online-config.js?v=20260810-qr11"></script>',`<script>\n${config}\n</script>`)
-  .replace('<script src="vendor/qrcode.min.js?v=20260810-qr11"></script>',`<script>\n${safeQrcode}\n</script>`)
-  .replace('<script src="vendor/html2canvas.min.js?v=20260810-qr11"></script>',`<script>\n${safeHtml2canvas}\n</script>`)
-  .replace('<script type="module" src="app.js?v=20260810-qr11"></script>',`<script type="module">\n${inlineWorkflow}\n${inlineApp}\n</script>`)
+  .replace('<link rel="stylesheet" href="styles.css?v=20260824-ui12">',`<style>\n${styles}\n</style>`)
+  .replace('<script src="online-config.js?v=20260824-ui12"></script>',`<script>\n${config}\n</script>`)
+  .replace('<script src="vendor/qrcode.min.js?v=20260824-ui12"></script>',`<script>\n${safeQrcode}\n</script>`)
+  .replace('<script src="vendor/html2canvas.min.js?v=20260824-ui12"></script>',`<script>\n${safeHtml2canvas}\n</script>`)
+  .replace('<script type="module" src="app.js?v=20260824-ui12"></script>',`<script type="module">\n${inlineWorkflow}\n${inlineApp}\n</script>`)
   .replaceAll('assets/sun_nishimura_logo.jpg',logoData);
 
 await fs.writeFile(path.join(root,'exhibition_order_production_preview.html'),preview,'utf8');

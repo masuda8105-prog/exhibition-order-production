@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,compareOrdersForPrint,applyAction} from '../workflow.js';
+import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesOperationalFilter,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,compareOrdersForPrint,applyAction} from '../workflow.js';
 
 const item={code:'1054',name:'x',price:100,qty:1};
 
@@ -102,4 +102,59 @@ test('現売りはお客様名と会計方法が必須',()=>{
   const order={type:ORDER_TYPE.SPOT,handoff:HANDOFF.NOW,items:[item],store:'A',phone:'1',customer:'',paymentMethod:PAYMENT.NONE};
   assert.equal(validate(order).includes('お客様名は必須です。'),true);
   assert.equal(validate(order).includes('会計方法を選択してください。'),true);
+});
+
+test('未会計は要対応と受取待ちを横断して件数と一覧が一致する',()=>{
+  const active={type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,headOfficeShared:false,paid:false,delivered:false};
+  const waiting={type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,headOfficeShared:true,paid:false,delivered:false};
+  const done={type:ORDER_TYPE.SPOT,handoff:HANDOFF.NOW,headOfficeShared:false,paid:true,delivered:true};
+  const result=[active,waiting,done].filter(order=>orderMatchesOperationalFilter(order,'unpaid'));
+  assert.equal(result.length,2);
+  assert.deepEqual(result.map(groupOf),['active','waiting']);
+});
+
+test('検索は店舗・受付番号・電話・品番・商品名を全フォルダから探す',()=>{
+  const orders=[
+    {store:'青山眼鏡',receiptNo:'N-001',phone:'03-1111',items:[{code:'1054',name:'調整ヤットコ'}],type:ORDER_TYPE.NORMAL},
+    {store:'大阪店',receiptNo:'N-002',phone:'+81 6 2222',items:[{code:'2000',name:'ケース'}],type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,headOfficeShared:true},
+  ];
+  for(const query of ['青山','N-002','+81','1054','ケース'])assert.equal(orders.filter(order=>orderMatchesSearch(order,query)).length,1);
+});
+
+test('電話番号は海外番号を許容し、想定外文字だけを警告する',()=>{
+  for(const value of ['03-1234-5678','+81 (0)3 1234 5678','+82（2）123-4567'])assert.equal(phoneHasUnexpectedCharacters(value),false);
+  assert.equal(phoneHasUnexpectedCharacters('03-ABCD-5678'),true);
+  assert.equal(phoneHasUnexpectedCharacters('03/1234/5678'),true);
+});
+
+test('その他の卸屋・帳合先は具体名が必須',()=>{
+  const base={type:ORDER_TYPE.NORMAL,items:[item],store:'A',phone:'1',staff:'担当',accountChoice:'その他',accountOther:'',account:''};
+  assert.ok(validate(base).includes('卸屋・帳合先名を入力してください。'));
+  const named={...base,accountOther:'地域卸A',account:'地域卸A'};
+  assert.equal(validate(named).length,0);
+});
+
+test('日本時間の23:59と00:01は別の受付日になる',()=>{
+  assert.equal(createdDateInTokyo({createdAt:'2026-10-06T14:59:00.000Z'}),'2026-10-06');
+  assert.equal(createdDateInTokyo({created_at:'2026-10-06T15:01:00.000Z'}),'2026-10-07');
+});
+
+test('本日・指定期間・全期間の件数、点数、金額が一致する',()=>{
+  const orders=[
+    {createdAt:'2026-10-06T01:00:00Z',items:[{price:100,qty:2}],syncState:'synced',type:ORDER_TYPE.NORMAL},
+    {created_at:'2026-10-07T01:00:00Z',items:[{price:250,qty:1}],syncState:'synced',type:ORDER_TYPE.NORMAL},
+    {createdAt:'',items:[{price:500,qty:3}],syncState:'pending',type:ORDER_TYPE.NORMAL},
+  ];
+  const todayList=filterOrdersByCreatedDate(orders,{mode:'today',today:'2026-10-06'});
+  const rangeList=filterOrdersByCreatedDate(orders,{mode:'range',start:'2026-10-06',end:'2026-10-07'});
+  const allList=filterOrdersByCreatedDate(orders,{mode:'all'});
+  assert.deepEqual(batchSummary(todayList),{orders:1,items:2,total:200,pending:0,unshared:0,active:0,waiting:0,unpaid:0});
+  assert.equal(batchSummary(rangeList).orders,2);
+  assert.deepEqual([batchSummary(allList).orders,batchSummary(allList).items,batchSummary(allList).total,batchSummary(allList).pending],[3,6,1950,1]);
+  assert.equal(totalOf(orders[0]),200);assert.equal(itemCountOf(orders[2]),3);
+});
+
+test('指定日の開始日と終了日は両方を含む',()=>{
+  const orders=['2026-10-05T12:00:00+09:00','2026-10-06T00:00:00+09:00','2026-10-07T23:59:00+09:00','2026-10-08T00:00:00+09:00'].map(createdAt=>({createdAt}));
+  assert.equal(filterOrdersByCreatedDate(orders,{mode:'range',start:'2026-10-06',end:'2026-10-07'}).length,2);
 });

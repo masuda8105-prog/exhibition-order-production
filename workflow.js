@@ -15,6 +15,64 @@ export function totalOf(order){
   return (order?.items||[]).reduce((sum,item)=>sum + Number(item.price||0)*Number(item.qty||0),0);
 }
 
+export function itemCountOf(order){
+  return (order?.items||[]).reduce((sum,item)=>sum+Number(item?.qty||0),0);
+}
+
+export function phoneHasUnexpectedCharacters(value){
+  const phone=String(value??'');
+  return Boolean(phone && !/^[0-9+\-\s()（）]+$/.test(phone));
+}
+
+export function createdDateInTokyo(order){
+  const raw=order?.createdAt||order?.created_at||'';
+  if(!raw) return '';
+  const date=new Date(raw);
+  if(Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);
+}
+
+export function filterOrdersByCreatedDate(orders,{mode='all',today='',start='',end=''}={}){
+  const visible=(orders||[]).filter(order=>!order?.deleted);
+  if(mode==='all') return visible;
+  const from=mode==='today'?today:start;
+  const to=mode==='today'?today:(end||start);
+  if(!from||!to) return [];
+  return visible.filter(order=>{
+    const date=createdDateInTokyo(order);
+    return Boolean(date&&date>=from&&date<=to);
+  });
+}
+
+export function orderMatchesOperationalFilter(order,filter){
+  if(!order||order.deleted) return false;
+  if(filter==='unshared') return needsHeadOfficeShare(order)&&!order.headOfficeShared;
+  if(filter==='pickup') return order.handoff===HANDOFF.LATER&&order.headOfficeShared&&!order.delivered;
+  if(filter==='unpaid') return order.type===ORDER_TYPE.SPOT&&!order.paid;
+  return true;
+}
+
+export function orderMatchesSearch(order,query){
+  const q=String(query??'').trim().toLowerCase();
+  if(!q) return true;
+  return [order?.receiptNo,order?.serverOrderNo,order?.orderNo,order?.store,order?.customer,order?.phone,...(order?.items||[]).flatMap(item=>[item?.code,item?.name])]
+    .join(' ').toLowerCase().includes(q);
+}
+
+export function batchSummary(orders){
+  const list=(orders||[]).filter(order=>!order?.deleted);
+  return {
+    orders:list.length,
+    items:list.reduce((sum,order)=>sum+itemCountOf(order),0),
+    total:list.reduce((sum,order)=>sum+totalOf(order),0),
+    pending:list.filter(order=>order.syncState!=='synced').length,
+    unshared:list.filter(order=>orderMatchesOperationalFilter(order,'unshared')).length,
+    active:list.filter(order=>groupOf(order)==='active').length,
+    waiting:list.filter(order=>groupOf(order)==='waiting').length,
+    unpaid:list.filter(order=>orderMatchesOperationalFilter(order,'unpaid')).length,
+  };
+}
+
 export function customerNameWithHonorific(name){
   const value=String(name??'').trim();
   if(!value) return '-';
@@ -41,6 +99,7 @@ export function validate(order){
   if(!String(order?.store||'').trim()) errors.push('店舗名は必須です。');
   if(!String(order?.phone||'').trim()) errors.push('電話番号は必須です。');
   if(order?.type===ORDER_TYPE.NORMAL){
+    if(order?.accountChoice==='その他'&&!String(order?.accountOther||'').trim()) errors.push('卸屋・帳合先名を入力してください。');
     if(!String(order?.account||'').trim()) errors.push('卸屋・帳合先は必須です。');
     if(!String(order?.staff||'').trim()) errors.push('受注担当者は必須です。');
   }

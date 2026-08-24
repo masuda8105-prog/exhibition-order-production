@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <title>展示会 注文管理</title>
-<link rel="stylesheet" href="styles.css?v=20260810-qr11">
-<script src="online-config.js?v=20260810-qr11"></script>
+<link rel="stylesheet" href="styles.css?v=20260824-ui12">
+<script src="online-config.js?v=20260824-ui12"></script>
 </head>
 <body>
 <div id="toast" class="toast" aria-live="polite"></div>
@@ -18,7 +18,7 @@
     <label>メール<input id="loginEmail" type="email" autocomplete="username"></label>
     <label>パスワード<input id="loginPassword" type="password" autocomplete="current-password"></label>
     <button id="loginBtn" type="button" class="primary">ログイン</button>
-    <button id="demoBtn" type="button" class="secondary">端末モード（共有されません）</button>
+    <div id="loginNetworkGuide" class="loginNetworkGuide hidden">現在オフラインです。登録スタッフのログインには再接続が必要です。</div>
     <div id="loginMsg" class="errorText"></div>
   </div>
 </section>
@@ -27,9 +27,10 @@
   <header class="topbar">
     <div class="brandRow">
       <div><div class="eyebrow" id="eventName">EXHIBITION</div><h1>注文管理</h1></div>
-      <button id="refreshBtn" class="iconBtn" aria-label="更新">↻</button>
+      <button id="refreshBtn" class="secondary compact" aria-label="同期する">↻ 同期</button>
     </div>
-    <div class="syncLine"><span id="syncDot" class="syncDot"></span><span id="syncText">端末モード</span><button id="logoutBtn" class="linkBtn hidden">ログアウト</button></div>
+    <div class="syncLine"><span id="syncDot" class="syncDot"></span><span id="syncText">同期状態を確認中</span><button id="logoutBtn" class="linkBtn hidden">ログアウト</button></div>
+    <div class="metricsLabel">重要な確認</div>
     <div class="metrics">
       <button class="metric danger" data-filter="unshared"><small>本社未共有</small><b id="metricUnshared">0</b></button>
       <button class="metric" data-filter="pickup"><small>受取待ち</small><b id="metricPickup">0</b></button>
@@ -44,14 +45,17 @@
 
   <main>
     <div class="toolbar">
-      <div class="searchWrap"><span>⌕</span><input id="orderSearch" type="search" placeholder="店舗・受付番号・電話・品番"></div>
+      <div class="searchWrap"><span>⌕</span><input id="orderSearch" type="search" placeholder="店舗・受付番号・電話・品番・商品名"></div>
       <button id="filterBtn" class="secondary compact">絞込</button>
     </div>
-    <button id="printMenuBtn" class="secondary printMenuButton">印刷・PDF</button>
+    <button id="printMenuBtn" class="secondary printMenuButton">提出・印刷</button>
     <div id="activeFilter" class="activeFilter hidden"></div>
     <section id="orders" class="orders"></section>
   </main>
-  <button id="newOrderBtn" class="newOrderBtn">＋ 新しい注文</button>
+  <div class="newOrderActions">
+    <button id="newOrderBtn" class="newOrderBtn">＋ 新しい注文</button>
+    <button id="discardDraftBtn" class="discardDraftBtn hidden">破棄して新しい注文</button>
+  </div>
 </div>
 
 <section id="receiptView" class="receiptPage hidden">
@@ -87,8 +91,8 @@
 </div>
 
 <div id="printArea" class="printArea"></div>
-<script src="vendor/qrcode.min.js?v=20260810-qr11"></script>
-<script src="vendor/html2canvas.min.js?v=20260810-qr11"></script>
-<script type="module" src="app.js?v=20260810-qr11"></script>
+<script src="vendor/qrcode.min.js?v=20260824-ui12"></script>
+<script src="vendor/html2canvas.min.js?v=20260824-ui12"></script>
+<script type="module" src="app.js?v=20260824-ui12"></script>
 </body>
 </html>
