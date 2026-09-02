@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesOperationalFilter,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,compareOrdersForPrint,applyAction} from '../workflow.js';
 
-const item={code:'1054',name:'x',price:100,qty:1};
+const item={code:'TEST-001',name:'テスト商品',price:100,qty:1};
 
 test('控えのお客様名へ敬称を重複なく付ける',()=>{
   assert.equal(customerNameWithHonorific('山田 太郎'),'山田 太郎 様');
@@ -89,7 +89,7 @@ test('指定先配送も本社共有済みで完了',()=>{
 });
 
 test('価格未定の商品は受注できない',()=>{
-  const order={type:ORDER_TYPE.NORMAL,items:[{code:'141-802',name:'x',price:null,qty:1}],store:'A',phone:'1',account:'X',staff:'Y'};
+  const order={type:ORDER_TYPE.NORMAL,items:[{code:'TEST-PENDING',name:'テスト商品',price:null,qty:1}],store:'A',phone:'1',account:'X',staff:'Y'};
   assert.equal(validate(order).includes('価格未定の商品は注文できません。'),true);
 });
 
@@ -115,10 +115,10 @@ test('未会計は要対応と受取待ちを横断して件数と一覧が一�
 
 test('検索は店舗・受付番号・電話・品番・商品名を全フォルダから探す',()=>{
   const orders=[
-    {store:'青山眼鏡',receiptNo:'N-001',phone:'03-1111',items:[{code:'1054',name:'調整ヤットコ'}],type:ORDER_TYPE.NORMAL},
-    {store:'大阪店',receiptNo:'N-002',phone:'+81 6 2222',items:[{code:'2000',name:'ケース'}],type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,headOfficeShared:true},
+    {store:'テスト店舗A',receiptNo:'N-001',phone:'03-1111',items:[{code:'TEST-001',name:'テスト商品A'}],type:ORDER_TYPE.NORMAL},
+    {store:'テスト店舗B',receiptNo:'N-002',phone:'+81 6 2222',items:[{code:'TEST-002',name:'テスト商品B'}],type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,headOfficeShared:true},
   ];
-  for(const query of ['青山','N-002','+81','1054','ケース'])assert.equal(orders.filter(order=>orderMatchesSearch(order,query)).length,1);
+  for(const query of ['店舗A','N-002','+81','TEST-001','商品B'])assert.equal(orders.filter(order=>orderMatchesSearch(order,query)).length,1);
 });
 
 test('電話番号は海外番号を許容し、想定外文字だけを警告する',()=>{
@@ -135,18 +135,18 @@ test('その他の卸屋・帳合先は具体名が必須',()=>{
 });
 
 test('日本時間の23:59と00:01は別の受付日になる',()=>{
-  assert.equal(createdDateInTokyo({createdAt:'2026-10-06T14:59:00.000Z'}),'2026-10-06');
-  assert.equal(createdDateInTokyo({created_at:'2026-10-06T15:01:00.000Z'}),'2026-10-07');
+  assert.equal(createdDateInTokyo({createdAt:'2099-01-01T14:59:00.000Z'}),'2099-01-01');
+  assert.equal(createdDateInTokyo({created_at:'2099-01-01T15:01:00.000Z'}),'2099-01-02');
 });
 
 test('本日・指定期間・全期間の件数、点数、金額が一致する',()=>{
   const orders=[
-    {createdAt:'2026-10-06T01:00:00Z',items:[{price:100,qty:2}],syncState:'synced',type:ORDER_TYPE.NORMAL},
-    {created_at:'2026-10-07T01:00:00Z',items:[{price:250,qty:1}],syncState:'synced',type:ORDER_TYPE.NORMAL},
+    {createdAt:'2099-01-01T01:00:00Z',items:[{price:100,qty:2}],syncState:'synced',type:ORDER_TYPE.NORMAL},
+    {created_at:'2099-01-02T01:00:00Z',items:[{price:250,qty:1}],syncState:'synced',type:ORDER_TYPE.NORMAL},
     {createdAt:'',items:[{price:500,qty:3}],syncState:'pending',type:ORDER_TYPE.NORMAL},
   ];
-  const todayList=filterOrdersByCreatedDate(orders,{mode:'today',today:'2026-10-06'});
-  const rangeList=filterOrdersByCreatedDate(orders,{mode:'range',start:'2026-10-06',end:'2026-10-07'});
+  const todayList=filterOrdersByCreatedDate(orders,{mode:'today',today:'2099-01-01'});
+  const rangeList=filterOrdersByCreatedDate(orders,{mode:'range',start:'2099-01-01',end:'2099-01-02'});
   const allList=filterOrdersByCreatedDate(orders,{mode:'all'});
   assert.deepEqual(batchSummary(todayList),{orders:1,items:2,total:200,pending:0,unshared:0,active:0,waiting:0,unpaid:0});
   assert.equal(batchSummary(rangeList).orders,2);
@@ -155,6 +155,6 @@ test('本日・指定期間・全期間の件数、点数、金額が一致す�
 });
 
 test('指定日の開始日と終了日は両方を含む',()=>{
-  const orders=['2026-10-05T12:00:00+09:00','2026-10-06T00:00:00+09:00','2026-10-07T23:59:00+09:00','2026-10-08T00:00:00+09:00'].map(createdAt=>({createdAt}));
-  assert.equal(filterOrdersByCreatedDate(orders,{mode:'range',start:'2026-10-06',end:'2026-10-07'}).length,2);
+  const orders=['2098-12-31T12:00:00+09:00','2099-01-01T00:00:00+09:00','2099-01-02T23:59:00+09:00','2099-01-03T00:00:00+09:00'].map(createdAt=>({createdAt}));
+  assert.equal(filterOrdersByCreatedDate(orders,{mode:'range',start:'2099-01-01',end:'2099-01-02'}).length,2);
 });

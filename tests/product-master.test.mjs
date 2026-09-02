@@ -1,35 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import {readFile} from 'node:fs/promises';
 
-function splitCsv(line){
-  const cells=[];let current='',quoted=false;
-  for(let index=0;index<line.length;index++){
-    const char=line[index];
-    if(char==='"'){
-      if(quoted&&line[index+1]==='"'){current+='"';index++}else quoted=!quoted;
-    }else if(char===','&&!quoted){cells.push(current);current=''}else current+=char;
+const [app,migration,builder]=await Promise.all([
+  readFile(new URL('../app.js',import.meta.url),'utf8'),
+  readFile(new URL('../supabase/migrations/20260901090000_private_product_master.sql',import.meta.url),'utf8'),
+  readFile(new URL('../scripts/build-site.mjs',import.meta.url),'utf8'),
+]);
+
+test('商品マスターは認証後にSupabaseからページ単位で取得する',()=>{
+  assert.match(app,/loadAllRows\('products'/);
+  assert.match(app,/pageSize=1000/);
+  assert.match(app,/Authorization=`Bearer \$\{state\.session\.access_token\}`/);
+  assert.doesNotMatch(app,/fetch\(cfg\.productCsv/);
+  assert.doesNotMatch(app,/product_master\.csv/);
+});
+
+test('商品と帳合先はRLSを有効化し匿名権限を付与しない',()=>{
+  for(const table of ['products','exhibition_accounts']){
+    assert.match(migration,new RegExp(`alter table public\\.${table} enable row level security`));
+    assert.match(migration,new RegExp(`revoke all on table public\\.${table} from anon, authenticated`));
+    assert.match(migration,new RegExp(`grant select on table public\\.${table} to authenticated`));
   }
-  cells.push(current);return cells;
-}
-
-const text=(await readFile(new URL('../product_master.csv',import.meta.url),'utf8')).replace(/^\uFEFF/,'').trim();
-const [headerLine,...lines]=text.split(/\r?\n/);
-const headers=splitCsv(headerLine);
-const rows=lines.map(line=>Object.fromEntries(headers.map((header,index)=>[header,splitCsv(line)[index]??''])));
-
-test('最新版マスターは3,861商品',()=>assert.equal(rows.length,3861));
-test('改定価格が反映されている',()=>{
-  assert.equal(rows.find(row=>row.code==='200')?.price,'11100');
-  assert.equal(rows.find(row=>row.code==='1091')?.price,'5490');
+  assert.match(migration,/where staff\.user_id = \(select auth\.uid\(\)\)/);
+  assert.match(migration,/staff\.active = true/);
 });
-test('価格未定2商品だけが注文不可',()=>{
-  const pending=rows.filter(row=>row.status==='price_pending');
-  assert.deepEqual(pending.map(row=>row.code).sort(),['141-801','141-802']);
-  assert.equal(rows.filter(row=>row.status==='active'&&!(Number(row.price)>0)).length,0);
-});
-test('重複コード63463は別商品として保持',()=>{
-  const duplicated=rows.filter(row=>row.code==='63463');
-  assert.equal(duplicated.length,2);
-  assert.deepEqual(duplicated.map(row=>row.price).sort((a,b)=>Number(a)-Number(b)),['345','19300']);
+
+test('公開ビルドはコードと一般公開ロゴだけを許可リストで収録する',()=>{
+  assert.match(builder,/const files=\[/);
+  for(const file of ['index.html','styles.css','app.js','workflow.js','security.js','assets/sun_nishimura_logo.jpg'])assert.match(builder,new RegExp(file.replace(/[.]/g,'\\.')));
+  for(const privatePattern of ['product_master','outputs','mobile-production-test','exhibition_order_production_preview'])assert.doesNotMatch(builder,new RegExp(privatePattern));
 });

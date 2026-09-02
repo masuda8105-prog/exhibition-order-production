@@ -65,7 +65,7 @@ export function batchSummary(orders){
     orders:list.length,
     items:list.reduce((sum,order)=>sum+itemCountOf(order),0),
     total:list.reduce((sum,order)=>sum+totalOf(order),0),
-    pending:list.filter(order=>order.syncState!=='synced').length,
+    pending:list.filter(order=>order.syncState==='pending').length,
     unshared:list.filter(order=>orderMatchesOperationalFilter(order,'unshared')).length,
     active:list.filter(order=>groupOf(order)==='active').length,
     waiting:list.filter(order=>groupOf(order)==='waiting').length,
@@ -174,7 +174,7 @@ export function normalizeForSave(draft){
     prepared:draft.prepared||PREP.NONE,
     paid:Boolean(draft.paid), delivered:Boolean(draft.delivered), shipped:Boolean(draft.shipped),
     headOfficeShared:Boolean(draft.headOfficeShared), headOfficeSharedAt:draft.headOfficeSharedAt||'',
-    syncState:draft.syncState||'local',
+    syncState:draft.syncState||'memory',
   };
 }
 

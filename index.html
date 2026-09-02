@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <title>展示会 注文管理</title>
-<link rel="stylesheet" href="styles.css?v=20260824-ui12">
-<script src="online-config.js?v=20260824-ui12"></script>
+<link rel="stylesheet" href="styles.css?v=20260901-secure1">
+<script src="online-config.js?v=20260901-secure1"></script>
 </head>
 <body>
 <div id="toast" class="toast" aria-live="polite"></div>
@@ -14,7 +14,7 @@
   <div class="loginBox">
     <div class="brandMark">SN</div>
     <h1>展示会 注文管理</h1>
-    <p>登録スタッフでログインすると、全員の注文画面が自動同期されます。</p>
+    <p>登録スタッフでログインすると、非公開の商品マスターを安全に読み込みます。</p>
     <label>メール<input id="loginEmail" type="email" autocomplete="username"></label>
     <label>パスワード<input id="loginPassword" type="password" autocomplete="current-password"></label>
     <button id="loginBtn" type="button" class="primary">ログイン</button>
@@ -27,9 +27,9 @@
   <header class="topbar">
     <div class="brandRow">
       <div><div class="eyebrow" id="eventName">EXHIBITION</div><h1>注文管理</h1></div>
-      <button id="refreshBtn" class="secondary compact" aria-label="同期する">↻ 同期</button>
+      <button id="refreshBtn" class="secondary compact" aria-label="商品データを更新する">↻ 更新</button>
     </div>
-    <div class="syncLine"><span id="syncDot" class="syncDot"></span><span id="syncText">同期状態を確認中</span><button id="logoutBtn" class="linkBtn hidden">ログアウト</button></div>
+    <div class="syncLine"><span id="syncDot" class="syncDot"></span><span id="syncText">認証状態を確認中</span><button id="logoutBtn" class="linkBtn hidden">ログアウト</button></div>
     <div class="metricsLabel">重要な確認</div>
     <div class="metrics">
       <button class="metric danger" data-filter="unshared"><small>本社未共有</small><b id="metricUnshared">0</b></button>
@@ -58,30 +58,6 @@
   </div>
 </div>
 
-<section id="receiptView" class="receiptPage hidden">
-  <div class="receiptActions">
-    <button id="closePublicReceipt" class="secondary">閉じる</button>
-  </div>
-  <section id="receiptImagePanel" class="receiptImagePanel preparing" aria-live="polite">
-    <div class="receiptImagePanelHead">
-      <div>
-        <div class="receiptImagePanelTitle">画像の注文控え</div>
-        <span id="receiptImageStatus" class="receiptImageStatus">画像を準備中…</span>
-      </div>
-      <button id="retryReceiptImage" class="receiptImageRetry secondary small hidden" type="button">もう一度作る</button>
-    </div>
-    <div class="deviceSaveGuide">
-      <b>スマートフォンへの保存方法</b>
-      <p>下の注文控え画像を長押しして、「写真に保存」または「画像を保存」を選んでください。</p>
-    </div>
-    <div class="receiptImagePreviewFrame">
-      <div id="receiptImagePreparing" class="receiptImagePreparing">少しお待ちください</div>
-      <img id="receiptImagePreview" class="receiptImagePreview" alt="長押しして保存できるお客様控え画像">
-    </div>
-  </section>
-  <div id="receiptCard" class="receiptSheet"></div>
-</section>
-
 <div id="sheet" class="sheet hidden" role="dialog" aria-modal="true">
   <div class="sheetPanel">
     <header class="sheetHead"><div><small id="stepLabel"></small><h2 id="sheetTitle">新しい注文</h2></div><button id="closeSheet" type="button" class="iconBtn" aria-label="閉じる">×</button></header>
@@ -91,8 +67,6 @@
 </div>
 
 <div id="printArea" class="printArea"></div>
-<script src="vendor/qrcode.min.js?v=20260824-ui12"></script>
-<script src="vendor/html2canvas.min.js?v=20260824-ui12"></script>
-<script type="module" src="app.js?v=20260824-ui12"></script>
+<script type="module" src="app.js?v=20260901-secure1"></script>
 </body>
 </html>

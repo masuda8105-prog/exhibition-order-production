@@ -1,0 +1,21 @@
+# Local environment values. Browser-facing Supabase values are public at runtime,
+# but the generated file must not be committed.
+.env
+.env.*
+!.env.example
+online-config.js
+
+# Build outputs
+_site/
+exhibition_order_production_preview.html
+.tmp-spreadsheet-audit/
+
+# Private business data and generated audits
+private-data/
+product_master.csv
+outputs/
+*.csv
+*.xls
+*.xlsx
+*.xlsm
+mobile-production-test.png
