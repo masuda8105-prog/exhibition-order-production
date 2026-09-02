@@ -152,3 +152,7 @@ Supabase Security Advisorで確認した既存警告:
 - 印刷操作後に会社名、担当者名、電話番号、備考、商品、数量が消えることを確認
 - A4注文書を実印刷DOMから生成し、1ページ・文字切れなしを確認
 - 公開ビルドに非公開マスター・価格Excel・非公開画像・顧客情報がないことを確認
+- GitHub PagesをActions方式へ切り替え、公開ワークフロー成功を確認
+- 公開URL: https://masuda8105-prog.github.io/exhibition-order-production/
+- 公開URL上で旧商品CSV、価格画像、埋め込みプレビュー、`.env` がすべて404であることを確認
+- 公開Publishable Keyだけを使った匿名の商品取得が401で拒否されることを確認
