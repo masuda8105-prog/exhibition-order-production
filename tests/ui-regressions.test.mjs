@@ -96,3 +96,23 @@ test('印刷レイアウトと主要タップ領域を維持する',()=>{
   assert.match(styles,/html,body\{max-width:100%;overflow-x:hidden\}/);
   assert.match(styles,/\.secondary,\.primary,\.dangerBtn\{[^}]*min-height:48px/);
 });
+
+test('新規注文は要対応で始め、共有チェックと注文確定を表示する',()=>{
+  assert.match(app,/slackShared:false,slackSharedAt:'',workflowStatus:'active'/);
+  assert.match(app,/slackSharedField\(d,'fSlackShared'\)/);
+  assert.match(app,/slackSharedField\(order,'detailSlackShared'\)/);
+  assert.match(app,/変更を確定':'注文確定'/);
+  assert.doesNotMatch(app,/注文を保存/);
+});
+
+test('一括印刷は全注文・全期間を標準とし国内専用の選択を出さない',()=>{
+  assert.match(index,/展示会の全注文データを印刷/);
+  assert.match(app,/showPrintDateOptions\(mode='all'/);
+  assert.doesNotMatch(app,/printNormalBatch|printAllBatch|kind==='normal'/);
+});
+
+test('日付とQRボタンの寸法を固定し日付クイック選択で画面を作り直さない',()=>{
+  assert.match(styles,/input\[type="date"\][^{]*\{[^}]*min-width:0[^}]*height:48px/);
+  assert.match(styles,/\.customerCopyAction\{[^}]*white-space:nowrap/);
+  assert.match(app,/\$\('fPickup'\)\.value=d\.pickupDate;updateQuickDates\(\)/);
+});

@@ -37,7 +37,7 @@ try{
   }
   await page.click('#qrClose');await page.click('#customerCopyBtn');await page.waitForSelector('#customerQrCode img'); // duplicate image upload stays usable
   await page.click('#qrClose');
-  for(const status of ['active','waiting','done']){
+  for(const status of ['waiting','active','done']){
     await page.selectOption('#orderStatus',status);await page.click('#saveStatus');await page.waitForFunction(s=>!document.querySelector('#orderStatus')?.disabled&&document.querySelector(`[data-tab="${s}"]`)?.getAttribute('aria-selected')==='true'&&document.querySelector('#toast').textContent===({active:'要対応',waiting:'受け取り待ち',done:'完了'}[s]+'に変更しました'),status);
     assert.equal(await page.inputValue('#orderStatus'),status);
   }

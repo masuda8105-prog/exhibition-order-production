@@ -43,6 +43,19 @@ try{
   await page.emulateMedia({media:'print'});
   await page.pdf({path:output,format:'A4',printBackground:true,preferCSSPageSize:true,margin:{top:'0',right:'0',bottom:'0',left:'0'}});
   console.log(output);
+  await page.emulateMedia({media:'screen'});
+  await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
+  await page.click('#continueOrder');await page.fill('#productQ','TEST-002');await page.click('[data-product-id="product-2"]');await page.click('#toType');await page.click('[data-type="spot"]');await page.click('[data-handoff="later"]');await page.click('#toInfo');
+  await page.fill('#fStore','架空の後日受取店舗');await page.fill('#fPhone','000-0000-0000');await page.fill('#fCustomer','架空のお客様');await page.fill('#fPickup','2099-12-30');await page.fill('#fNotes','受け取り予定日と全注文印刷のレイアウト検証');await page.check('#fSlackShared');
+  await page.click('#saveBtn');await page.waitForSelector('#backDash');await page.click('#backDash');await page.click('#printMenuBtn');
+  assert.equal(await page.getAttribute('[data-date-mode="all"]','class'),'on');
+  await page.click('#executeBatchPrint');assert.equal(await page.locator('#printArea .printSheet').count(),2);
+  assert.equal(await page.locator('#printArea .batchTable tbody tr').count(),2);
+  const batchText=await page.textContent('#printArea');assert.match(batchText,/展示会 全注文データ/);assert.match(batchText,/架空テスト店舗/);assert.match(batchText,/架空の後日受取店舗/);assert.match(batchText,/2099-12-30/);
+  await page.emulateMedia({media:'print'});
+  const batchOutput=path.join(root,'tmp','pdfs','exhibition-all-orders-print-fixture.pdf');
+  await page.pdf({path:batchOutput,format:'A4',printBackground:true,preferCSSPageSize:true,margin:{top:'0',right:'0',bottom:'0',left:'0'}});
+  console.log(batchOutput);
 }finally{
   await browser.close();
 }

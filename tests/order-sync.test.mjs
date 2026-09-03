@@ -1,7 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {orderPayloadForCloud,orderFromCloudRow} from '../workflow.js';
+import {ORDER_TYPE,HANDOFF,groupOf,setSlackShared,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from '../workflow.js';
+
+test('Slack共有チェックで全区分を完了にし、解除で要対応に戻す',()=>{
+  const stamp='2099-01-01T12:34:56Z';
+  for(const order of [{type:ORDER_TYPE.NORMAL},...Object.values(HANDOFF).map(handoff=>({type:ORDER_TYPE.SPOT,handoff}))]){
+    const checked=setSlackShared({...order,workflowStatus:'waiting'},true,stamp);
+    assert.equal(groupOf(checked),'done');assert.equal(checked.slackShared,true);assert.equal(checked.slackSharedAt,stamp);
+    const unchecked=setSlackShared(checked,false);assert.equal(groupOf(unchecked),'active');assert.equal(unchecked.slackSharedAt,'');
+    assert.equal(order.slackShared,undefined);
+  }
+});
+
+test('共有確認は日時ごと同期し通常編集では共有日時と手動状態を保持する',()=>{
+  const checked=setSlackShared({type:ORDER_TYPE.NORMAL,items:[]},true,'2099-01-01T12:34:56Z');
+  assert.equal(setSlackShared(checked,true).slackSharedAt,checked.slackSharedAt);
+  const payload=orderPayloadForCloud(normalizeForSave({...checked,workflowStatus:'waiting',notes:'架空メモ'}));
+  const restored=orderFromCloudRow({id:'fixture-id',payload});
+  assert.equal(restored.slackShared,true);assert.equal(restored.slackSharedAt,checked.slackSharedAt);assert.equal(groupOf(restored),'waiting');
+});
+
+test('旧本社共有フラグをSlack共有とみなさず既存状態を維持する',()=>{
+  const payload=orderPayloadForCloud({type:ORDER_TYPE.NORMAL,headOfficeShared:true});
+  assert.equal(payload.slackShared,false);assert.equal(payload.slackSharedAt,'');assert.equal(groupOf(payload),'done');
+  assert.equal(groupOf({...payload,workflowStatus:'active'}),'active');
+});
 
 test('同期する項目を限定し認証や画面状態を注文へ含めない',()=>{
   const source={store:'架空店舗',phone:'000',stage:'info',editingId:'edit',session:{access_token:'not-a-real-token'},items:[{code:'TEST',name:'架空商品',price:10,qty:2,privateExtra:'excluded'}]};

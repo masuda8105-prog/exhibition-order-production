@@ -134,6 +134,10 @@ export function groupOf(order){
   return 'active';
 }
 
+export function setSlackShared(order,shared,now=new Date().toISOString()){
+  return {...order,slackShared:Boolean(shared),slackSharedAt:shared?(order?.slackSharedAt||now):'',workflowStatus:shared?'done':'active'};
+}
+
 export function nextAction(order){
   if(isDone(order)) return {key:'done',label:'内容を見る'};
   if(order?.type===ORDER_TYPE.NORMAL) return {key:'done',label:'内容を見る'};
@@ -170,6 +174,7 @@ const CLOUD_ORDER_FIELDS=Object.freeze([
   'receiptNo','type','handoff','customerRegion','store','phone','customer','workflowStatus',
   'account','accountChoice','accountOther','staff','paymentMethod','paid',
   'delivered','shipped','prepared','headOfficeShared','headOfficeSharedAt',
+  'slackShared','slackSharedAt',
   'pickupDate','notes','hotelName','guestName','roomNo','checkoutDate','shipAddress',
 ]);
 
@@ -180,6 +185,7 @@ export function orderPayloadForCloud(order){
   payload.delivered=Boolean(order?.delivered);
   payload.shipped=Boolean(order?.shipped);
   payload.headOfficeShared=Boolean(order?.headOfficeShared);
+  payload.slackShared=Boolean(order?.slackShared);
   payload.items=(order?.items||[]).map(item=>({
     productId:String(item?.productId||''),
     code:String(item?.code||''),
@@ -218,6 +224,7 @@ export function normalizeForSave(draft){
     prepared:draft.prepared||PREP.NONE,
     paid:Boolean(draft.paid), delivered:Boolean(draft.delivered), shipped:Boolean(draft.shipped),
     headOfficeShared:Boolean(draft.headOfficeShared), headOfficeSharedAt:draft.headOfficeSharedAt||'',
+    slackShared:Boolean(draft.slackShared), slackSharedAt:draft.slackSharedAt||'',
     syncState:draft.syncState||'memory',
   };
 }
