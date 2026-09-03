@@ -6,7 +6,7 @@ const {chromium}=require('C:/Users/AONUSR02/.cache/codex-runtimes/codex-primary-
 const base=process.env.SYNC_FIXTURE_URL||'http://127.0.0.1:8782/';
 const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
 const failures=[];
-async function login(page){await page.goto(base);await page.fill('#loginEmail','fixture@example.invalid');await page.fill('#loginPassword','fixture-password');await page.click('#loginBtn');await page.waitForSelector('#appView:not(.hidden)')}
+async function login(page){await page.goto(base);await page.fill('#loginEmail','fixture@example.invalid');await page.fill('#loginPassword','fixture-password');await page.click('#loginBtn');await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-tab="done"]')}
 async function edit(page,note){await page.click('[data-detail]');await page.click('#editOrderBtn');await page.click('#toType');await page.click('#toInfo');await page.fill('#fNotes',note)}
 try{
   const a=await browser.newContext({viewport:{width:1024,height:768}}),b=await browser.newContext({viewport:{width:390,height:844}});
@@ -22,11 +22,11 @@ try{
   await page.fill('#fNotes','通信が途切れた後の修正');
   await page.click('#saveBtn');await page.waitForSelector('#successPrint');await page.click('#successPrint');await page.click('#backDash');assert.equal(await page.locator('.orderCard').count(),1);
   await page.click('[data-detail]');assert.ok((await page.locator('#sheetBody').innerText()).includes('通信が途切れた後の修正'));await page.click('#detailClose');
-  await page.reload();await page.waitForSelector('#appView:not(.hidden)');await page.waitForSelector('.orderCard');
+  await page.reload();await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-tab="done"]');await page.waitForSelector('.orderCard');
   assert.equal(await page.locator('#loginView').isVisible(),false);
   const storageKeys=await page.evaluate(()=>Object.keys(localStorage));assert.ok(storageKeys.includes('exhibitionOps.session.v3'));assert.ok(!storageKeys.some(key=>key.includes('orders')));
-  await page.evaluate(()=>{const key='exhibitionOps.session.v3',session=JSON.parse(localStorage.getItem(key));session.expires_at=1;localStorage.setItem(key,JSON.stringify(session))});await page.reload();await page.waitForSelector('#appView:not(.hidden)');
-  const reopened=await a.newPage();await reopened.goto(base);await reopened.waitForSelector('#appView:not(.hidden)');await reopened.waitForSelector('.orderCard');await reopened.close();
+  await page.evaluate(()=>{const key='exhibitionOps.session.v3',session=JSON.parse(localStorage.getItem(key));session.expires_at=1;localStorage.setItem(key,JSON.stringify(session))});await page.reload();await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-tab="done"]');
+  const reopened=await a.newPage();await reopened.goto(base);await reopened.waitForSelector('#appView:not(.hidden)');await reopened.click('[data-tab="done"]');await reopened.waitForSelector('.orderCard');await reopened.close();
   await login(other);await other.waitForSelector('.orderCard');
   const apiHeaders={Authorization:'Bearer fixture-access-token'},savedRows=await (await page.request.get(`${base}rest/v1/exhibition_app_orders`,{headers:apiHeaders})).json();
   await page.request.patch(`${base}rest/v1/exhibition_app_orders?id=eq.${savedRows[0].id}`,{headers:apiHeaders,data:{payload:{...savedRows[0].payload,staff:'別の担当（架空）'}}});

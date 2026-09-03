@@ -21,8 +21,10 @@ test('未認証画面はスタッフログインだけを表示する',()=>{
   assert.match(browserFixture,/invalid_credentials/);
 });
 
-test('QR公開控えと匿名注文取得を公開画面から除去する',()=>{
-  assert.doesNotMatch(index,/receiptView|qrcode\.min\.js|html2canvas\.min\.js/);
+test('QRは控え画像だけを共有し旧匿名注文APIを再開しない',()=>{
+  assert.doesNotMatch(index,/receiptView/);
+  assert.match(index,/qrcode\.min\.js/);
+  assert.match(index,/html2canvas\.min\.js/);
   assert.doesNotMatch(app,/showPublicReceipt|publicToken|functions\/v1\/exhibition-order/);
   assert.match(server,/cloud_order_storage_disabled/);
   assert.match(server,/status:410/);
@@ -78,11 +80,13 @@ test('固定入力キーと商品の渡し方のスマホUIを維持する',()=>
   assert.match(styles,/\.handoffChoices\{grid-template-columns:1fr\}/);
 });
 
-test('全注文を一つの一覧で検索し不要な状態表示を出さない',()=>{
+test('3状態タブを残し検索は全状態を横断する',()=>{
   assert.match(app,/orderMatchesSearch\(order,q\)/);
   assert.match(index,/id="orderCount"/);
-  assert.doesNotMatch(index,/本社未共有|受取待ち|未会計|id="tabs"/);
-  assert.doesNotMatch(app,/本社未共有|受取待ち|未会計|showShareConfirm/);
+  assert.match(index,/id="tabs"/);
+  assert.match(app,/renderTabs/);
+  assert.match(app,/すべての状態から検索/);
+  assert.doesNotMatch(app,/本社未共有|未会計|showShareConfirm/);
 });
 
 test('印刷レイアウトと主要タップ領域を維持する',()=>{

@@ -2,6 +2,7 @@ export const ORDER_TYPE = Object.freeze({ NORMAL:'normal', SPOT:'spot' });
 export const HANDOFF = Object.freeze({ NOW:'now', LATER:'later', HOTEL:'hotel', SHIP:'ship' });
 export const PAYMENT = Object.freeze({ CREDIT:'credit', CASH:'cash', NONE:'none' });
 export const PREP = Object.freeze({ NONE:'none', PREPARING:'preparing', READY:'ready' });
+export const ORDER_STATUS=Object.freeze({active:'要対応',waiting:'受け取り待ち',done:'完了'});
 
 export function needsHeadOfficeShare(order){
   return order?.type===ORDER_TYPE.SPOT && [HANDOFF.LATER,HANDOFF.HOTEL,HANDOFF.SHIP].includes(order?.handoff);
@@ -127,6 +128,7 @@ export function isDone(order){
 }
 
 export function groupOf(order){
+  if(Object.hasOwn(ORDER_STATUS,order?.workflowStatus))return order.workflowStatus;
   if(isDone(order)) return 'done';
   if(order?.type===ORDER_TYPE.SPOT && order?.handoff===HANDOFF.LATER && order?.headOfficeShared) return 'waiting';
   return 'active';
@@ -165,7 +167,7 @@ export function handoffLabel(order){
 }
 
 const CLOUD_ORDER_FIELDS=Object.freeze([
-  'receiptNo','type','handoff','customerRegion','store','phone','customer',
+  'receiptNo','type','handoff','customerRegion','store','phone','customer','workflowStatus',
   'account','accountChoice','accountOther','staff','paymentMethod','paid',
   'delivered','shipped','prepared','headOfficeShared','headOfficeSharedAt',
   'pickupDate','notes','hotelName','guestName','roomNo','checkoutDate','shipAddress',

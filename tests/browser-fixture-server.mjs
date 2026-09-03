@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {randomBytes} from 'node:crypto';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..','_site');
 const portArgument=process.argv.find(value=>value.startsWith('--port='));
@@ -14,10 +15,14 @@ const publicFiles=new Map([
   ['/app.js','app.js'],
   ['/workflow.js','workflow.js'],
   ['/security.js','security.js'],
+  ['/receipt-share.js','receipt-share.js'],
+  ['/vendor/qrcode.min.js','vendor/qrcode.min.js'],
+  ['/vendor/html2canvas.min.js','vendor/html2canvas.min.js'],
   ['/assets/sun_nishimura_logo.jpg','assets/sun_nishimura_logo.jpg'],
 ]);
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.jpg':'image/jpeg'};
 const orders=new Map();
+const receiptImages=new Map(),signedImages=new Map();
 
 function sendJson(response,status,value){
   response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});
@@ -47,6 +52,30 @@ const server=http.createServer(async(request,response)=>{
     return sendJson(response,200,{access_token:'fixture-access-token',refresh_token:'fixture-refresh-token',expires_in:3600,user:{id:'fixture-user'}});
   }
   if(url.pathname==='/auth/v1/logout')return sendJson(response,200,{});
+  if(url.pathname.startsWith('/storage/v1/')){
+    const signedPrefix='/storage/v1/object/sign/exhibition-receipts/',objectPrefix='/storage/v1/object/exhibition-receipts/';
+    if(request.method==='GET'&&url.pathname.startsWith(signedPrefix)){
+      const signed=signedImages.get(url.searchParams.get('token')),imagePath=url.pathname.slice(signedPrefix.length);
+      if(!signed||signed.path!==imagePath||signed.expires<Date.now()||!receiptImages.has(imagePath))return sendJson(response,403,{error:'invalid_signature'});
+      response.writeHead(200,{'content-type':'image/png','cache-control':'no-store'});return response.end(receiptImages.get(imagePath));
+    }
+    if(request.headers.authorization!=='Bearer fixture-access-token')return sendJson(response,401,{error:'login_required'});
+    if(request.method==='POST'&&url.pathname.startsWith(objectPrefix)){
+      const imagePath=url.pathname.slice(objectPrefix.length),order=orders.get(imagePath.split('/')[0]);
+      if(!order||order.deleted_at)return sendJson(response,403,{error:'order_access_denied'});
+      if(receiptImages.has(imagePath))return sendJson(response,400,{error:'Duplicate',statusCode:'409'});
+      const chunks=[];for await(const chunk of request)chunks.push(chunk);const bytes=Buffer.concat(chunks);
+      if(bytes.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')return sendJson(response,400,{error:'not_png'});
+      receiptImages.set(imagePath,bytes);return sendJson(response,200,{Key:`exhibition-receipts/${imagePath}`});
+    }
+    if(request.method==='POST'&&url.pathname.startsWith(signedPrefix)){
+      const imagePath=url.pathname.slice(signedPrefix.length);if(!receiptImages.has(imagePath))return sendJson(response,404,{error:'not_found'});
+      const body=await readJson(request),expires=Date.now()+body.expiresIn*1000;
+      const token=[Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url'),Buffer.from(JSON.stringify({url:`exhibition-receipts/${imagePath}`,iat:Math.floor(Date.now()/1000),exp:Math.floor(expires/1000)})).toString('base64url'),randomBytes(32).toString('base64url')].join('.');signedImages.set(token,{path:imagePath,expires});
+      return sendJson(response,200,{signedURL:`/object/sign/exhibition-receipts/${imagePath}?token=${token}`});
+    }
+    return sendJson(response,403,{error:'private_bucket'});
+  }
   if(url.pathname.startsWith('/rest/v1/')&&request.headers.authorization!=='Bearer fixture-access-token')return sendJson(response,401,{error:'login_required'});
   if(url.pathname==='/rest/v1/exhibition_app_orders'){
     const id=url.searchParams.get('id')?.replace(/^eq\./,'');

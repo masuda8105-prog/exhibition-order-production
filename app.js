@@ -1,10 +1,11 @@
-import {ORDER_TYPE,HANDOFF,PAYMENT,PREP,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from './workflow.js?v=20260903-sync1';
-import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-sync1';
+import {ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from './workflow.js?v=20260903-qr1';
+import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-qr1';
+import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-qr1';
 
 const cfg=window.EXHIBITION_CONFIG||{};
 const $=id=>document.getElementById(id);
 const LS_STAFF='exhibitionOps.staff.v2',LS_KEYPAD_ALIGN='exhibitionOps.keypadAlign.v1';
-const state={online:false,session:null,staff:null,orders:[],products:[],accounts:[],draft:null,rememberDraftInput:null,signalsBound:false,syncTimer:null,syncInFlight:null,refreshPromise:null,lastSyncedAt:null,dataEpoch:0};
+const state={online:false,session:null,staff:null,orders:[],products:[],accounts:[],draft:null,rememberDraftInput:null,signalsBound:false,syncTimer:null,syncInFlight:null,refreshPromise:null,lastSyncedAt:null,dataEpoch:0,tab:'active',sheetVersion:0,receiptBlobUrl:null};
 const yen=n=>Number.isFinite(Number(n))?`¥${Math.round(Number(n)).toLocaleString('ja-JP')}`:'価格未定';
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const isoDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo'}).format(d);
@@ -22,7 +23,7 @@ async function fetchJson(url,opts={},timeout=30000){
   try{
     const response=await fetch(url,{...opts,signal:controller.signal});
     const json=await response.json().catch(()=>null);
-    if(!response.ok){const error=new Error(json?.message||json?.error||`HTTP_${response.status}`);error.status=response.status;throw error}
+    if(!response.ok){const error=new Error(json?.message||json?.error||`HTTP_${response.status}`);error.status=response.status;error.storageCode=json?.statusCode;throw error}
     return json;
   }finally{clearTimeout(timer)}
 }
@@ -129,21 +130,26 @@ async function syncOrders(){
   return state.syncInFlight;
 }
 
-function render(){renderMetrics();renderOrders()}
+function render(){renderMetrics();renderTabs();renderOrders()}
 function currentSearch(){return $('orderSearch').value.trim()}
-function filteredOrders(){const q=currentSearch();return state.orders.filter(order=>!order.deleted).filter(order=>orderMatchesSearch(order,q))}
+function filteredOrders(){const q=currentSearch();return state.orders.filter(order=>!order.deleted).filter(order=>q?orderMatchesSearch(order,q):groupOf(order)===state.tab)}
 function clearListModes(){$('orderSearch').value=''}
-function revealOrder(){clearListModes();render()}
+function revealOrder(order){clearListModes();if(order)state.tab=groupOf(order);render()}
+function renderTabs(){
+  const query=currentSearch();
+  $('tabs').innerHTML=Object.entries(ORDER_STATUS).map(([key,label])=>{const count=state.orders.filter(order=>!order.deleted&&groupOf(order)===key).length;return `<button type="button" role="tab" aria-selected="${!query&&state.tab===key}" class="${!query&&state.tab===key?'active':''}" data-tab="${key}">${label}<span>${count}</span></button>`}).join('');
+  $('tabs').querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{state.tab=button.dataset.tab;clearListModes();render()});
+}
 function formatDateTime(value,short=false){const date=new Date(value||'');if(Number.isNaN(date.getTime()))return '日時不明';return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:short?undefined:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(date)}
 function renderMetrics(){
   const all=state.orders.filter(order=>!order.deleted);
   $('orderCount').textContent=`${all.length}件`;
   $('todayOrderCount').textContent=`${all.filter(order=>createdDateInTokyo(order)===today()).length}件`;
-  $('searchSummary').textContent=currentSearch()?`検索結果 ${filteredOrders().length}件`:'新しい注文から表示しています';
+  $('searchSummary').textContent=currentSearch()?`すべての状態から検索：${filteredOrders().length}件`:`${ORDER_STATUS[state.tab]}の注文を、新しい順に表示しています`;
 }
 function renderOrders(){
   const list=filteredOrders(),wrap=$('orders');
-  if(!list.length){wrap.innerHTML=`<div class="empty">${currentSearch()?'該当する注文はありません。':'保存済みの注文はまだありません。'}<br><small>${currentSearch()?'店舗名・電話・品番などで検索できます。':'下の「新しい注文」から始めてください。'}</small></div>`;return}
+  if(!list.length){wrap.innerHTML=`<div class="empty">${currentSearch()?'該当する注文はありません。':`${ORDER_STATUS[state.tab]}の注文はありません。`}<br><small>${currentSearch()?'店舗名・電話・品番などで検索できます。':'別のタブを選ぶか、下の「新しい注文」から始めてください。'}</small></div>`;return}
   wrap.innerHTML=list.map(cardHtml).join('');
   wrap.querySelectorAll('[data-detail]').forEach(button=>button.onclick=()=>showDetail(button.dataset.detail));
 }
@@ -151,10 +157,11 @@ function cardHtml(order){
   return `<article class="orderCard"><div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store)}</div></div><div class="amount">${yen(totalOf(order))}</div></div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span><span class="chip">${itemCountOf(order)}点</span></div><div class="cardNote">${order.customer?`${esc(order.customer)} ／ `:''}${esc(handoffLabel(order))}</div><div class="cardBottom"><span class="receivedAt">${esc(formatDateTime(order.createdAt,true))}</span><button class="secondary compact" data-detail="${esc(order.localId)}">詳細・印刷</button></div></article>`;
 }
 
-function openSheet(title,step=''){state.rememberDraftInput=null;$('sheetTitle').textContent=title;$('stepLabel').textContent=step;$('sheet').classList.remove('hidden');document.body.style.overflow='hidden';clearError()}
+function clearReceiptPreview(){if(state.receiptBlobUrl)URL.revokeObjectURL(state.receiptBlobUrl);state.receiptBlobUrl=null;state.sheetVersion++}
+function openSheet(title,step=''){clearReceiptPreview();state.rememberDraftInput=null;$('sheetTitle').textContent=title;$('stepLabel').textContent=step;$('sheet').classList.remove('hidden');document.body.style.overflow='hidden';clearError()}
 function hasResumableDraft(){return Boolean(state.draft&&state.draft.stage!=='success'&&!state.draft.editingId)}
 function updateNewOrderButton(){const resumable=hasResumableDraft();$('newOrderBtn').textContent=resumable?'↩ 入力途中の注文を再開':'＋ 新しい注文';$('discardDraftBtn').classList.toggle('hidden',!resumable)}
-function closeSheet(){state.rememberDraftInput?.();state.rememberDraftInput=null;$('sheet').classList.add('hidden');$('sheet').classList.remove('productFullscreen');document.body.style.overflow='';updateNewOrderButton()}
+function closeSheet(){state.rememberDraftInput?.();state.rememberDraftInput=null;clearReceiptPreview();$('sheet').classList.add('hidden');$('sheet').classList.remove('productFullscreen');document.body.style.overflow='';updateNewOrderButton()}
 function showError(msg){$('sheetError').textContent=msg;$('sheetError').classList.remove('hidden');$('sheetPanel')?.scrollTo({top:0,behavior:'smooth'})}
 function clearError(){$('sheetError').classList.add('hidden');$('sheetError').textContent=''}
 function savedKeypadAlign(){try{return localStorage.getItem(LS_KEYPAD_ALIGN)==='left'?'left':'right'}catch{return'right'}}
@@ -163,7 +170,7 @@ function startOrder(){const resume=hasResumableDraft();if(!resume)state.draft=fr
 function showDiscardDraftConfirm(){if(!hasResumableDraft())return startOrder();state.rememberDraftInput?.();const d=state.draft,count=itemCountOf(d),store=String(d.store||'').trim();openSheet('入力途中の注文を破棄','確認');$('sheetBody').innerHTML=`<div class="step"><div class="shareConfirm"><div class="successMark pending">!</div><h3>入力途中の内容を破棄しますか？</h3><p>破棄を確定した場合だけ新しい注文へ切り替わります。</p></div><div class="section"><div class="summaryRow"><span>追加済み商品</span><b>${count}点</b></div>${store?`<div class="summaryRow"><span>入力済み店舗</span><b>${esc(store)}</b></div>`:''}</div></div><div class="stickyActions"><button id="discardCancel" class="secondary">キャンセル</button><button id="discardConfirm" class="dangerBtn">破棄して新規開始</button></div>`;$('discardCancel').onclick=renderDraft;$('discardConfirm').onclick=()=>{state.draft=null;startOrder();toast('入力途中の注文を破棄しました')}}
 function startEditOrder(order){if(!(state.draft?.editingId===order.localId&&state.draft.stage!=='success'))state.draft={...order,productQuery:'',keypadMode:'number',keypadAlign:savedKeypadAlign(),items:(order.items||[]).map(item=>({...item,lineId:item.lineId||newUuid()})),stage:'products',editingId:order.localId};openSheet('注文を修正','1 / 3');renderDraft()}
 function renderDraft(){state.rememberDraftInput=null;clearError();if(!state.draft)return;const d=state.draft;$('sheet').classList.toggle('productFullscreen',d.stage==='products');if(d.stage==='products')renderProductStep(d);else if(d.stage==='type')renderTypeStep(d);else if(d.stage==='info')renderInfoStep(d);else if(d.stage==='success')renderSuccess(d)}
-function renderProductStep(d){const align=d.keypadAlign==='left'?'left':'right';$('stepLabel').textContent=`1 / 3　${d.editingId?'修正':'商品'}`;$('sheetTitle').textContent=d.editingId?'注文を修正':'商品を追加';$('sheetBody').innerHTML=`<div class="step productStep"><div class="productSearch"><div class="productSearchRow"><input id="productQ" type="search" inputmode="search" placeholder="品番・商品名" autocomplete="off"><button id="clearPQ" class="secondary" aria-label="検索をクリア">×</button></div><div id="productKeypadDock" class="productKeypadDock align-${align}"><div class="keypadTitle"><div class="keypadTitleMain"><b>固定入力キー</b><span id="keypadModeLabel" class="keypadModeLabel">数字・記号</span></div><div class="keypadAlignSwitch" aria-label="キーボードの位置"><button id="keypadAlignLeft" type="button" aria-label="キーボードを左寄せにする">◀ 左</button><button id="keypadAlignRight" type="button" aria-label="キーボードを右寄せにする">右 ▶</button></div></div><div id="productKeypad" class="productKeypad numberKeys"></div></div><div id="productResults" class="productResults" role="listbox"></div></div><div class="section productCartSection"><div class="sectionTitle">注文明細 <span id="cartCount">${d.items.reduce((s,i)=>s+i.qty,0)}点</span></div><div id="cartLines" class="cart"></div></div></div><div class="stickyActions one"><button id="toType" class="primary" ${d.items.length?'':'disabled'}>注文内容へ進む</button></div>`;const q=$('productQ');q.value=d.productQuery||'';q.oninput=()=>renderProductResults(d,q.value);$('clearPQ').onclick=()=>{q.value='';renderProductResults(d,'')};bindProductKeypad(d,q);$('toType').onclick=()=>{if(!d.items.length)return showError('商品を1点以上追加してください。');d.stage='type';renderDraft()};renderCart(d);renderProductResults(d,q.value)}
+function renderProductStep(d){const align=d.keypadAlign==='left'?'left':'right';$('stepLabel').textContent=`1 / 3　${d.editingId?'修正':'商品'}`;$('sheetTitle').textContent=d.editingId?'注文を修正':'商品を追加';$('sheetBody').innerHTML=`<div class="step productStep"><div class="productSearch"><div class="productSearchRow"><input id="productQ" type="search" inputmode="search" placeholder="品番・商品名" autocomplete="off"><button id="clearPQ" class="secondary" aria-label="検索をクリア">×</button></div><div id="productKeypadDock" class="productKeypadDock align-${align}"><div class="keypadTitle"><div class="keypadTitleMain"><b>固定入力キー</b><span id="keypadModeLabel" class="keypadModeLabel">数字・記号</span></div><div class="keypadAlignSwitch" aria-label="キーボードの位置"><button id="keypadAlignLeft" type="button" aria-label="キーボードを左寄せにする">◀ 左</button><button id="keypadAlignRight" type="button" aria-label="キーボードを右寄せにする">右 ▶</button></div></div><div id="productKeypad" class="productKeypad numberKeys"></div></div><div id="productResults" class="productResults" role="listbox"></div></div><div class="section productCartSection"><div class="sectionTitle">注文明細 <span id="cartCount">${itemCountOf(d)}点</span></div><div id="cartLines" class="cart"></div></div></div><div class="stickyActions one"><button id="toType" class="primary" ${d.items.length?'':'disabled'}>注文内容へ進む</button></div>`;const q=$('productQ');q.value=d.productQuery||'';q.oninput=()=>renderProductResults(d,q.value);$('clearPQ').onclick=()=>{q.value='';renderProductResults(d,'')};bindProductKeypad(d,q);$('toType').onclick=()=>{if(!d.items.length)return showError('商品を1点以上追加してください。');d.stage='type';renderDraft()};renderCart(d);renderProductResults(d,q.value)}
 function bindProductKeypad(d,q){
   const wrap=$('productKeypad'),dock=$('productKeypadDock'),modeLabel=$('keypadModeLabel'),left=$('keypadAlignLeft'),right=$('keypadAlignRight');let mode=d.keypadMode==='alpha'?'alpha':'number';
   const numeric=[['1'],['2'],['3'],['4'],['5'],['6'],['7'],['8'],['9'],['-'],['0'],['⌫','backspace']],numericUtility=[['英字','alpha'],['クリア','clear']];
@@ -194,7 +201,7 @@ function productRank(p,q){const c=String(p.code).toLowerCase(),n=String(p.name).
 function renderCart(d){
   const wrap=$('cartLines'),count=d.items.reduce((sum,item)=>sum+Number(item.qty||0),0);if($('cartCount'))$('cartCount').textContent=`${count}点`;
   if($('toType'))$('toType').disabled=!d.items.length;if(!d.items.length){wrap.innerHTML='<div class="empty" style="padding:22px">まだ商品がありません。</div>';return}
-  wrap.innerHTML=d.items.map(item=>`<div class="cartLine"><div><b>${esc(item.code)} ${esc(item.name)}</b><small>${yen(item.price)} × ${item.qty}</small></div><div class="qty"><button data-minus="${esc(item.lineId)}" aria-label="数量を減らす">−</button><b>${item.qty}</b><button data-plus="${esc(item.lineId)}" aria-label="数量を増やす">＋</button></div></div>`).join('')+`<div class="totalRow"><span>合計</span><span>${yen(totalOf(d))}</span></div>`;
+  wrap.innerHTML=d.items.map(item=>`<div class="cartLine"><div><b>${esc(item.code)} ${esc(item.name)}</b><small>${yen(item.price)} × ${esc(item.qty)}</small></div><div class="qty"><button data-minus="${esc(item.lineId)}" aria-label="数量を減らす">−</button><b>${esc(item.qty)}</b><button data-plus="${esc(item.lineId)}" aria-label="数量を増やす">＋</button></div></div>`).join('')+`<div class="totalRow"><span>合計</span><span>${yen(totalOf(d))}</span></div>`;
   wrap.querySelectorAll('[data-plus]').forEach(button=>button.onclick=()=>{const item=d.items.find(value=>value.lineId===button.dataset.plus);if(item)item.qty++;renderCart(d)});
   wrap.querySelectorAll('[data-minus]').forEach(button=>button.onclick=()=>{const item=d.items.find(value=>value.lineId===button.dataset.minus);if(!item)return;item.qty--;if(item.qty<=0)d.items=d.items.filter(value=>value!==item);renderCart(d)});
 }
@@ -212,7 +219,7 @@ function renderInfoStep(d){
   const spotFields=`<div class="field"><label for="fCustomer">お客様名 *</label><input id="fCustomer" value="${esc(d.customer)}"></div><div class="two"><div class="field"><label for="fRegion">お客様</label><select id="fRegion"><option value="domestic" ${d.customerRegion==='domestic'?'selected':''}>国内</option><option value="overseas" ${d.customerRegion==='overseas'?'selected':''}>海外</option></select></div><div class="field"><label for="fPayment">会計方法 *</label><select id="fPayment"><option value="credit" ${d.paymentMethod===PAYMENT.CREDIT?'selected':''}>クレジット</option><option value="cash" ${d.paymentMethod===PAYMENT.CASH?'selected':''}>現金</option></select></div></div>${pickupFields}${destinationFields}`;
   const operationHint='<div class="hintBox sendHint">保存した注文はスタッフ間で共有され、印刷後も残ります。</div>';
   const saveLabel=d.editingId?'変更を保存':'注文を保存';
-  $('sheetBody').innerHTML=`<div class="step"><div class="section"><div class="field"><label for="fStore">店舗名 *</label><input id="fStore" value="${esc(d.store)}" placeholder="〇〇眼鏡店"></div><div class="field"><label for="fPhone">電話番号 *</label><input id="fPhone" inputmode="tel" autocomplete="tel" value="${esc(d.phone)}"><div id="phoneWarning" class="fieldWarning ${phoneHasUnexpectedCharacters(d.phone)?'':'hidden'}">数字、+、-、空白、括弧以外が含まれています。入力内容を確認してください。</div></div>${normal?normalFields:spotFields}<div class="field"><label for="fNotes">備考（任意）</label><textarea id="fNotes" placeholder="納期・連絡事項など">${esc(d.notes||'')}</textarea></div></div><div class="section"><div class="sectionTitle">注文確認</div>${d.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${item.qty}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div>${operationHint}${d.paymentMethod===PAYMENT.CASH?'<div class="hintBox topGap">現金は釣銭を用意しない運用です。受取金額を確認してください。</div>':''}</div><div class="stickyActions"><button id="backType" class="secondary">戻る</button><button id="saveBtn" class="primary">${saveLabel}</button></div>`;
+  $('sheetBody').innerHTML=`<div class="step"><div class="section"><div class="field"><label for="fStore">店舗名 *</label><input id="fStore" value="${esc(d.store)}" placeholder="〇〇眼鏡店"></div><div class="field"><label for="fPhone">電話番号 *</label><input id="fPhone" inputmode="tel" autocomplete="tel" value="${esc(d.phone)}"><div id="phoneWarning" class="fieldWarning ${phoneHasUnexpectedCharacters(d.phone)?'':'hidden'}">数字、+、-、空白、括弧以外が含まれています。入力内容を確認してください。</div></div>${normal?normalFields:spotFields}<div class="field"><label for="fNotes">備考（任意）</label><textarea id="fNotes" placeholder="納期・連絡事項など">${esc(d.notes||'')}</textarea></div></div><div class="section"><div class="sectionTitle">注文確認</div>${d.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${esc(item.qty)}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div>${operationHint}${d.paymentMethod===PAYMENT.CASH?'<div class="hintBox topGap">現金は釣銭を用意しない運用です。受取金額を確認してください。</div>':''}</div><div class="stickyActions"><button id="backType" class="secondary">戻る</button><button id="saveBtn" class="primary">${saveLabel}</button></div>`;
   bindInfo(d,normal,now);
 }
 function bindInfo(d,normal,now){
@@ -242,14 +249,25 @@ function bindInfo(d,normal,now){
 function renderSuccess(d){
   $('stepLabel').textContent='保存完了';$('sheetTitle').textContent='注文を保存しました';
   $('sheetBody').innerHTML=`<div class="success"><div class="successMark">✓</div><h3>保存・同期が完了しました</h3><p>画面を閉じても、印刷しても注文は残ります。別の端末からも確認できます。</p><div class="summary"><div class="summaryRow"><span>店舗</span><b>${esc(d.store)}</b></div><div class="summaryRow"><span>区分</span><b>${esc(labelOrder(d))}</b></div>${d.receiptNo?`<div class="summaryRow"><span>受付番号</span><b>${esc(d.receiptNo)}</b></div>`:''}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div></div><div class="stickyActions"><button id="successPrint" class="secondary">PDF・印刷</button><button id="continueOrder" class="primary">次の注文を作る</button></div><div class="underActions"><button id="backDash" class="secondary">注文一覧へ戻る</button></div>`;
-  $('backDash').onclick=()=>{state.draft=null;closeSheet();revealOrder()};$('successPrint').onclick=()=>printOrder(d);$('continueOrder').onclick=()=>{state.draft=null;closeSheet();startOrder()};
+  $('backDash').insertAdjacentHTML('beforebegin','<button id="successCustomerCopy" class="secondary">お客様控え（QR・画像）</button>');
+  $('successCustomerCopy').onclick=()=>showCustomerReceipt(d);
+  $('backDash').onclick=()=>{state.draft=null;closeSheet();revealOrder(d)};$('successPrint').onclick=()=>printOrder(d);$('continueOrder').onclick=()=>{state.draft=null;closeSheet();startOrder()};
 }
 
 function showDetail(id){
   const order=state.orders.find(item=>item.localId===id);if(!order)return;openSheet('注文詳細','保存済み');
   const rows=[['店舗',order.store],['区分',labelOrder(order)],['電話',order.phone],['お客様',order.customer],['卸屋・帳合先',order.account],['担当',order.staff],['受付番号',order.receiptNo],['受け渡し',handoffLabel(order)],['会計方法',order.type===ORDER_TYPE.SPOT?(order.paymentMethod===PAYMENT.CASH?'現金':'クレジット'):''],['ホテル',order.hotelName],['宿泊者',order.guestName],['部屋番号',order.roomNo],['チェックアウト',order.checkoutDate],['配送先',order.shipAddress],['作成日時',formatDateTime(order.createdAt)],['最終更新',formatDateTime(order.updatedAt)],['備考',order.notes]];
-  $('sheetBody').innerHTML=`<div class="step"><div class="section">${rows.filter(([,value])=>value).map(([label,value])=>`<div class="summaryRow"><span>${esc(label)}</span><b class="multiline">${esc(value)}</b></div>`).join('')}</div><div class="section"><div class="sectionTitle">商品</div>${order.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${item.qty}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow total"><span>合計</span><b>${yen(totalOf(order))}</b></div></div><button id="editOrderBtn" class="primary fullButton">注文を修正</button><div class="two"><button id="customerCopyBtn" class="secondary">お客様控え</button><button id="printBtn" class="secondary">注文書を印刷</button></div><button id="deleteBtn" class="linkBtn hideOrderButton">この注文を一覧から非表示</button></div><div class="stickyActions one"><button id="detailClose" class="secondary">閉じる</button></div>`;
-  $('detailClose').onclick=closeSheet;$('editOrderBtn').onclick=()=>startEditOrder(order);$('customerCopyBtn').onclick=()=>printCustomerCopy(order);$('printBtn').onclick=()=>printOrder(order);
+  $('sheetBody').innerHTML=`<div class="step"><div class="section">${rows.filter(([,value])=>value).map(([label,value])=>`<div class="summaryRow"><span>${esc(label)}</span><b class="multiline">${esc(value)}</b></div>`).join('')}</div><div class="section"><div class="sectionTitle">商品</div>${order.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${esc(item.qty)}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow total"><span>合計</span><b>${yen(totalOf(order))}</b></div></div><button id="editOrderBtn" class="primary fullButton">注文を修正</button><div class="two"><button id="customerCopyBtn" class="secondary">お客様控え</button><button id="printBtn" class="secondary">注文書を印刷</button></div><button id="deleteBtn" class="linkBtn hideOrderButton">この注文を一覧から非表示</button></div><div class="stickyActions one"><button id="detailClose" class="secondary">閉じる</button></div>`;
+  $('sheetBody').querySelector('.step').insertAdjacentHTML('afterbegin',`<div class="orderStatusEditor"><div class="field"><label for="orderStatus">注文の状態</label><select id="orderStatus">${Object.entries(ORDER_STATUS).map(([key,label])=>`<option value="${key}" ${groupOf(order)===key?'selected':''}>${label}</option>`).join('')}</select></div><button id="saveStatus" class="secondary" disabled>変更</button></div>`);
+  $('orderStatus').onchange=()=>{$('saveStatus').disabled=$('orderStatus').value===groupOf(order)};
+  $('saveStatus').onclick=async()=>{
+    const status=$('orderStatus').value;if(!Object.hasOwn(ORDER_STATUS,status))return;
+    $('saveStatus').disabled=true;$('orderStatus').disabled=true;
+    try{const updated=await updateOrder({...order,workflowStatus:status});if(state.draft?.localId===order.localId)state.draft=null;revealOrder(updated);showDetail(updated.localId);toast(`${ORDER_STATUS[status]}に変更しました`)}
+    catch(error){showError(error.message==='SYNC_CONFLICT'?'別の端末で更新されています。一覧から開き直してください。':'状態を変更できませんでした。接続を確認してください。');$('saveStatus').disabled=false;$('orderStatus').disabled=false}
+  };
+  $('customerCopyBtn').textContent='お客様控え（QR・画像）';
+  $('detailClose').onclick=closeSheet;$('editOrderBtn').onclick=()=>startEditOrder(order);$('customerCopyBtn').onclick=()=>showCustomerReceipt(order);$('printBtn').onclick=()=>printOrder(order);
   $('deleteBtn').onclick=async()=>{
     if(!confirm('この注文を全端末の一覧から非表示にしますか？\n復旧用のデータはSupabaseに残ります。'))return;
     $('deleteBtn').disabled=true;
@@ -261,6 +279,50 @@ function printOrder(order){
   printOrders([order],'展示会 注文書',false);
 }
 function printCustomerCopy(order){printOrders([order],'お客様控え',false,{customerCopy:true})}
+
+async function customerReceiptPng(html){
+  if(!window.html2canvas)throw new Error('IMAGE_LIBRARY_UNAVAILABLE');
+  await document.fonts?.ready;
+  const stage=document.createElement('div');stage.className='receiptCaptureStage';stage.setAttribute('aria-hidden','true');
+  stage.innerHTML=`<article class="receiptSheet captureMode">${html}</article>`;document.body.appendChild(stage);
+  try{
+    await Promise.all([...stage.querySelectorAll('img')].map(img=>img.decode()));
+    const card=stage.firstElementChild,area=Math.max(1,card.scrollWidth*card.scrollHeight),scale=Math.min(2,Math.sqrt(4000000/area),8192/card.scrollHeight);
+    const canvas=await window.html2canvas(card,{backgroundColor:'#ffffff',scale,useCORS:true,logging:false,windowWidth:960});
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+    if(!blob||blob.size>RECEIPT_MAX_BYTES)throw new Error('IMAGE_TOO_LARGE');
+    return blob;
+  }finally{stage.remove()}
+}
+
+async function showCustomerReceipt(order){
+  openSheet('お客様控え','QR・画像');
+  const view=state.sheetVersion;
+  $('sheetBody').innerHTML='<div class="step"><div class="receiptImagePreparing">控え画像とQRコードを準備しています…</div></div>';
+  const isCurrent=()=>view===state.sheetVersion&&Boolean(state.session);
+  try{
+    await loadOrders();
+    const current=state.orders.find(item=>item.localId===order.localId);if(!current)throw new Error('ORDER_NOT_AVAILABLE');
+    const html=receiptDocumentHtml(current,{customerCopy:true}),path=await receiptImagePath(current.localId,html),blob=await customerReceiptPng(html);
+    if(!isCurrent())return;
+    await ensureFreshSession();
+    const storageBase=`${sbBase()}/storage/v1`;
+    try{await fetchJson(`${storageBase}/object/${RECEIPT_BUCKET}/${path}`,{method:'POST',headers:{...sbHeaders(),'Content-Type':'image/png','Cache-Control':'max-age=0','x-upsert':'false'},body:blob})}
+    catch(error){if(error.status!==409&&Number(error.storageCode)!==409)throw error}
+    if(!isCurrent())return;
+    const signed=await fetchJson(`${storageBase}/object/sign/${RECEIPT_BUCKET}/${path}`,{method:'POST',headers:sbHeaders(),body:JSON.stringify({expiresIn:RECEIPT_LINK_SECONDS})});
+    if(!isCurrent())return;
+    const url=signedReceiptUrl(sbBase(),signed.signedURL),expires=new Date(Date.now()+RECEIPT_LINK_SECONDS*1000);
+    state.receiptBlobUrl=URL.createObjectURL(blob);
+    $('sheetBody').innerHTML=`<div class="step"><div class="qrReceipt"><div class="qrOrderNo">注文番号 ${esc(receiptOrderNumber(current))}</div><p>お客様のスマートフォンでQRを読み取ると、控え画像が開きます。<br><b>画像を長押しして保存できます。</b></p><div id="customerQrCode"></div><p class="receiptExpiry">リンク有効期限：${esc(formatDateTime(expires))}<br>このQR・リンクを知っている方が控えを閲覧できます。対象のお客様にだけお渡しください。</p><a id="openReceiptImage" class="secondary fullButton receiptLink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">お客様が開く画像を確認</a><div class="two"><a id="downloadReceiptImage" class="secondary receiptLink" href="${esc(state.receiptBlobUrl)}" download="customer-copy-${esc(current.localId.slice(0,8))}.png">画像を保存</a><button id="printCustomerReceipt" class="secondary">控えを印刷</button></div><details><summary>控え画像のプレビュー</summary><img class="sharedReceiptPreview" src="${esc(state.receiptBlobUrl)}" alt="お客様控えの画像"></details></div></div><div class="stickyActions one"><button id="qrClose" class="primary">閉じる</button></div>`;
+    new window.QRCode($('customerQrCode'),{text:url,width:280,height:280,correctLevel:window.QRCode.CorrectLevel.M});
+    $('printCustomerReceipt').onclick=()=>printCustomerCopy(current);$('qrClose').onclick=()=>showDetail(current.localId);
+  }catch(error){
+    if(!isCurrent())return;
+    $('sheetBody').innerHTML='<div class="step"><div class="receiptError">控え画像を準備できませんでした。注文データは保存されています。接続を確認して再試行してください。</div><button id="retryCustomerReceipt" class="primary fullButton">もう一度準備する</button><button id="receiptBack" class="secondary fullButton">注文詳細へ戻る</button></div>';
+    $('retryCustomerReceipt').onclick=()=>showCustomerReceipt(order);$('receiptBack').onclick=()=>showDetail(order.localId);
+  }
+}
 function receiptOrderNumber(order){return order.receiptNo||order.orderNo||order.localId||'登録前'}
 function receiptDocumentHtml(order,{customerCopy=false}={}){
   const orderNumber=receiptOrderNumber(order);
@@ -270,7 +332,7 @@ function receiptDocumentHtml(order,{customerCopy=false}={}){
   const info=[['店舗名',order.store],['電話番号',order.phone],['お客様名',customerName],['注文区分',labelOrder(order)]];if(!customerCopy)info.push(['卸屋・帳合先',order.account||'-'],['担当',order.staff||state.staff?.display_name||'-']);if(internalInfo.showHandoff)info.push(['受け渡し',handoffLabel(order)]);
   const createdAtHtml=internalInfo.showCreatedAt?`<br><b>作成日時</b> ${new Date(order.createdAt||Date.now()).toLocaleString('ja-JP')}`:'';
   const infoHtml=info.map(([label,value])=>`<div class="receiptInfoCard"><div class="receiptInfoLabel">${esc(label)}</div><div class="receiptInfoValue">${esc(value||'-')}</div></div>`).join('');
-  const itemsHtml=(order.items||[]).map(item=>`<tr><td><b>${esc(item.code)}</b></td><td>${esc(item.name)}</td><td class="num">${item.qty}</td><td class="num">${yen(item.price)}</td><td class="num"><b>${yen(item.price*item.qty)}</b></td></tr>`).join('');
+  const itemsHtml=(order.items||[]).map(item=>`<tr><td><b>${esc(item.code)}</b></td><td>${esc(item.name)}</td><td class="num">${esc(item.qty)}</td><td class="num">${yen(item.price)}</td><td class="num"><b>${yen(item.price*item.qty)}</b></td></tr>`).join('');
   const notesHtml=`${!customerCopy&&order.notes?`<div class="receiptNote"><b>備考</b>${esc(order.notes).replace(/\n/g,'<br>')}</div>`:''}${internalInfo.showGuide?'<div class="receiptNote"><b>ご案内</b>内容を確認し、必要に応じて印刷またはPDF保存してください。</div>':''}${internalInfo.headOfficeShare?`<div class="receiptNote"><b>本社共有</b>${esc(internalInfo.headOfficeShare)}</div>`:''}`;
   return `<div class="receiptHeaderSimple"><div class="receiptBrandBlock"><img class="receiptBrandLogo" src="assets/sun_nishimura_logo.jpg" alt="株式会社サンニシムラ"><div><div class="receiptBrandName">株式会社サンニシムラ</div><div class="receiptBrandSub">SAN NISHIMURA CO., LTD.${customerCopy?'':`<br>${esc(cfg.eventName||'展示会')}`}</div></div></div><div class="receiptDocMeta"><div class="receiptDocTitle">${customerCopy?'お客様控え':'展示会 注文書'}</div><div class="receiptDocSub">Exhibition Order Receipt</div><div class="receiptMetaLine"><b>注文番号</b> ${esc(orderNumber)}${createdAtHtml}</div></div></div><div class="receiptInfoBand">${infoHtml}</div><div class="receiptSection"><div class="receiptSectionHead"><div class="receiptSectionTitle">注文明細</div><div class="receiptSectionHint">${itemCount}点</div></div><table class="receiptTable"><colgroup><col class="code"><col><col class="qty"><col class="unit"><col class="subtotal"></colgroup><thead><tr><th>品番</th><th>商品名</th><th class="num">数量</th><th class="num">単価</th><th class="num">金額</th></tr></thead><tbody>${itemsHtml}</tbody></table></div><div class="receiptFooterGrid"><div class="receiptMemoStack">${notesHtml}</div><div><div class="receiptSummaryBox"><div class="receiptSummaryRow"><span>点数</span><span>${itemCount}</span></div><div class="receiptSummaryRow total"><span>合計</span><span>${yen(totalOf(order))}</span></div></div><div class="receiptCurrencyNote">通貨：JPY</div></div></div><div class="receiptFooterMini"><span>株式会社サンニシムラ</span><span>${customerCopy?`注文番号 ${esc(orderNumber)}`:`${esc(cfg.eventName||'展示会')}・${esc(orderNumber)}`}</span></div>`;
 }
