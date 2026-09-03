@@ -16,7 +16,7 @@ try{
   await login(page);
   await page.click('#newOrderBtn');await page.fill('#productQ','TEST-001');await page.click('[data-product-id="product-1"]');await page.click('#toType');await page.click('[data-type="normal"]');await page.click('#toInfo');
   await page.fill('#fStore','同期確認用の架空店舗');await page.fill('#fPhone','000-0000-0000');await page.selectOption('#fAccount',{label:'検証帳合A'});await page.fill('#fCustomer','架空担当');await page.fill('#fNotes','初回');
-  await page.check('#fSlackShared');
+  assert.equal(await page.locator('#fSlackShared').count(),0);
   await a.setOffline(true);await page.click('#saveBtn');await page.waitForFunction(()=>document.querySelector('#sheetError').textContent.includes('まだ確定できていません'));assert.equal(await page.inputValue('#fStore'),'同期確認用の架空店舗');await a.setOffline(false);
   await page.route('**/rest/v1/exhibition_app_orders',async route=>{const response=await route.fetch();if(response.status()===201)await route.abort('connectionreset');else await route.fulfill({response})},{times:1});
   await page.click('#saveBtn');await page.waitForFunction(()=>document.querySelector('#saveBtn')?.disabled===false);

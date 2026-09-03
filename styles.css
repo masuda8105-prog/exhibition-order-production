@@ -52,3 +52,7 @@ html,body{max-width:100%;overflow-x:hidden}.app{padding-bottom:142px}.syncLine{f
 .customerCopyAction{width:100%;min-width:0;white-space:nowrap;font-size:14px}
 .stickyActions>button{min-width:0}.summaryRow>span,.orderTop>div:first-child,.cardNote{overflow-wrap:anywhere}
 @media(min-width:431px){.two{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.slackShareRow{display:flex;align-items:center;gap:8px;min-width:0}
+.slackShareRow .slackShareCheck{flex:1;min-width:0}
+.slackShareRow .slackShareCheck span{white-space:nowrap}
+.slackSharePrint{flex:0 0 64px;padding:0 10px;min-height:48px;font-size:14px;white-space:nowrap;background:#eef4ff;border-color:#c7d7fe;color:#1849a9}

@@ -35,6 +35,11 @@ async function layout(page,label){
       const range=document.createRange();range.selectNodeContents(button);
       if(range.getClientRects().length!==1||button.scrollWidth>button.clientWidth+1)bad.push('receipt button wraps');
     }
+    for(const row of panel.querySelectorAll('.slackShareRow')){
+      const label=row.querySelector('label'),button=row.querySelector('button'),a=label.getBoundingClientRect(),b=button.getBoundingClientRect();
+      if(a.right>b.left-7||Math.abs((a.top+a.bottom)/2-(b.top+b.bottom)/2)>1||b.height<48)bad.push('share button not beside checkbox');
+      for(const el of [label.querySelector('span'),button]){const range=document.createRange();range.selectNodeContents(el);if(range.getClientRects().length!==1||el.scrollWidth>el.clientWidth+1)bad.push('share row text wraps')}
+    }
     return bad;
   });
   assert.deepEqual(failures,[],`${engine} ${label}`);
@@ -43,16 +48,20 @@ try{
   await fs.mkdir('tmp/ui-checks',{recursive:true});
   const context=await browser.newContext({viewport:{width:390,height:844},locale:'ja-JP',timezoneId:'Asia/Tokyo'});
   const otherContext=await browser.newContext({viewport:{width:1280,height:900},locale:'ja-JP',timezoneId:'Asia/Tokyo'});
+  await context.addInitScript(()=>{window.__SHARE_PRINT_COUNT__=0;window.print=()=>window.__SHARE_PRINT_COUNT__++});
   const page=await context.newPage(),other=await otherContext.newPage();
   page.on('pageerror',error=>errors.push(error.message));other.on('pageerror',error=>errors.push(error.message));
   await login(page);await login(other);
   const cases=['normal','now','later','hotel','ship'];
   for(const kind of cases){
+    const sharing=['later','hotel','ship'].includes(kind);
     await page.setViewportSize({width:390,height:844});
     await page.click('#newOrderBtn');await page.fill('#productQ','TEST-001');await page.click('[data-product-id="product-1"]');await page.click('#toType');await page.click(`[data-type="${kind==='normal'?'normal':'spot'}"]`);
     if(kind!=='normal')await page.click(`[data-handoff="${kind}"]`);
     await page.click('#toInfo');
     assert.equal(await page.textContent('#saveBtn'),'注文確定');
+    assert.equal(await page.locator('#fSlackShared,#fSlackSharedPrint').count(),sharing?2:0);
+    if(kind==='later'){const count=await page.evaluate(()=>window.__SHARE_PRINT_COUNT__);await page.click('#fSlackSharedPrint');assert.equal(await page.evaluate(()=>window.__SHARE_PRINT_COUNT__),count);assert.match(await page.textContent('#sheetError'),/必須/)}
     await page.fill('#fStore',`架空レイアウト検証店-${kind}`);await page.fill('#fPhone','000-0000-0000');await page.fill('#fCustomer','架空のお客様');
     if(kind==='normal')await page.selectOption('#fAccount',{label:'検証帳合A'});
     if(kind==='hotel'){await page.fill('#fHotel','架空検証ホテル');await page.fill('#fGuest','架空宿泊者');await page.fill('#fCheckout','2099-12-31')}
@@ -71,13 +80,29 @@ try{
       if(kind==='later')await page.locator('.pickupDateField').screenshot({path:`tmp/ui-checks/${engine}-pickup-${width}.png`});
       if(kind==='hotel'&&[320,1280].includes(width))await page.locator('#fCheckout').screenshot({path:`tmp/ui-checks/${engine}-checkout-${width}.png`});
     }
-    if(kind==='now')await page.check('#fSlackShared');
-    if(kind==='later'){await page.setViewportSize({width:390,height:844});await page.locator('.slackSharePanel').screenshot({path:`tmp/ui-checks/${engine}-slack-form.png`})}
+    let printedReceiptNo;
+    if(sharing){
+      const count=await page.evaluate(()=>window.__SHARE_PRINT_COUNT__),before=await rows(page);
+      await page.click('#fSlackSharedPrint');assert.equal(await page.evaluate(()=>window.__SHARE_PRINT_COUNT__),count+1);
+      const printText=await page.textContent('#printArea');assert.match(printText,new RegExp(`架空レイアウト検証店-${kind}`));assert.match(printText,/TEST-001/);assert.doesNotMatch(printText,/未確定|確認用|登録前/);
+      if(kind==='later')printedReceiptNo=(await page.textContent('.receiptMetaLine')).match(/受付-[\dA-F-]+/)[0];
+      assert.equal(await page.isChecked('#fSlackShared'),false);assert.deepEqual(await rows(page),before);
+      await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));assert.equal(await page.inputValue('#fStore'),`架空レイアウト検証店-${kind}`);
+      if(kind==='ship')await page.check('#fSlackShared');
+      await page.locator('#toast.show').waitFor({state:'hidden'});
+      for(const width of [320,390,1280]){await page.setViewportSize({width,height:844});await page.locator('.slackShareRow').evaluate(el=>el.scrollIntoView({block:'center'}));await page.locator('.slackShareRow').screenshot({path:`tmp/ui-checks/${engine}-slack-form-${width}.png`})}
+    }
     await page.click('#saveBtn');await page.waitForSelector('#successCustomerCopy');
     const saved=(await rows(page)).find(row=>row.payload.store===`架空レイアウト検証店-${kind}`);
-    assert.equal(saved.payload.slackShared,kind==='now');assert.equal(saved.payload.workflowStatus,kind==='now'?'done':'active');
+    assert.equal(saved.payload.slackShared,kind==='ship');assert.equal(saved.payload.workflowStatus,!sharing||kind==='ship'?'done':'active');
+    if(printedReceiptNo)assert.equal(saved.payload.receiptNo,printedReceiptNo);
     for(const width of [320,390,1280]){await page.setViewportSize({width,height:900});await layout(page,`${kind} success ${width}`)}
     await page.click('#backDash');await page.click(`[data-detail="${saved.id}"]`);
+    assert.equal(await page.locator('#detailSlackShared,#detailSlackSharedPrint').count(),sharing?2:0);
+    if(sharing){
+      const before=await rows(page);await page.click('#detailSlackSharedPrint');assert.match(await page.textContent('#printArea'),new RegExp(`架空レイアウト検証店-${kind}`));assert.doesNotMatch(await page.textContent('#printArea'),/未確定|確認用|登録前/);
+      assert.deepEqual(await rows(page),before);assert.equal(await page.isChecked('#detailSlackShared'),kind==='ship');await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
+    }
     for(const width of [320,390,1280]){await page.setViewportSize({width,height:900});await layout(page,`${kind} detail ${width}`)}
     if(kind==='later'){
       // Failed writes must not show an unchecked order as completed.

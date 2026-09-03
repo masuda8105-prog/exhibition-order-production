@@ -135,7 +135,14 @@ export function groupOf(order){
 }
 
 export function setSlackShared(order,shared,now=new Date().toISOString()){
+  if(!needsHeadOfficeShare(order))return {...order};
   return {...order,slackShared:Boolean(shared),slackSharedAt:shared?(order?.slackSharedAt||now):'',workflowStatus:shared?'done':'active'};
+}
+
+export function statusOnConfirmation(order,previousOrder){
+  if(!needsHeadOfficeShare(order)||order.slackShared)return 'done';
+  if(!previousOrder||!needsHeadOfficeShare(previousOrder))return 'active';
+  return groupOf(order);
 }
 
 export function nextAction(order){
