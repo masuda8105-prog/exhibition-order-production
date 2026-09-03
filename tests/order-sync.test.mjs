@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {ORDER_TYPE,HANDOFF,groupOf,setSlackShared,statusOnConfirmation,needsHeadOfficeShare,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from '../workflow.js';
+import {ORDER_TYPE,HANDOFF,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,markPickupDelivered,needsHeadOfficeShare,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from '../workflow.js';
 
 test('Slack共有チェックは後日受取と配送だけに適用し、解除で要対応に戻す',()=>{
   const stamp='2099-01-01T12:34:56Z';
   for(const order of [{type:ORDER_TYPE.NORMAL},...Object.values(HANDOFF).map(handoff=>({type:ORDER_TYPE.SPOT,handoff}))]){
     if(!needsHeadOfficeShare(order)){assert.deepEqual(setSlackShared(order,true,stamp),order);continue}
     const checked=setSlackShared({...order,workflowStatus:'waiting'},true,stamp);
-    assert.equal(groupOf(checked),'done');assert.equal(checked.slackShared,true);assert.equal(checked.slackSharedAt,stamp);
+    assert.equal(groupOf(checked),isPickupOrder(order)?'waiting':'done');assert.equal(checked.slackShared,true);assert.equal(checked.slackSharedAt,stamp);
     const unchecked=setSlackShared(checked,false);assert.equal(groupOf(unchecked),'active');assert.equal(unchecked.slackSharedAt,'');
     assert.equal(order.slackShared,undefined);
   }
@@ -22,14 +22,40 @@ test('共有確認は日時ごと同期し通常編集では共有日時と手�
   assert.equal(restored.slackShared,true);assert.equal(restored.slackSharedAt,checked.slackSharedAt);assert.equal(groupOf(restored),'waiting');
 });
 
-test('通常とその場渡しは注文確定で完了、後日受取と配送は共有済みなら完了',()=>{
+test('通常とその場渡しは確定で完了、共有後の後日受取は待ち、配送は完了',()=>{
   for(const order of [{type:ORDER_TYPE.NORMAL},...Object.values(HANDOFF).map(handoff=>({type:ORDER_TYPE.SPOT,handoff}))]){
     assert.equal(statusOnConfirmation({...order,workflowStatus:'active'}),needsHeadOfficeShare(order)?'active':'done');
-    assert.equal(statusOnConfirmation({...order,slackShared:true}),'done');
+    assert.equal(statusOnConfirmation({...order,slackShared:true}),isPickupOrder(order)?'waiting':'done');
   }
   const waiting={type:ORDER_TYPE.SPOT,handoff:HANDOFF.HOTEL,workflowStatus:'waiting'};
   assert.equal(statusOnConfirmation(waiting,waiting),'waiting');
   assert.equal(statusOnConfirmation({...waiting,workflowStatus:'done'},{type:ORDER_TYPE.NORMAL}),'active');
+});
+
+test('旧版で共有だけで完了になった後日受取はデータを書き換えず待ちへ表示する',()=>{
+  for(const shared of [false,true]){
+    const original={type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,slackShared:shared,workflowStatus:'done',delivered:false};
+    assert.equal(groupOf(original),'waiting');assert.equal(original.workflowStatus,'done');
+    assert.notEqual(statusOnConfirmation(original,original),'done');
+  }
+  assert.equal(groupOf({type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,slackShared:true}),'waiting');
+});
+
+test('お渡し済みだけで後日受取を完了し、会計や共有状態は勝手に変えない',()=>{
+  const original={type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,slackShared:false,paid:false,workflowStatus:'active',items:[]};
+  const delivered=markPickupDelivered(original,'2099-01-02T12:00:00Z');
+  assert.equal(delivered.delivered,true);assert.equal(groupOf(delivered),'done');assert.equal(statusOnConfirmation(delivered,original),'done');
+  assert.equal(delivered.paid,false);assert.equal(delivered.slackShared,false);assert.equal(original.delivered,undefined);
+  assert.equal(markPickupDelivered(delivered).deliveredAt,delivered.deliveredAt);
+  for(const shared of [false,true])assert.equal(groupOf(setSlackShared(delivered,shared)),'done');
+  for(const handoff of [HANDOFF.NOW,HANDOFF.HOTEL,HANDOFF.SHIP]){const order={type:ORDER_TYPE.SPOT,handoff};assert.deepEqual(markPickupDelivered(order),order)}
+});
+
+test('お渡し状況と日時を同期し、旧注文には架空のお渡し日時を付けない',()=>{
+  const payload=orderPayloadForCloud(markPickupDelivered({type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER},'2099-01-02T12:00:00Z'));
+  const restored=orderFromCloudRow({id:'fixture-id',payload});
+  assert.equal(restored.delivered,true);assert.equal(restored.deliveredAt,'2099-01-02T12:00:00Z');assert.equal(groupOf(restored),'done');
+  assert.equal(orderPayloadForCloud({delivered:true}).deliveredAt,'');
 });
 
 test('旧本社共有フラグをSlack共有とみなさず既存状態を維持する',()=>{

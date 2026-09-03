@@ -88,50 +88,91 @@ try{
       if(kind==='later')printedReceiptNo=(await page.textContent('.receiptMetaLine')).match(/受付-[\dA-F-]+/)[0];
       assert.equal(await page.isChecked('#fSlackShared'),false);assert.deepEqual(await rows(page),before);
       await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));assert.equal(await page.inputValue('#fStore'),`架空レイアウト検証店-${kind}`);
-      if(kind==='ship')await page.check('#fSlackShared');
+      if(kind==='ship'||kind==='later')await page.check('#fSlackShared');
       await page.locator('#toast.show').waitFor({state:'hidden'});
       for(const width of [320,390,1280]){await page.setViewportSize({width,height:844});await page.locator('.slackShareRow').evaluate(el=>el.scrollIntoView({block:'center'}));await page.locator('.slackShareRow').screenshot({path:`tmp/ui-checks/${engine}-slack-form-${width}.png`})}
     }
     await page.click('#saveBtn');await page.waitForSelector('#successCustomerCopy');
     const saved=(await rows(page)).find(row=>row.payload.store===`架空レイアウト検証店-${kind}`);
-    assert.equal(saved.payload.slackShared,kind==='ship');assert.equal(saved.payload.workflowStatus,!sharing||kind==='ship'?'done':'active');
+    assert.equal(saved.payload.slackShared,kind==='ship'||kind==='later');assert.equal(saved.payload.workflowStatus,!sharing||kind==='ship'?'done':kind==='later'?'waiting':'active');
+    if(kind==='later')assert.equal(saved.payload.delivered,false);
     if(printedReceiptNo)assert.equal(saved.payload.receiptNo,printedReceiptNo);
     for(const width of [320,390,1280]){await page.setViewportSize({width,height:900});await layout(page,`${kind} success ${width}`)}
     await page.click('#backDash');await page.click(`[data-detail="${saved.id}"]`);
     assert.equal(await page.locator('#detailSlackShared,#detailSlackSharedPrint').count(),sharing?2:0);
+    assert.equal(await page.locator('#handOverBtn').count(),kind==='later'?1:0);
     if(sharing){
       const before=await rows(page);await page.click('#detailSlackSharedPrint');assert.match(await page.textContent('#printArea'),new RegExp(`架空レイアウト検証店-${kind}`));assert.doesNotMatch(await page.textContent('#printArea'),/未確定|確認用|登録前/);
-      assert.deepEqual(await rows(page),before);assert.equal(await page.isChecked('#detailSlackShared'),kind==='ship');await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
+      assert.deepEqual(await rows(page),before);assert.equal(await page.isChecked('#detailSlackShared'),kind==='ship'||kind==='later');await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
     }
     for(const width of [320,390,1280]){await page.setViewportSize({width,height:900});await layout(page,`${kind} detail ${width}`)}
     if(kind==='later'){
       // Failed writes must not show an unchecked order as completed.
+      assert.equal(await page.locator('#orderStatus option[value="done"]').isDisabled(),true);
+      await page.uncheck('#detailSlackShared');await waitStatus(page,'active',false);
       await page.route('**/rest/v1/exhibition_app_orders?*',route=>route.request().method()==='PATCH'?route.fulfill({status:503,contentType:'application/json',body:'{"error":"fixture_offline"}'}):route.continue());
       await page.click('#detailSlackShared');await page.waitForFunction(()=>document.querySelector('#sheetError').textContent.includes('変更できませんでした'));
       assert.equal(await page.isChecked('#detailSlackShared'),false);assert.equal(await page.inputValue('#orderStatus'),'active');
       assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.slackShared,false);
       await page.unroute('**/rest/v1/exhibition_app_orders?*');
-      await page.check('#detailSlackShared');await waitStatus(page,'done',true);
-      assert.equal(await page.getAttribute('[data-tab="done"]','aria-selected'),'true');
+      await page.check('#detailSlackShared');await waitStatus(page,'waiting',true);
+      assert.equal(await page.getAttribute('[data-tab="waiting"]','aria-selected'),'true');
       const confirmed=(await rows(page)).find(row=>row.id===saved.id);assert.ok(confirmed.payload.slackSharedAt);
       // A separately logged-in browser must get both fields through automatic sync.
       await other.fill('#orderSearch',`架空レイアウト検証店-${kind}`);
-      await other.waitForSelector(`[data-detail="${saved.id}"]`,{timeout:20000});await other.click(`[data-detail="${saved.id}"]`);await waitStatus(other,'done',true);await other.click('#detailClose');
+      await other.waitForSelector(`[data-detail="${saved.id}"]`,{timeout:20000});await other.click(`[data-detail="${saved.id}"]`);await waitStatus(other,'waiting',true);await other.click('#detailClose');
       await page.uncheck('#detailSlackShared');await waitStatus(page,'active',false);
       assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.slackSharedAt,'');
       await page.selectOption('#orderStatus','waiting');await page.click('#saveStatus');await waitStatus(page,'waiting',false);
-      await page.check('#detailSlackShared');await waitStatus(page,'done',true);
+      await page.check('#detailSlackShared');await waitStatus(page,'waiting',true);
       // Sharing edits use the same revision guard as other edits.
       await other.click('#refreshBtn');await other.waitForFunction(()=>!document.querySelector('#refreshBtn').disabled);await other.click(`[data-detail="${saved.id}"]`);
       await page.uncheck('#detailSlackShared');await waitStatus(page,'active',false);
       await other.click('#detailSlackShared');await other.waitForFunction(()=>document.querySelector('#sheetError').textContent.includes('別の端末で更新'));await other.click('#detailClose');
-      await page.check('#detailSlackShared');await waitStatus(page,'done',true);
-      await page.click('#detailClose');await page.reload();await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-tab="done"]');await page.click(`[data-detail="${saved.id}"]`);await waitStatus(page,'done',true);
+      await page.check('#detailSlackShared');await waitStatus(page,'waiting',true);
+      await page.click('#detailClose');await page.reload();await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-tab="waiting"]');await page.click(`[data-detail="${saved.id}"]`);await waitStatus(page,'waiting',true);
       await page.click('#editOrderBtn');await page.click('#toType');await page.click('#toInfo');assert.equal(await page.textContent('#saveBtn'),'変更を確定');assert.equal(await page.isChecked('#fSlackShared'),true);
       const stamp=(await rows(page)).find(row=>row.id===saved.id).payload.slackSharedAt;
       await page.fill('#fNotes','共有後の通常編集');await page.click('#saveBtn');await page.waitForSelector('#sheet',{state:'hidden'});
       assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.slackSharedAt,stamp);
       await page.click(`[data-detail="${saved.id}"]`);
+    }
+    if(kind==='later'){
+      // Historical auto-completed pickup orders are displayed as waiting without a mass write.
+      await page.click('#detailClose');
+      const historical=(await rows(page)).find(row=>row.id===saved.id);
+      await page.request.patch(`${base}rest/v1/exhibition_app_orders?id=eq.${saved.id}`,{headers,data:{payload:{...historical.payload,workflowStatus:'done',delivered:false,deliveredAt:''}}});
+      await page.click('#refreshBtn');await page.waitForFunction(()=>!document.querySelector('#refreshBtn').disabled);await page.click('[data-tab="waiting"]');
+      assert.equal(await page.locator(`[data-handover="${saved.id}"]`).count(),1);
+      assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.workflowStatus,'done');
+      await page.click(`[data-detail="${saved.id}"]`);await waitStatus(page,'waiting',true);
+      await page.route('**/rest/v1/exhibition_app_orders?*',route=>route.request().method()==='PATCH'?route.fulfill({status:503,contentType:'application/json',body:'{"error":"fixture_offline"}'}):route.continue());
+      await page.click('#handOverBtn');await page.waitForFunction(()=>document.querySelector('#sheetError').textContent.includes('変更できませんでした'));
+      assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.delivered,false);assert.equal(await page.isDisabled('#handOverBtn'),false);
+      await page.unroute('**/rest/v1/exhibition_app_orders?*');
+      for(const width of [320,390,1280]){await page.setViewportSize({width,height:900});await layout(page,`handover ${width}`);await page.locator('.pickupHandoverPanel').evaluate(el=>el.scrollIntoView({block:'center'}));await page.locator('.pickupHandoverPanel').screenshot({path:`tmp/ui-checks/${engine}-handover-${width}.png`})}
+      const beforeDelivery=(await rows(page)).find(row=>row.id===saved.id);
+      await page.click('#handOverBtn');await waitStatus(page,'done',true);
+      const handed=(await rows(page)).find(row=>row.id===saved.id);assert.equal(handed.payload.delivered,true);assert.ok(handed.payload.deliveredAt);assert.equal(handed.payload.paid,beforeDelivery.payload.paid);
+      assert.equal(await page.locator('#handOverBtn').count(),0);assert.match(await page.textContent('.pickupHandoverPanel'),/お渡し日時/);
+      await page.uncheck('#detailSlackShared');await waitStatus(page,'done',false);await page.check('#detailSlackShared');await waitStatus(page,'done',true);
+      // Automatic synchronization carries the handover flag and time to a separate browser.
+      await other.waitForFunction(()=>document.querySelector('[data-tab="done"]').textContent==='完了3',{},{timeout:20000});await other.click(`[data-detail="${saved.id}"]`);await waitStatus(other,'done',true);
+      assert.match(await other.textContent('.pickupHandoverPanel'),/お渡し日時/);await other.click('#detailClose');
+      await page.click('#detailClose');await page.reload();await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-tab="done"]');await page.click(`[data-detail="${saved.id}"]`);await waitStatus(page,'done',true);
+      assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.deliveredAt,handed.payload.deliveredAt);
+      // Existing status selection can undo a mistaken handover.
+      await page.selectOption('#orderStatus','waiting');await page.click('#saveStatus');await waitStatus(page,'waiting',true);
+      assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.delivered,false);assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.deliveredAt,'');
+      await page.click('#detailClose');
+      await page.route('**/rest/v1/exhibition_app_orders?*',route=>route.request().method()==='PATCH'?route.fulfill({status:503,contentType:'application/json',body:'{"error":"fixture_offline"}'}):route.continue());
+      await page.click(`[data-handover="${saved.id}"]`);await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('保存できませんでした'));
+      assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.delivered,false);assert.equal(await page.isDisabled(`[data-handover="${saved.id}"]`),false);await page.unroute('**/rest/v1/exhibition_app_orders?*');
+      await page.setViewportSize({width:390,height:844});await page.locator('#toast.show').waitFor({state:'hidden'});await page.locator('.orderCard').screenshot({path:`tmp/ui-checks/${engine}-handover-card.png`});
+      let patches=0;const countPatch=request=>{if(request.method()==='PATCH'&&request.url().includes('exhibition_app_orders'))patches++};page.on('request',countPatch);
+      await page.locator(`[data-handover="${saved.id}"]`).evaluate(button=>{button.click();button.click()});
+      await page.waitForFunction(()=>document.querySelector('[data-tab="done"]').getAttribute('aria-selected')==='true');page.off('request',countPatch);assert.equal(patches,1);
+      await page.click(`[data-detail="${saved.id}"]`);await waitStatus(page,'done',true);assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.delivered,true);
     }
     if(kind==='hotel'){await page.selectOption('#orderStatus','waiting');await page.click('#saveStatus');await waitStatus(page,'waiting',false)}
     if(kind==='ship'){

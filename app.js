@@ -1,10 +1,11 @@
-import {ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,needsHeadOfficeShare,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from './workflow.js?v=20260903-share3';
-import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-share3';
-import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-share3';
+import {ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from './workflow.js?v=20260903-pickup4';
+import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
+import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
 
 const cfg=window.EXHIBITION_CONFIG||{};
 const $=id=>document.getElementById(id);
 const LS_STAFF='exhibitionOps.staff.v2',LS_KEYPAD_ALIGN='exhibitionOps.keypadAlign.v1';
+const pendingHandovers=new Set();
 const state={online:false,session:null,staff:null,orders:[],products:[],accounts:[],draft:null,rememberDraftInput:null,signalsBound:false,syncTimer:null,syncInFlight:null,refreshPromise:null,lastSyncedAt:null,dataEpoch:0,tab:'active',sheetVersion:0,receiptBlobUrl:null};
 const yen=n=>Number.isFinite(Number(n))?`¥${Math.round(Number(n)).toLocaleString('ja-JP')}`:'価格未定';
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -152,9 +153,21 @@ function renderOrders(){
   if(!list.length){wrap.innerHTML=`<div class="empty">${currentSearch()?'該当する注文はありません。':`${ORDER_STATUS[state.tab]}の注文はありません。`}<br><small>${currentSearch()?'店舗名・電話・品番などで検索できます。':'別のタブを選ぶか、下の「新しい注文」から始めてください。'}</small></div>`;return}
   wrap.innerHTML=list.map(cardHtml).join('');
   wrap.querySelectorAll('[data-detail]').forEach(button=>button.onclick=()=>showDetail(button.dataset.detail));
+  wrap.querySelectorAll('[data-handover]').forEach(button=>button.onclick=()=>handOverFromCard(button.dataset.handover));
 }
 function cardHtml(order){
-  return `<article class="orderCard"><div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store)}</div></div><div class="amount">${yen(totalOf(order))}</div></div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span><span class="chip">${itemCountOf(order)}点</span></div><div class="cardNote">${order.customer?`${esc(order.customer)} ／ `:''}${esc(handoffLabel(order))}</div><div class="cardBottom"><span class="receivedAt">${esc(formatDateTime(order.createdAt,true))}</span><button class="secondary compact" data-detail="${esc(order.localId)}">詳細・印刷</button></div></article>`;
+  const handover=isPickupOrder(order)&&!order.delivered?`<button class="primary handoverButton" data-handover="${esc(order.localId)}" ${pendingHandovers.has(order.localId)?'disabled':''}>${pendingHandovers.has(order.localId)?'保存中…':'お渡し済み'}</button>`:'';
+  return `<article class="orderCard"><div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store)}</div></div><div class="amount">${yen(totalOf(order))}</div></div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span><span class="chip">${itemCountOf(order)}点</span></div><div class="cardNote">${order.customer?`${esc(order.customer)} ／ `:''}${esc(handoffLabel(order))}</div><div class="cardBottom"><span class="receivedAt">${esc(formatDateTime(order.createdAt,true))}</span><button class="secondary compact" data-detail="${esc(order.localId)}">詳細・印刷</button></div>${handover}</article>`;
+}
+
+async function handOverFromCard(id){
+  const order=state.orders.find(item=>item.localId===id);if(!order||!isPickupOrder(order)||order.delivered||pendingHandovers.has(id))return;
+  const version=state.sheetVersion;pendingHandovers.add(id);renderOrders();
+  try{
+    const updated=await updateOrder(markPickupDelivered(order));
+    if(version===state.sheetVersion){if(state.draft?.localId===id)state.draft=null;revealOrder(updated)}toast('お渡し済みとして完了しました');
+  }catch(error){toast(error.message==='SYNC_CONFLICT'?'別の端末で更新されています。最新の注文を確認してください。':'保存できませんでした。接続を確認して、もう一度お押しください。')}
+  finally{pendingHandovers.delete(id);renderOrders()}
 }
 
 function clearReceiptPreview(){if(state.receiptBlobUrl)URL.revokeObjectURL(state.receiptBlobUrl);state.receiptBlobUrl=null;state.sheetVersion++}
@@ -205,10 +218,11 @@ function renderCart(d){
   wrap.querySelectorAll('[data-plus]').forEach(button=>button.onclick=()=>{const item=d.items.find(value=>value.lineId===button.dataset.plus);if(item)item.qty++;renderCart(d)});
   wrap.querySelectorAll('[data-minus]').forEach(button=>button.onclick=()=>{const item=d.items.find(value=>value.lineId===button.dataset.minus);if(!item)return;item.qty--;if(item.qty<=0)d.items=d.items.filter(value=>value!==item);renderCart(d)});
 }
-function renderTypeStep(d){const canContinue=Boolean(d.type&&(d.type!==ORDER_TYPE.SPOT||d.handoff));$('stepLabel').textContent='2 / 3　注文方法';$('sheetTitle').textContent='どの対応ですか？';$('sheetBody').innerHTML=`<div class="step"><p class="stepIntro">実際の対応に一番近いものを選んでください。</p><div class="choiceGrid"><button class="choice ${d.type===ORDER_TYPE.NORMAL?'on':''}" data-type="normal"><b>国内通常注文</b><small>卸屋・電話番号を入力して受注完了。帰社後にまとめて印刷します。</small></button><button class="choice ${d.type===ORDER_TYPE.SPOT?'on':''}" data-type="spot"><b>現売り対応</b><small>会場での会計・受け渡し、後日受取、配送です。</small></button></div>${d.type===ORDER_TYPE.SPOT?`<div class="section topGap"><div class="sectionTitle">商品の渡し方 *</div><div class="choiceGrid handoffChoices"><button class="choice ${d.handoff===HANDOFF.NOW?'on':''}" data-handoff="now"><b>1　在庫あり・その場渡し</b><small>会計して、その場で商品をお渡しします。</small></button><button class="choice ${d.handoff===HANDOFF.LATER?'on':''}" data-handoff="later"><b>2　翌日・翌々日に受取</b><small>お受け取り予定日を入力します。</small></button><button class="choice ${d.handoff===HANDOFF.HOTEL?'on':''}" data-handoff="hotel"><b>3　ホテルへ配送</b><small>お届け先の情報を入力します。</small></button><button class="choice ${d.handoff===HANDOFF.SHIP?'on':''}" data-handoff="ship"><b>4　指定住所へ配送</b><small>お届け先の情報を入力します。</small></button></div></div>`:''}</div><div class="stickyActions"><button id="backProducts" class="secondary">戻る</button><button id="toInfo" class="primary" ${canContinue?'':'disabled'}>入力へ進む</button></div>`;document.querySelectorAll('[data-type]').forEach(button=>button.onclick=()=>{const previous=d.type;d.type=button.dataset.type;if(d.type===ORDER_TYPE.SPOT&&previous!==ORDER_TYPE.SPOT)d.handoff=null;if(d.type===ORDER_TYPE.NORMAL){d.handoff=null;d.headOfficeShared=false}renderDraft()});document.querySelectorAll('[data-handoff]').forEach(button=>button.onclick=()=>{d.handoff=button.dataset.handoff;if(d.handoff===HANDOFF.NOW){d.headOfficeShared=false;d.headOfficeSharedAt=''}renderDraft()});$('backProducts').onclick=()=>{d.stage='products';renderDraft()};$('toInfo').onclick=()=>{if(!d.type)return showError('注文方法を選択してください。');if(d.type===ORDER_TYPE.SPOT&&!d.handoff)return showError('商品の渡し方を選択してください。');d.stage='info';renderDraft()}}
+function renderTypeStep(d){const canContinue=Boolean(d.type&&(d.type!==ORDER_TYPE.SPOT||d.handoff));$('stepLabel').textContent='2 / 3　注文方法';$('sheetTitle').textContent='どの対応ですか？';$('sheetBody').innerHTML=`<div class="step"><p class="stepIntro">実際の対応に一番近いものを選んでください。</p><div class="choiceGrid"><button class="choice ${d.type===ORDER_TYPE.NORMAL?'on':''}" data-type="normal"><b>国内通常注文</b><small>卸屋・電話番号を入力して受注完了。帰社後にまとめて印刷します。</small></button><button class="choice ${d.type===ORDER_TYPE.SPOT?'on':''}" data-type="spot"><b>現売り対応</b><small>会場での会計・受け渡し、後日受取、配送です。</small></button></div>${d.type===ORDER_TYPE.SPOT?`<div class="section topGap"><div class="sectionTitle">商品の渡し方 *</div><div class="choiceGrid handoffChoices"><button class="choice ${d.handoff===HANDOFF.NOW?'on':''}" data-handoff="now"><b>1　在庫あり・その場渡し</b><small>会計して、その場で商品をお渡しします。</small></button><button class="choice ${d.handoff===HANDOFF.LATER?'on':''}" data-handoff="later"><b>2　翌日・翌々日に受取</b><small>お受け取り予定日を入力します。</small></button><button class="choice ${d.handoff===HANDOFF.HOTEL?'on':''}" data-handoff="hotel"><b>3　ホテルへ配送</b><small>お届け先の情報を入力します。</small></button><button class="choice ${d.handoff===HANDOFF.SHIP?'on':''}" data-handoff="ship"><b>4　指定住所へ配送</b><small>お届け先の情報を入力します。</small></button></div></div>`:''}</div><div class="stickyActions"><button id="backProducts" class="secondary">戻る</button><button id="toInfo" class="primary" ${canContinue?'':'disabled'}>入力へ進む</button></div>`;document.querySelectorAll('[data-type]').forEach(button=>button.onclick=()=>{const previous=d.type;d.type=button.dataset.type;if(d.type===ORDER_TYPE.SPOT&&previous!==ORDER_TYPE.SPOT)d.handoff=null;if(d.type===ORDER_TYPE.NORMAL){d.handoff=null;d.headOfficeShared=false}renderDraft()});document.querySelectorAll('[data-handoff]').forEach(button=>button.onclick=()=>{if(button.dataset.handoff===HANDOFF.LATER&&d.handoff!==HANDOFF.LATER){d.delivered=false;d.deliveredAt='';d.workflowStatus=d.slackShared?'waiting':'active'}d.handoff=button.dataset.handoff;if(d.handoff===HANDOFF.NOW){d.headOfficeShared=false;d.headOfficeSharedAt=''}renderDraft()});$('backProducts').onclick=()=>{d.stage='products';renderDraft()};$('toInfo').onclick=()=>{if(!d.type)return showError('注文方法を選択してください。');if(d.type===ORDER_TYPE.SPOT&&!d.handoff)return showError('商品の渡し方を選択してください。');d.stage='info';renderDraft()}}
 function slackSharedField(order,id){
   if(!needsHeadOfficeShare(order))return '';
-  return `<div class="slackSharePanel"><div class="slackShareRow"><label class="slackShareCheck" for="${id}"><input id="${id}" type="checkbox" ${order.slackShared?'checked':''} aria-describedby="${id}Help"><span>Slackに共有済み</span></label><button id="${id}Print" type="button" class="secondary slackSharePrint" aria-label="Slack共有用にPDF保存・印刷">共有</button></div><p id="${id}Help">共有ボタンでPDF保存・印刷できます。<br>Slackへ送った後にチェックすると「完了」、チェックを外すと「要対応」に戻ります。</p>${order.slackShared&&order.slackSharedAt?`<small>確認日時：${esc(formatDateTime(order.slackSharedAt))}</small>`:''}</div>`;
+  const help=isPickupOrder(order)?'共有後は「受け取り待ち」です。実際にお渡ししてから「お渡し済み」を押すと完了します。':'Slackへ送った後にチェックすると「完了」、チェックを外すと「要対応」に戻ります。';
+  return `<div class="slackSharePanel"><div class="slackShareRow"><label class="slackShareCheck" for="${id}"><input id="${id}" type="checkbox" ${order.slackShared?'checked':''} aria-describedby="${id}Help"><span>Slackに共有済み</span></label><button id="${id}Print" type="button" class="secondary slackSharePrint" aria-label="Slack共有用にPDF保存・印刷">共有</button></div><p id="${id}Help">共有ボタンでPDF保存・印刷できます。<br>${help}</p>${order.slackShared&&order.slackSharedAt?`<small>確認日時：${esc(formatDateTime(order.slackSharedAt))}</small>`:''}</div>`;
 }
 function renderInfoStep(d){
   const normal=d.type===ORDER_TYPE.NORMAL,now=d.handoff===HANDOFF.NOW;
@@ -269,13 +283,18 @@ function showDetail(id){
   $('sheetBody').innerHTML=`<div class="step"><div class="section">${rows.filter(([,value])=>value).map(([label,value])=>`<div class="summaryRow"><span>${esc(label)}</span><b class="multiline">${esc(value)}</b></div>`).join('')}</div><div class="section"><div class="sectionTitle">商品</div>${order.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${esc(item.qty)}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow total"><span>合計</span><b>${yen(totalOf(order))}</b></div></div><button id="editOrderBtn" class="primary fullButton">注文を修正</button><div class="two"><button id="customerCopyBtn" class="secondary">お客様控え</button><button id="printBtn" class="secondary">注文書を印刷</button></div><button id="deleteBtn" class="linkBtn hideOrderButton">この注文を一覧から非表示</button></div><div class="stickyActions one"><button id="detailClose" class="secondary">閉じる</button></div>`;
   $('sheetBody').querySelector('.step').insertAdjacentHTML('afterbegin',`<div class="orderStatusEditor"><div class="field"><label for="orderStatus">注文の状態</label><select id="orderStatus">${Object.entries(ORDER_STATUS).map(([key,label])=>`<option value="${key}" ${groupOf(order)===key?'selected':''}>${label}</option>`).join('')}</select></div><button id="saveStatus" class="secondary" disabled>変更</button></div>`);
   $('sheetBody').querySelector('.orderStatusEditor').insertAdjacentHTML('afterend',slackSharedField(order,'detailSlackShared'));
+  if(isPickupOrder(order)){
+    $('orderStatus').querySelector('[value="done"]').disabled=!order.delivered;
+    $('sheetBody').querySelector('.orderStatusEditor').insertAdjacentHTML('afterend',`<div class="pickupHandoverPanel">${order.delivered?`<b>お渡し済み</b>${order.deliveredAt?`<small>お渡し日時：${esc(formatDateTime(order.deliveredAt))}</small>`:''}`:'<p>商品のお渡し後に押してください。</p><button id="handOverBtn" class="primary handoverButton">お渡し済み</button>'}</div>`);
+  }
   const version=state.sheetVersion;
   const changeDetailOrder=async(next,message)=>{
     const controls=[...$('sheetBody').querySelectorAll('button,input,select')].map(element=>({element,disabled:element.disabled}));
     controls.forEach(({element})=>element.disabled=true);
     try{
-      const updated=await updateOrder(next);if(state.draft?.localId===order.localId)state.draft=null;
+      const updated=await updateOrder(next);
       if(version!==state.sheetVersion)return;
+      if(state.draft?.localId===order.localId)state.draft=null;
       revealOrder(updated);showDetail(updated.localId);toast(message);
     }catch(error){
       if(version!==state.sheetVersion)return;
@@ -287,9 +306,12 @@ function showDetail(id){
   $('orderStatus').onchange=()=>{$('saveStatus').disabled=$('orderStatus').value===groupOf(order)};
   $('saveStatus').onclick=()=>{
     const status=$('orderStatus').value;if(!Object.hasOwn(ORDER_STATUS,status))return;
-    return changeDetailOrder({...order,workflowStatus:status},`${ORDER_STATUS[status]}に変更しました`);
+    if(isPickupOrder(order)&&!order.delivered&&status==='done')return showError('お渡しが終わってから「お渡し済み」を押してください。');
+    const next={...order,workflowStatus:status};if(isPickupOrder(order)&&status!=='done'){next.delivered=false;next.deliveredAt=''}
+    return changeDetailOrder(next,isPickupOrder(order)&&order.delivered&&status!=='done'?'お渡し済みを取り消して状態を戻しました':`${ORDER_STATUS[status]}に変更しました`);
   };
-  if($('detailSlackShared'))$('detailSlackShared').onchange=()=>{const shared=$('detailSlackShared').checked;return changeDetailOrder(setSlackShared(order,shared),shared?'Slack共有済みとして完了しました':'共有チェックを外して要対応に戻しました')};
+  if($('handOverBtn'))$('handOverBtn').onclick=()=>changeDetailOrder(markPickupDelivered(order),'お渡し済みとして完了しました');
+  if($('detailSlackShared'))$('detailSlackShared').onchange=()=>{const shared=$('detailSlackShared').checked,next=setSlackShared(order,shared);return changeDetailOrder(next,`${shared?'Slack共有済みを記録':'共有チェックを解除'}しました（${ORDER_STATUS[groupOf(next)]}）`)};
   if($('detailSlackSharedPrint'))$('detailSlackSharedPrint').onclick=()=>printOrder(order);
   $('customerCopyBtn').textContent='お客様控え（QR・画像）';
   $('customerCopyBtn').classList.add('customerCopyAction');$('customerCopyBtn').parentElement.className='detailReceiptActions';

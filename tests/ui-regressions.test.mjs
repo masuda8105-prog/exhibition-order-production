@@ -127,3 +127,13 @@ test('日付とQRボタンの寸法を固定し日付クイック選択で画面
   assert.match(styles,/\.customerCopyAction\{[^}]*white-space:nowrap/);
   assert.match(app,/\$\('fPickup'\)\.value=d\.pickupDate;updateQuickDates\(\)/);
 });
+
+test('未受取の後日受取だけにお渡し済みボタンを出し、完了への直接変更を防ぐ',()=>{
+  assert.match(app,/isPickupOrder\(order\)&&!order\.delivered/);
+  assert.match(app,/data-handover=/);
+  assert.match(app,/id="handOverBtn"/);
+  assert.match(app,/markPickupDelivered\(order\)/);
+  assert.match(app,/disabled=!order\.delivered/);
+  assert.match(app,/pendingHandovers\.has\(id\)/);
+  assert.match(styles,/\.handoverButton\{[^}]*min-height:48px/);
+});

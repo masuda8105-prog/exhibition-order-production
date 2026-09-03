@@ -12,6 +12,13 @@ export function needsReceipt(order){
   return order?.type===ORDER_TYPE.SPOT && order?.handoff===HANDOFF.LATER;
 }
 
+export const isPickupOrder=needsReceipt;
+
+export function markPickupDelivered(order,now=new Date().toISOString()){
+  if(!isPickupOrder(order))return {...order};
+  return {...order,delivered:true,deliveredAt:order.deliveredAt||now,workflowStatus:'done'};
+}
+
 export function totalOf(order){
   return (order?.items||[]).reduce((sum,item)=>sum + Number(item.price||0)*Number(item.qty||0),0);
 }
@@ -122,12 +129,18 @@ export function isDone(order){
   if(order?.deleted) return false;
   if(order?.type===ORDER_TYPE.NORMAL) return true;
   if(order?.handoff===HANDOFF.NOW) return Boolean(order?.paid && order?.delivered);
-  if(order?.handoff===HANDOFF.LATER) return Boolean(order?.headOfficeShared && order?.paid && order?.delivered);
+  if(order?.handoff===HANDOFF.LATER) return Boolean(order?.delivered);
   if([HANDOFF.HOTEL,HANDOFF.SHIP].includes(order?.handoff)) return Boolean(order?.headOfficeShared);
   return false;
 }
 
 export function groupOf(order){
+  if(isPickupOrder(order)){
+    if(order.delivered)return 'done';
+    if(order.workflowStatus==='done')return 'waiting';
+    if(Object.hasOwn(ORDER_STATUS,order.workflowStatus))return order.workflowStatus;
+    return order.slackShared||order.headOfficeShared?'waiting':'active';
+  }
   if(Object.hasOwn(ORDER_STATUS,order?.workflowStatus))return order.workflowStatus;
   if(isDone(order)) return 'done';
   if(order?.type===ORDER_TYPE.SPOT && order?.handoff===HANDOFF.LATER && order?.headOfficeShared) return 'waiting';
@@ -136,10 +149,17 @@ export function groupOf(order){
 
 export function setSlackShared(order,shared,now=new Date().toISOString()){
   if(!needsHeadOfficeShare(order))return {...order};
-  return {...order,slackShared:Boolean(shared),slackSharedAt:shared?(order?.slackSharedAt||now):'',workflowStatus:shared?'done':'active'};
+  const status=isPickupOrder(order)?(order.delivered?'done':shared?'waiting':'active'):(shared?'done':'active');
+  return {...order,slackShared:Boolean(shared),slackSharedAt:shared?(order?.slackSharedAt||now):'',workflowStatus:status};
 }
 
 export function statusOnConfirmation(order,previousOrder){
+  if(isPickupOrder(order)){
+    if(order.delivered)return 'done';
+    if(order.slackShared)return 'waiting';
+    if(!previousOrder||!isPickupOrder(previousOrder))return 'active';
+    return groupOf(order);
+  }
   if(!needsHeadOfficeShare(order)||order.slackShared)return 'done';
   if(!previousOrder||!needsHeadOfficeShare(previousOrder))return 'active';
   return groupOf(order);
@@ -180,7 +200,7 @@ export function handoffLabel(order){
 const CLOUD_ORDER_FIELDS=Object.freeze([
   'receiptNo','type','handoff','customerRegion','store','phone','customer','workflowStatus',
   'account','accountChoice','accountOther','staff','paymentMethod','paid',
-  'delivered','shipped','prepared','headOfficeShared','headOfficeSharedAt',
+  'delivered','deliveredAt','shipped','prepared','headOfficeShared','headOfficeSharedAt',
   'slackShared','slackSharedAt',
   'pickupDate','notes','hotelName','guestName','roomNo','checkoutDate','shipAddress',
 ]);
@@ -230,6 +250,7 @@ export function normalizeForSave(draft){
     updatedAt:now,
     prepared:draft.prepared||PREP.NONE,
     paid:Boolean(draft.paid), delivered:Boolean(draft.delivered), shipped:Boolean(draft.shipped),
+    deliveredAt:draft.deliveredAt||'',
     headOfficeShared:Boolean(draft.headOfficeShared), headOfficeSharedAt:draft.headOfficeSharedAt||'',
     slackShared:Boolean(draft.slackShared), slackSharedAt:draft.slackSharedAt||'',
     syncState:draft.syncState||'memory',
