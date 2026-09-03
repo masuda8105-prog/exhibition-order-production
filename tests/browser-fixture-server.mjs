@@ -17,6 +17,7 @@ const publicFiles=new Map([
   ['/assets/sun_nishimura_logo.jpg','assets/sun_nishimura_logo.jpg'],
 ]);
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.jpg':'image/jpeg'};
+const orders=new Map();
 
 function sendJson(response,status,value){
   response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});
@@ -41,8 +42,29 @@ const server=http.createServer(async(request,response)=>{
   }
   if(url.pathname==='/auth/v1/token'&&request.method==='POST'){
     const credentials=await readJson(request);
-    if(credentials.email!=='fixture@example.invalid'||credentials.password!=='fixture-password')return sendJson(response,400,{error:'invalid_credentials'});
+    const refresh=url.searchParams.get('grant_type')==='refresh_token'&&credentials.refresh_token==='fixture-refresh-token';
+    if(!refresh&&(credentials.email!=='fixture@example.invalid'||credentials.password!=='fixture-password'))return sendJson(response,400,{error:'invalid_credentials'});
     return sendJson(response,200,{access_token:'fixture-access-token',refresh_token:'fixture-refresh-token',expires_in:3600,user:{id:'fixture-user'}});
+  }
+  if(url.pathname==='/auth/v1/logout')return sendJson(response,200,{});
+  if(url.pathname.startsWith('/rest/v1/')&&request.headers.authorization!=='Bearer fixture-access-token')return sendJson(response,401,{error:'login_required'});
+  if(url.pathname==='/rest/v1/exhibition_app_orders'){
+    const id=url.searchParams.get('id')?.replace(/^eq\./,'');
+    if(request.method==='POST'){
+      const body=await readJson(request);
+      if(orders.has(body.id))return sendJson(response,409,{error:'duplicate'});
+      const now=new Date().toISOString(),row={...body,created_at:now,updated_at:now,deleted_at:null};orders.set(body.id,row);
+      return sendJson(response,201,[row]);
+    }
+    if(request.method==='PATCH'){
+      const row=orders.get(id),expected=url.searchParams.get('updated_at')?.replace(/^eq\./,'');
+      if(!row||row.deleted_at||(expected&&row.updated_at!==expected))return sendJson(response,200,[]);
+      const body=await readJson(request);Object.assign(row,body,{updated_at:new Date(Date.now()+1).toISOString()});return sendJson(response,200,[row]);
+    }
+    let list=[...orders.values()].filter(row=>!row.deleted_at&&(!id||row.id===id));
+    const event=url.searchParams.get('event_name')?.replace(/^eq\./,'');if(event)list=list.filter(row=>row.event_name===event);
+    list.sort((a,b)=>b.created_at.localeCompare(a.created_at));const offset=Number(url.searchParams.get('offset')||0),limit=Number(url.searchParams.get('limit')||500);
+    return sendJson(response,200,list.slice(offset,offset+limit));
   }
   if(url.pathname==='/rest/v1/exhibition_staff')return sendJson(response,200,[{display_name:'検証担当',role:'staff',active:true}]);
   if(url.pathname==='/rest/v1/products')return sendJson(response,200,[
@@ -58,7 +80,7 @@ const server=http.createServer(async(request,response)=>{
   if(!relative)return sendJson(response,404,{error:'not_found'});
   try{
     let body=await fs.readFile(path.join(root,relative));
-    if(relative==='app.js'&&!keepPrint)body=Buffer.from(body.toString('utf8').replace('window.print();','window.__FIXTURE_PRINT_CALLED__=true;'));
+    if(relative==='app.js'&&!keepPrint)body=Buffer.from(body.toString('utf8').replace('window.print();',"window.__FIXTURE_PRINT_CALLED__=true;window.dispatchEvent(new Event('afterprint'));"));
     response.writeHead(200,{'content-type':mime[path.extname(relative)]||'application/octet-stream','cache-control':'no-store'});
     response.end(body);
   }catch(error){sendJson(response,500,{error:error.message})}

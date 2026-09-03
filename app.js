@@ -1,10 +1,10 @@
-import {ORDER_TYPE,HANDOFF,PAYMENT,PREP,needsHeadOfficeShare,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesOperationalFilter,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,labelOrder,compareOrdersForPrint,handoffLabel,normalizeForSave,applyAction} from './workflow.js?v=20260901-secure1';
-import {SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData,orderMemoryId,purgePrintedOrderData} from './security.js?v=20260901-secure1';
+import {ORDER_TYPE,HANDOFF,PAYMENT,PREP,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from './workflow.js?v=20260903-sync1';
+import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-sync1';
 
 const cfg=window.EXHIBITION_CONFIG||{};
 const $=id=>document.getElementById(id);
 const LS_STAFF='exhibitionOps.staff.v2',LS_KEYPAD_ALIGN='exhibitionOps.keypadAlign.v1';
-const state={online:false,session:null,staff:null,orders:[],products:[],accounts:[],tab:'active',filter:'',draft:null,rememberDraftInput:null,counter:0,signalsBound:false};
+const state={online:false,session:null,staff:null,orders:[],products:[],accounts:[],draft:null,rememberDraftInput:null,signalsBound:false,syncTimer:null,syncInFlight:null,refreshPromise:null,lastSyncedAt:null,dataEpoch:0};
 const yen=n=>Number.isFinite(Number(n))?`¥${Math.round(Number(n)).toLocaleString('ja-JP')}`:'価格未定';
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const isoDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo'}).format(d);
@@ -15,24 +15,36 @@ const newUuid=()=>crypto.randomUUID?crypto.randomUUID():`${Date.now().toString(1
 function toast(msg){const el=$('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),2600)}
 function setSync(mode,text){$('syncDot').className=`syncDot${mode?` ${mode}`:''}`;$('syncText').textContent=text}
 function purgeLegacyLocalData(){for(const key of LEGACY_LOCAL_STORAGE_KEYS){try{localStorage.removeItem(key)}catch{}}}
-function temporaryReceipt(){state.counter+=1;return `一時-${String(state.counter).padStart(3,'0')}`}
+function permanentReceipt(id){return `受付-${today().replaceAll('-','')}-${id.slice(0,8).toUpperCase()}`}
 
 async function fetchJson(url,opts={},timeout=30000){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);
   try{
     const response=await fetch(url,{...opts,signal:controller.signal});
     const json=await response.json().catch(()=>null);
-    if(!response.ok)throw new Error(json?.message||json?.error||`HTTP_${response.status}`);
+    if(!response.ok){const error=new Error(json?.message||json?.error||`HTTP_${response.status}`);error.status=response.status;throw error}
     return json;
   }finally{clearTimeout(timer)}
 }
 function sbBase(){return String(cfg.supabaseUrl||'').replace(/\/$/,'')}
 function sbHeaders(auth=true){const headers={apikey:String(cfg.publishableKey||''),'Content-Type':'application/json'};if(auth&&state.session?.access_token)headers.Authorization=`Bearer ${state.session.access_token}`;return headers}
-function saveSession(session){session.expires_at=Math.floor(Date.now()/1000)+Number(session.expires_in||3600);state.session=session;sessionStorage.setItem(SESSION_STORAGE_KEY,JSON.stringify(session));return session}
+function storedSession(){try{return JSON.parse(localStorage.getItem(PERSISTENT_SESSION_KEY)||sessionStorage.getItem(SESSION_STORAGE_KEY)||'null')}catch{return null}}
+function clearStoredSession(){localStorage.removeItem(PERSISTENT_SESSION_KEY);sessionStorage.removeItem(SESSION_STORAGE_KEY)}
+function saveSession(session){session.expires_at=session.expires_at||Math.floor(Date.now()/1000)+Number(session.expires_in||3600);localStorage.setItem(PERSISTENT_SESSION_KEY,JSON.stringify(session));sessionStorage.removeItem(SESSION_STORAGE_KEY);state.session=session;return session}
 async function signIn(email,password){return saveSession(await fetchJson(`${sbBase()}/auth/v1/token?grant_type=password`,{method:'POST',headers:{apikey:cfg.publishableKey,'Content-Type':'application/json'},body:JSON.stringify({email,password})}))}
 async function refreshSession(){
-  if(!state.session?.refresh_token)throw new Error('SESSION_EXPIRED');
-  return saveSession(await fetchJson(`${sbBase()}/auth/v1/token?grant_type=refresh_token`,{method:'POST',headers:{apikey:cfg.publishableKey,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:state.session.refresh_token})}));
+  if(state.refreshPromise)return state.refreshPromise;
+  const refresh=async()=>{
+    const latest=storedSession();if(latest?.refresh_token)state.session=latest;
+    if(!state.session?.refresh_token)throw new Error('SESSION_EXPIRED');
+    if(Number(state.session.expires_at||0)>Math.floor(Date.now()/1000)+60)return state.session;
+    const token=state.session.refresh_token;
+    const refreshed=await fetchJson(`${sbBase()}/auth/v1/token?grant_type=refresh_token`,{method:'POST',headers:{apikey:cfg.publishableKey,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:token})});
+    if(storedSession()?.refresh_token!==token)throw new Error('SESSION_EXPIRED');
+    return saveSession(refreshed);
+  };
+  state.refreshPromise=(navigator.locks?.request?navigator.locks.request('exhibition-auth-refresh',refresh):refresh()).finally(()=>{state.refreshPromise=null});
+  return state.refreshPromise;
 }
 async function ensureFreshSession(){if(Number(state.session?.expires_at||0)<=Math.floor(Date.now()/1000)+60)await refreshSession()}
 async function loadStaff(){const id=state.session?.user?.id;if(!id)throw new Error('LOGIN_REQUIRED');const rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_staff?select=display_name,role,active&user_id=eq.${encodeURIComponent(id)}&active=is.true&limit=1`,{headers:sbHeaders()});if(!rows?.[0])throw new Error('スタッフ権限がありません。');state.staff=rows[0];try{localStorage.setItem(LS_STAFF,String(state.staff.display_name||''))}catch{}}
@@ -49,62 +61,94 @@ async function loadAllRows(table,select,order){
   return rows;
 }
 async function loadPrivateReferenceData(){
+  const userId=state.session?.user?.id;
   const [products,accounts]=await Promise.all([
     loadAllRows('products','id,product_no,product_name,wholesale_price,image_url,is_active','display_order.asc,id.asc'),
     loadAllRows('exhibition_accounts','id,account_name,display_order,is_active','display_order.asc,id.asc'),
   ]);
+  if(!state.session||state.session.user?.id!==userId)return;
   state.products=products.map(row=>({productId:`product-${row.id}`,code:String(row.product_no||''),name:String(row.product_name||''),price:row.wholesale_price===null?NaN:Number(row.wholesale_price),imageUrl:row.image_url||'',status:row.is_active?'active':'price_pending',orderable:Boolean(row.is_active)&&Number(row.wholesale_price)>0})).filter(product=>product.code&&product.name);
   state.accounts=accounts.filter(row=>row.is_active).map(row=>String(row.account_name||'')).filter(Boolean);
   if(!state.products.length)throw new Error('PRODUCT_MASTER_EMPTY');
 }
 
 async function saveNew(order){
-  const saved=normalizeForSave({...order,syncState:'memory'});
-  if(needsReceipt(saved))saved.receiptNo=temporaryReceipt();
-  state.orders.unshift(saved);render();return saved;
+  await ensureFreshSession();
+  const id=order.clientSubmissionId||newUuid(),saved=normalizeForSave({...order,localId:id,clientSubmissionId:id,syncState:'synced'});
+  if(needsReceipt(saved)&&!saved.receiptNo)saved.receiptNo=permanentReceipt(id);
+  order.clientSubmissionId=id;
+  const payload=orderPayloadForCloud(saved);
+  const previousPayload=order.pendingSavePayload;
+  order.pendingSavePayload=payload;
+  let rows;
+  try{rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders`,{method:'POST',headers:{...sbHeaders(),Prefer:'return=representation'},body:JSON.stringify({id,event_name:cfg.eventName||'展示会',payload})})}
+  catch(error){
+    if(error.status!==409)throw error;
+    rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders?select=id,payload,created_at,updated_at&id=eq.${encodeURIComponent(id)}&deleted_at=is.null`,{headers:sbHeaders()});
+    if(rows?.[0]){
+      const existing=orderFromCloudRow(rows[0]),existingPayload=JSON.stringify(orderPayloadForCloud(existing));
+      if(existingPayload!==JSON.stringify(payload)){
+        if(existingPayload!==JSON.stringify(previousPayload)){await loadOrders();throw new Error('SYNC_CONFLICT')}
+        rows=[await patchCloudOrder(existing,{payload})];
+      }
+    }
+  }
+  if(!rows?.[0])throw new Error('SAVE_NOT_CONFIRMED');
+  const result=orderFromCloudRow(rows[0]);state.dataEpoch++;state.orders=[result,...state.orders.filter(item=>item.localId!==id)];markSynced();render();return result;
 }
 async function saveEdited(draft){
   const current=state.orders.find(order=>order.localId===draft.editingId);
   if(!current)throw new Error('EDIT_TARGET_NOT_FOUND');
-  const updated=normalizeForSave({...current,...draft,localId:current.localId,createdAt:current.createdAt,clientSubmissionId:current.clientSubmissionId||draft.clientSubmissionId||newUuid(),syncState:'memory'});
+  const updated=normalizeForSave({...current,...draft,localId:current.localId,createdAt:current.createdAt,clientSubmissionId:current.clientSubmissionId,syncState:'synced'});
   delete updated.stage;delete updated.editingId;
-  Object.assign(current,updated);
-  await updateOrder(current,'edited');
-  return current;
+  return updateOrder(updated);
 }
-async function updateOrder(order,event='status_update'){
-  order.updatedAt=new Date().toISOString();
-  order.syncState='memory';render();return order;
+async function patchCloudOrder(order,changes){
+  await ensureFreshSession();
+  const revision=order.cloudUpdatedAt?`&updated_at=eq.${encodeURIComponent(order.cloudUpdatedAt)}`:'';
+  const rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders?id=eq.${encodeURIComponent(order.localId)}&deleted_at=is.null${revision}`,{method:'PATCH',headers:{...sbHeaders(),Prefer:'return=representation'},body:JSON.stringify(changes)});
+  if(!rows?.[0]){await loadOrders();throw new Error('SYNC_CONFLICT')}
+  return rows[0];
+}
+async function updateOrder(order){const result=orderFromCloudRow(await patchCloudOrder(order,{payload:orderPayloadForCloud(order)}));state.dataEpoch++;state.orders=state.orders.map(item=>item.localId===result.localId?result:item);markSynced();render();return result}
+async function hideOrder(order){await patchCloudOrder(order,{deleted_at:new Date().toISOString()});state.dataEpoch++;state.orders=state.orders.filter(item=>item.localId!==order.localId);markSynced();render()}
+function markSynced(){state.lastSyncedAt=new Date();setSync('online',`保存済み・自動同期 ${formatDateTime(state.lastSyncedAt,true)}`)}
+async function loadOrders(){
+  const rows=[],pageSize=500,epoch=state.dataEpoch,userId=state.session?.user?.id;
+  for(let offset=0;;offset+=pageSize){
+    await ensureFreshSession();
+    const page=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders?select=id,payload,created_at,updated_at&event_name=eq.${encodeURIComponent(cfg.eventName||'展示会')}&deleted_at=is.null&order=created_at.desc,id.desc&limit=${pageSize}&offset=${offset}`,{headers:sbHeaders()});
+    rows.push(...(page||[]));if(!page||page.length<pageSize)break;
+  }
+  if(epoch!==state.dataEpoch||!state.session||state.session.user?.id!==userId)return;
+  state.orders=rows.map(orderFromCloudRow);markSynced();render();
+}
+async function syncOrders(){
+  if(!state.online||!navigator.onLine||state.syncInFlight)return state.syncInFlight;
+  state.syncInFlight=loadOrders().catch(error=>{setSync('error','同期できません。接続後に再試行します');throw error}).finally(()=>{state.syncInFlight=null});
+  return state.syncInFlight;
 }
 
 function render(){renderMetrics();renderOrders()}
 function currentSearch(){return $('orderSearch').value.trim()}
-function filteredOrders(){const q=currentSearch(),all=state.orders.filter(order=>!order.deleted);return all.filter(order=>(state.filter||q)||groupOf(order)===state.tab).filter(order=>orderMatchesOperationalFilter(order,state.filter)).filter(order=>orderMatchesSearch(order,q))}
-function clearListModes(){state.filter='';$('orderSearch').value=''}
-function revealOrder(order){clearListModes();state.tab=groupOf(order);render()}
+function filteredOrders(){const q=currentSearch();return state.orders.filter(order=>!order.deleted).filter(order=>orderMatchesSearch(order,q))}
+function clearListModes(){$('orderSearch').value=''}
+function revealOrder(){clearListModes();render()}
 function formatDateTime(value,short=false){const date=new Date(value||'');if(Number.isNaN(date.getTime()))return '日時不明';return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:short?undefined:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(date)}
-function renderMetrics(){const all=state.orders.filter(order=>!order.deleted),q=currentSearch();$('metricUnshared').textContent=all.filter(order=>orderMatchesOperationalFilter(order,'unshared')).length;$('metricPickup').textContent=all.filter(order=>orderMatchesOperationalFilter(order,'pickup')).length;$('metricUnpaid').textContent=all.filter(order=>orderMatchesOperationalFilter(order,'unpaid')).length;['active','waiting','done'].forEach(k=>{$(`count${k[0].toUpperCase()+k.slice(1)}`).textContent=all.filter(order=>groupOf(order)===k).length});document.querySelectorAll('#tabs button').forEach(button=>button.classList.toggle('active',!state.filter&&!q&&button.dataset.tab===state.tab));const banner=$('activeFilter');if(state.filter||q){const label=state.filter&&q?'検索・絞り込み結果':q?'検索結果':'絞り込み結果',condition=state.filter?`：${{unshared:'本社未共有',pickup:'受取待ち',unpaid:'未会計'}[state.filter]}`:'';banner.classList.remove('hidden');banner.innerHTML=`<b>${label}${condition}</b>（全フォルダ） <button id="clearFilter">解除</button>`;$('clearFilter').onclick=()=>{clearListModes();render()}}else banner.classList.add('hidden')}
-function renderOrders(){const list=filteredOrders(),wrap=$('orders');if(!list.length){const allFolders=Boolean(state.filter||currentSearch());wrap.innerHTML=`<div class="empty">該当する注文はありません。<br><small>${allFolders?'要対応・受取待ち・完了の全フォルダを確認しました。':'別のフォルダも確認してください。'}</small></div>`;return}wrap.innerHTML=list.map(cardHtml).join('');wrap.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>handleCardAction(b.dataset.id,b.dataset.action));wrap.querySelectorAll('[data-detail]').forEach(b=>b.onclick=()=>showDetail(b.dataset.detail))}
+function renderMetrics(){
+  const all=state.orders.filter(order=>!order.deleted);
+  $('orderCount').textContent=`${all.length}件`;
+  $('todayOrderCount').textContent=`${all.filter(order=>createdDateInTokyo(order)===today()).length}件`;
+  $('searchSummary').textContent=currentSearch()?`検索結果 ${filteredOrders().length}件`:'新しい注文から表示しています';
+}
+function renderOrders(){
+  const list=filteredOrders(),wrap=$('orders');
+  if(!list.length){wrap.innerHTML=`<div class="empty">${currentSearch()?'該当する注文はありません。':'保存済みの注文はまだありません。'}<br><small>${currentSearch()?'店舗名・電話・品番などで検索できます。':'下の「新しい注文」から始めてください。'}</small></div>`;return}
+  wrap.innerHTML=list.map(cardHtml).join('');
+  wrap.querySelectorAll('[data-detail]').forEach(button=>button.onclick=()=>showDetail(button.dataset.detail));
+}
 function cardHtml(order){
-  const action=nextAction(order);
-  const payment=order.type===ORDER_TYPE.SPOT&&[HANDOFF.NOW,HANDOFF.LATER].includes(order.handoff)?(order.paid?'<span class="chip ok">会計済み</span>':'<span class="chip warn">会計待ち</span>'):'';
-  const sharing=needsHeadOfficeShare(order)?(order.headOfficeShared?'<span class="chip ok">本社共有済み</span>':'<span class="chip danger">本社未共有</span>'):'';
-  const status=`<span class="chip folder">${{active:'要対応',waiting:'受取待ち',done:'完了'}[groupOf(order)]}</span>`,detail=['done','detail'].includes(action.key)?'':`<button class="linkBtn detailLink" data-detail="${esc(order.localId)}">詳細</button>`;
-  return `<article class="orderCard ${!order.headOfficeShared&&needsHeadOfficeShare(order)?'needsShare':''}"><div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store)}</div></div><div class="amount">${yen(totalOf(order))}</div></div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span>${status}${payment}${sharing}</div><div class="cardNote">${esc(handoffLabel(order))}${order.customer?` ／ ${esc(order.customer)}`:''}</div><div class="receivedAt">受付 ${esc(formatDateTime(order.createdAt||order.created_at,true))}</div><button class="cardAction ${action.key==='done'?'soft':action.key==='share'?'shareAction':''}" data-action="${action.key}" data-id="${esc(order.localId)}">${esc(action.label)}</button>${detail}</article>`;
-}
-async function handleCardAction(id,action){const order=state.orders.find(item=>item.localId===id);if(!order)return;if(action==='done'||action==='detail')return showDetail(id);if(action==='share')return showShareConfirm(order);if(action==='deliver')return showDeliveryConfirm(order)}
-
-function showShareConfirm(order){
-  openSheet('本社共有の確認',labelOrder(order));
-  const destination=order.handoff===HANDOFF.LATER?'共有後、この注文は「受取待ち」へ移動します。':'共有後、この注文は「完了」へ移動します。以後の配送対応は本社へ引き継ぎます。';
-  $('sheetBody').innerHTML=`<div class="step"><div class="shareConfirm"><div class="shareIcon">本社</div><h3>本社へ共有しましたか？</h3><p>注文書をPDF保存・印刷すると、この注文はアプリのメモリから消去されます。作成したPDFまたは印刷物を本社へ共有してください。</p></div><button id="sharePrint" class="secondary fullButton sharePrintButton">PDF・印刷してデータを消去</button><div class="hintBox topGap">${esc(destination)} すでに別の方法で共有済みの場合だけ、印刷せずに下の「本社共有済み」を押してください。</div><div class="section topGap"><div class="summaryRow"><span>店舗</span><b>${esc(order.store)}</b></div><div class="summaryRow"><span>お客様</span><b>${esc(order.customer)}</b></div><div class="summaryRow"><span>受け渡し</span><b>${esc(handoffLabel(order))}</b></div></div></div><div class="stickyActions"><button id="shareCancel" class="secondary">まだ共有していない</button><button id="shareDone" class="primary">印刷せず本社共有済み</button></div>`;
-  $('sharePrint').onclick=()=>printOrder(order);$('shareCancel').onclick=closeSheet;$('shareDone').onclick=async()=>{$('shareDone').disabled=true;Object.assign(order,applyAction(order,'share'));await updateOrder(order,'head_office_shared');closeSheet();revealOrder(order);toast(order.handoff===HANDOFF.LATER?'受取待ちへ移動しました':'本社対応として完了しました')};
-}
-
-function showDeliveryConfirm(order){
-  openSheet('お渡し完了の確認','受取待ち');
-  $('sheetBody').innerHTML=`<div class="step"><div class="shareConfirm"><div class="successMark">✓</div><h3>会計と商品のお渡しは完了しましたか？</h3><p>完了にすると「完了」フォルダへ移動します。</p></div><div class="section topGap"><div class="summaryRow"><span>受付番号</span><b>${esc(order.receiptNo||'-')}</b></div><div class="summaryRow"><span>お客様</span><b>${esc(order.customer)}</b></div><div class="summaryRow"><span>受取予定</span><b>${esc(order.pickupDate||'-')}</b></div></div></div><div class="stickyActions"><button id="deliveryCancel" class="secondary">戻る</button><button id="deliveryDone" class="primary">会計・お渡し完了</button></div>`;
-  $('deliveryCancel').onclick=closeSheet;$('deliveryDone').onclick=async()=>{$('deliveryDone').disabled=true;Object.assign(order,applyAction(order,'deliver'));await updateOrder(order,'delivered');closeSheet();revealOrder(order);toast('完了へ移動しました')};
+  return `<article class="orderCard"><div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store)}</div></div><div class="amount">${yen(totalOf(order))}</div></div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span><span class="chip">${itemCountOf(order)}点</span></div><div class="cardNote">${order.customer?`${esc(order.customer)} ／ `:''}${esc(handoffLabel(order))}</div><div class="cardBottom"><span class="receivedAt">${esc(formatDateTime(order.createdAt,true))}</span><button class="secondary compact" data-detail="${esc(order.localId)}">詳細・印刷</button></div></article>`;
 }
 
 function openSheet(title,step=''){state.rememberDraftInput=null;$('sheetTitle').textContent=title;$('stepLabel').textContent=step;$('sheet').classList.remove('hidden');document.body.style.overflow='hidden';clearError()}
@@ -154,22 +198,20 @@ function renderCart(d){
   wrap.querySelectorAll('[data-plus]').forEach(button=>button.onclick=()=>{const item=d.items.find(value=>value.lineId===button.dataset.plus);if(item)item.qty++;renderCart(d)});
   wrap.querySelectorAll('[data-minus]').forEach(button=>button.onclick=()=>{const item=d.items.find(value=>value.lineId===button.dataset.minus);if(!item)return;item.qty--;if(item.qty<=0)d.items=d.items.filter(value=>value!==item);renderCart(d)});
 }
-function renderTypeStep(d){const canContinue=Boolean(d.type&&(d.type!==ORDER_TYPE.SPOT||d.handoff));$('stepLabel').textContent='2 / 3　注文方法';$('sheetTitle').textContent='どの対応ですか？';$('sheetBody').innerHTML=`<div class="step"><p class="stepIntro">実際の対応に一番近いものを選んでください。</p><div class="choiceGrid"><button class="choice ${d.type===ORDER_TYPE.NORMAL?'on':''}" data-type="normal"><b>国内通常注文</b><small>卸屋・電話番号を入力して受注完了。帰社後にまとめて印刷します。</small></button><button class="choice ${d.type===ORDER_TYPE.SPOT?'on':''}" data-type="spot"><b>現売り対応</b><small>会場での会計・受け渡し、後日受取、配送です。</small></button></div>${d.type===ORDER_TYPE.SPOT?`<div class="section topGap"><div class="sectionTitle">商品の渡し方 *</div><div class="choiceGrid handoffChoices"><button class="choice ${d.handoff===HANDOFF.NOW?'on':''}" data-handoff="now"><b>1　在庫あり・その場渡し</b><small>会計して、その場で商品をお渡しします。</small></button><button class="choice ${d.handoff===HANDOFF.LATER?'on':''}" data-handoff="later"><b>2　翌日・翌々日に受取</b><small>本社共有が必要。共有後は「受取待ち」で管理します。</small></button><button class="choice ${d.handoff===HANDOFF.HOTEL?'on':''}" data-handoff="hotel"><b>3　ホテルへ配送</b><small>本社共有が必要。共有済みになれば対応完了です。</small></button><button class="choice ${d.handoff===HANDOFF.SHIP?'on':''}" data-handoff="ship"><b>4　指定住所へ配送</b><small>本社共有が必要。共有済みになれば対応完了です。</small></button></div></div>`:''}</div><div class="stickyActions"><button id="backProducts" class="secondary">戻る</button><button id="toInfo" class="primary" ${canContinue?'':'disabled'}>入力へ進む</button></div>`;document.querySelectorAll('[data-type]').forEach(button=>button.onclick=()=>{const previous=d.type;d.type=button.dataset.type;if(d.type===ORDER_TYPE.SPOT&&previous!==ORDER_TYPE.SPOT)d.handoff=null;if(d.type===ORDER_TYPE.NORMAL){d.handoff=null;d.headOfficeShared=false}renderDraft()});document.querySelectorAll('[data-handoff]').forEach(button=>button.onclick=()=>{d.handoff=button.dataset.handoff;if(d.handoff===HANDOFF.NOW){d.headOfficeShared=false;d.headOfficeSharedAt=''}renderDraft()});$('backProducts').onclick=()=>{d.stage='products';renderDraft()};$('toInfo').onclick=()=>{if(!d.type)return showError('注文方法を選択してください。');if(d.type===ORDER_TYPE.SPOT&&!d.handoff)return showError('商品の渡し方を選択してください。');d.stage='info';renderDraft()}}
+function renderTypeStep(d){const canContinue=Boolean(d.type&&(d.type!==ORDER_TYPE.SPOT||d.handoff));$('stepLabel').textContent='2 / 3　注文方法';$('sheetTitle').textContent='どの対応ですか？';$('sheetBody').innerHTML=`<div class="step"><p class="stepIntro">実際の対応に一番近いものを選んでください。</p><div class="choiceGrid"><button class="choice ${d.type===ORDER_TYPE.NORMAL?'on':''}" data-type="normal"><b>国内通常注文</b><small>卸屋・電話番号を入力して受注完了。帰社後にまとめて印刷します。</small></button><button class="choice ${d.type===ORDER_TYPE.SPOT?'on':''}" data-type="spot"><b>現売り対応</b><small>会場での会計・受け渡し、後日受取、配送です。</small></button></div>${d.type===ORDER_TYPE.SPOT?`<div class="section topGap"><div class="sectionTitle">商品の渡し方 *</div><div class="choiceGrid handoffChoices"><button class="choice ${d.handoff===HANDOFF.NOW?'on':''}" data-handoff="now"><b>1　在庫あり・その場渡し</b><small>会計して、その場で商品をお渡しします。</small></button><button class="choice ${d.handoff===HANDOFF.LATER?'on':''}" data-handoff="later"><b>2　翌日・翌々日に受取</b><small>お受け取り予定日を入力します。</small></button><button class="choice ${d.handoff===HANDOFF.HOTEL?'on':''}" data-handoff="hotel"><b>3　ホテルへ配送</b><small>お届け先の情報を入力します。</small></button><button class="choice ${d.handoff===HANDOFF.SHIP?'on':''}" data-handoff="ship"><b>4　指定住所へ配送</b><small>お届け先の情報を入力します。</small></button></div></div>`:''}</div><div class="stickyActions"><button id="backProducts" class="secondary">戻る</button><button id="toInfo" class="primary" ${canContinue?'':'disabled'}>入力へ進む</button></div>`;document.querySelectorAll('[data-type]').forEach(button=>button.onclick=()=>{const previous=d.type;d.type=button.dataset.type;if(d.type===ORDER_TYPE.SPOT&&previous!==ORDER_TYPE.SPOT)d.handoff=null;if(d.type===ORDER_TYPE.NORMAL){d.handoff=null;d.headOfficeShared=false}renderDraft()});document.querySelectorAll('[data-handoff]').forEach(button=>button.onclick=()=>{d.handoff=button.dataset.handoff;if(d.handoff===HANDOFF.NOW){d.headOfficeShared=false;d.headOfficeSharedAt=''}renderDraft()});$('backProducts').onclick=()=>{d.stage='products';renderDraft()};$('toInfo').onclick=()=>{if(!d.type)return showError('注文方法を選択してください。');if(d.type===ORDER_TYPE.SPOT&&!d.handoff)return showError('商品の渡し方を選択してください。');d.stage='info';renderDraft()}}
 function renderInfoStep(d){
   const normal=d.type===ORDER_TYPE.NORMAL,now=d.handoff===HANDOFF.NOW;
   $('stepLabel').textContent='3 / 3　入力・確認';$('sheetTitle').textContent=d.editingId?'注文を修正':normal?'通常注文を受ける':'現売りを登録';
-  const accounts=state.accounts,staffNames=[state.staff?.display_name].filter(Boolean);
+  const accounts=state.accounts,staffNames=[...new Set([d.staff,state.staff?.display_name].filter(Boolean))];
   const accountChoice=d.accountChoice||(d.account?(accounts.includes(d.account)?d.account:'その他'):''),accountOther=d.accountOther||(accountChoice==='その他'&&d.account!=='その他'?d.account:'');d.accountChoice=accountChoice;d.accountOther=accountOther;
   const accountOptions=accounts.map(value=>`<option value="${esc(value)}" ${accountChoice===value?'selected':''}>${esc(value)}</option>`).join('');
   const staffOptions=staffNames.map(value=>`<option value="${esc(value)}" ${d.staff===value?'selected':''}>${esc(value)}</option>`).join('');
   const normalFields=`<div class="field"><label for="fAccount">卸屋・帳合先 *</label><select id="fAccount"><option value="">選択してください</option>${accountOptions}</select></div>${accountChoice==='その他'?`<div class="field"><label for="fAccountOther">卸屋・帳合先名 *</label><input id="fAccountOther" value="${esc(accountOther)}" placeholder="具体名を入力"></div>`:''}<div class="field"><label for="fStaff">受注担当者 *</label><select id="fStaff"><option value="">選択してください</option>${staffOptions}</select></div><div class="field"><label for="fCustomer">お客様名（任意）</label><input id="fCustomer" value="${esc(d.customer)}"></div>`;
-  const paymentFields=!now?`<div class="field"><label>会計状況</label><div class="seg"><button type="button" id="payDone" class="${d.paid?'on':''}">会計済み</button><button type="button" id="payLater" class="${!d.paid?'on':''}">${d.handoff===HANDOFF.LATER?'受取時に会計':'本社対応'}</button></div></div>`:'';
   const pickupFields=d.handoff===HANDOFF.LATER?`<div class="field"><label for="fPickup">受取予定日 *</label><div class="quickDates"><button type="button" data-day="1" class="${d.pickupDate===dateOffset(1)?'on':''}">明日</button><button type="button" data-day="2" class="${d.pickupDate===dateOffset(2)?'on':''}">明後日</button></div><input id="fPickup" type="date" min="${dateOffset(1)}" value="${esc(d.pickupDate)}"></div>`:'';
   const destinationFields=d.handoff===HANDOFF.HOTEL?`<div class="field"><label for="fHotel">ホテル名 *</label><input id="fHotel" value="${esc(d.hotelName||'')}"></div><div class="two"><div class="field"><label for="fGuest">宿泊者名 *</label><input id="fGuest" value="${esc(d.guestName||d.customer||'')}"></div><div class="field"><label for="fRoom">部屋番号（任意）</label><input id="fRoom" value="${esc(d.roomNo||'')}"></div></div><div class="field"><label for="fCheckout">チェックアウト予定日</label><input id="fCheckout" type="date" value="${esc(d.checkoutDate||'')}"></div>`:d.handoff===HANDOFF.SHIP?`<div class="field"><label for="fShip">配送先住所 *</label><textarea id="fShip">${esc(d.shipAddress||'')}</textarea></div>`:'';
-  const shareFields=needsHeadOfficeShare(d)?`<div class="shareStatus ${d.headOfficeShared?'shared':'pending'}"><div><b>本社への共有 *</b><small>内容入力後、先に注文書を印刷・PDF保存して本社へ共有してください。共有し終わったら「本社共有済み」を押します。</small></div><button type="button" id="sharePrintDraft" class="secondary sharePrintButton">印刷・PDFで本社へ共有</button><div class="seg"><button type="button" id="sharePendingChoice" class="${!d.headOfficeShared?'on':''}">まだ共有していない</button><button type="button" id="shareDoneChoice" class="${d.headOfficeShared?'on':''}">本社共有済み</button></div></div>`:'';
-  const spotFields=`<div class="field"><label for="fCustomer">お客様名 *</label><input id="fCustomer" value="${esc(d.customer)}"></div><div class="two"><div class="field"><label for="fRegion">お客様</label><select id="fRegion"><option value="domestic" ${d.customerRegion==='domestic'?'selected':''}>国内</option><option value="overseas" ${d.customerRegion==='overseas'?'selected':''}>海外</option></select></div><div class="field"><label for="fPayment">会計方法 *</label><select id="fPayment"><option value="credit" ${d.paymentMethod===PAYMENT.CREDIT?'selected':''}>クレジット</option><option value="cash" ${d.paymentMethod===PAYMENT.CASH?'selected':''}>現金</option></select></div></div>${paymentFields}${pickupFields}${destinationFields}${shareFields}`;
-  const operationHint=normal?'<div class="hintBox sendHint"><b>登録すると受注完了です。</b><br>帰社後に「印刷・PDF」から国内通常注文をまとめて印刷してください。</div>':needsHeadOfficeShare(d)?`<div class="hintBox ${d.headOfficeShared?'sendHint':'warnHint'}">${d.headOfficeShared?(d.handoff===HANDOFF.LATER?'登録後は「受取待ち」へ入ります。':'本社へ引き継ぎ済みとして「完了」へ入ります。'):'登録後は「要対応」に入り、本社未共有が赤く表示されます。'}</div>`:'<div class="hintBox sendHint">会計と商品のお渡しが済んだ状態で登録し、そのまま完了になります。</div>';
-  const saveLabel=d.editingId?'修正内容を保存':normal?'受注完了で登録':now?'会計・お渡し完了で登録':d.headOfficeShared?(d.handoff===HANDOFF.LATER?'共有済みで受取待ちに登録':'共有済みで完了登録'):'本社未共有で要対応に登録';
+  const spotFields=`<div class="field"><label for="fCustomer">お客様名 *</label><input id="fCustomer" value="${esc(d.customer)}"></div><div class="two"><div class="field"><label for="fRegion">お客様</label><select id="fRegion"><option value="domestic" ${d.customerRegion==='domestic'?'selected':''}>国内</option><option value="overseas" ${d.customerRegion==='overseas'?'selected':''}>海外</option></select></div><div class="field"><label for="fPayment">会計方法 *</label><select id="fPayment"><option value="credit" ${d.paymentMethod===PAYMENT.CREDIT?'selected':''}>クレジット</option><option value="cash" ${d.paymentMethod===PAYMENT.CASH?'selected':''}>現金</option></select></div></div>${pickupFields}${destinationFields}`;
+  const operationHint='<div class="hintBox sendHint">保存した注文はスタッフ間で共有され、印刷後も残ります。</div>';
+  const saveLabel=d.editingId?'変更を保存':'注文を保存';
   $('sheetBody').innerHTML=`<div class="step"><div class="section"><div class="field"><label for="fStore">店舗名 *</label><input id="fStore" value="${esc(d.store)}" placeholder="〇〇眼鏡店"></div><div class="field"><label for="fPhone">電話番号 *</label><input id="fPhone" inputmode="tel" autocomplete="tel" value="${esc(d.phone)}"><div id="phoneWarning" class="fieldWarning ${phoneHasUnexpectedCharacters(d.phone)?'':'hidden'}">数字、+、-、空白、括弧以外が含まれています。入力内容を確認してください。</div></div>${normal?normalFields:spotFields}<div class="field"><label for="fNotes">備考（任意）</label><textarea id="fNotes" placeholder="納期・連絡事項など">${esc(d.notes||'')}</textarea></div></div><div class="section"><div class="sectionTitle">注文確認</div>${d.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${item.qty}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div>${operationHint}${d.paymentMethod===PAYMENT.CASH?'<div class="hintBox topGap">現金は釣銭を用意しない運用です。受取金額を確認してください。</div>':''}</div><div class="stickyActions"><button id="backType" class="secondary">戻る</button><button id="saveBtn" class="primary">${saveLabel}</button></div>`;
   bindInfo(d,normal,now);
 }
@@ -183,36 +225,36 @@ function bindInfo(d,normal,now){
   document.querySelectorAll('#sheetBody input,#sheetBody select,#sheetBody textarea').forEach(element=>element.onchange=()=>{remember();clearError()});
   $('fPhone').oninput=()=>{remember();$('phoneWarning').classList.toggle('hidden',!phoneHasUnexpectedCharacters($('fPhone').value));clearError()};
   if($('fAccount'))$('fAccount').onchange=()=>{remember();renderDraft()};
-  if($('payDone'))$('payDone').onclick=()=>{remember();d.paid=true;renderDraft()};
-  if($('payLater'))$('payLater').onclick=()=>{remember();d.paid=false;renderDraft()};
-  if($('shareDoneChoice'))$('shareDoneChoice').onclick=()=>{remember();d.headOfficeShared=true;d.headOfficeSharedAt=new Date().toISOString();renderDraft()};
-  if($('sharePendingChoice'))$('sharePendingChoice').onclick=()=>{remember();d.headOfficeShared=false;d.headOfficeSharedAt='';renderDraft()};
-  if($('sharePrintDraft'))$('sharePrintDraft').onclick=()=>{remember();const errors=validate(d);if(errors.length)return showError(errors[0]);printOrder({...d,createdAt:d.createdAt||new Date().toISOString(),localId:d.localId||'登録前'})};
+
+
+
+
+
   document.querySelectorAll('[data-day]').forEach(button=>button.onclick=()=>{remember();d.pickupDate=dateOffset(Number(button.dataset.day));renderDraft()});
   $('backType').onclick=()=>{remember();d.stage='type';renderDraft()};
   $('saveBtn').onclick=async()=>{
     remember();if(now){d.paid=true;d.delivered=true;d.prepared=PREP.READY}
     const errors=validate(d);if(errors.length)return showError(errors[0]);$('saveBtn').disabled=true;
-    try{const order=d.editingId?await saveEdited(d):await saveNew(d);if(d.editingId){state.draft=null;closeSheet();revealOrder(order);toast('修正内容をこのタブのメモリへ反映しました')}else{state.draft={...order,stage:'success'};renderDraft()}}
-    catch(error){console.error(error);showError('保存できませんでした。もう一度お試しください。');$('saveBtn').disabled=false}
+    try{const order=d.editingId?await saveEdited(d):await saveNew(d);if(d.editingId){state.draft=null;closeSheet();revealOrder(order);toast('変更を保存し、同期しました')}else{state.draft={...order,stage:'success'};renderDraft()}}
+    catch(error){showError(error.message==='SYNC_CONFLICT'?'別の端末で更新されています。入力内容は残しています。一覧の最新内容を確認してください。':'まだ保存できていません。入力内容はこの画面に残っています。接続を確認して再度保存してください。');$('saveBtn').disabled=false}
   };
 }
 function renderSuccess(d){
-  const normal=d.type===ORDER_TYPE.NORMAL,group=groupOf(d);
-  $('stepLabel').textContent='登録完了';$('sheetTitle').textContent=normal?'受注完了':'現売り登録完了';
-  $('sheetBody').innerHTML=`<div class="success"><div class="successMark">✓</div><h3>このタブのメモリに一時保持しました</h3><p>クラウドや端末には保存していません。PDF保存・印刷の画面を閉じると、この注文の顧客情報と明細を自動消去します。</p><div class="summary"><div class="summaryRow"><span>店舗</span><b>${esc(d.store)}</b></div><div class="summaryRow"><span>区分</span><b>${esc(labelOrder(d))}</b></div>${needsHeadOfficeShare(d)?`<div class="summaryRow"><span>本社共有</span><b class="${d.headOfficeShared?'statusSent':'statusPending'}">${d.headOfficeShared?'共有済み':'未共有'}</b></div>`:''}${d.receiptNo?`<div class="summaryRow"><span>一時番号</span><b>${esc(receiptOrderNumber(d))}</b></div>`:''}<div class="summaryRow"><span>一時フォルダ</span><b>${{active:'要対応',waiting:'受取待ち',done:'完了'}[group]}</b></div><div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div></div><div class="stickyActions"><button id="successCustomerCopy" class="secondary">お客様控えを印刷</button><button id="successPrint" class="primary">注文書をPDF・印刷</button></div><div class="underActions"><button id="backDash" class="linkBtn">管理画面へ戻る</button><button id="continueOrder" class="linkBtn">続けて新しい注文</button></div>`;
-  $('backDash').onclick=()=>{closeSheet();revealOrder(d)};$('successPrint').onclick=()=>printOrder(d);$('successCustomerCopy').onclick=()=>printCustomerCopy(d);$('continueOrder').onclick=()=>{state.draft=null;closeSheet();startOrder()};
+  $('stepLabel').textContent='保存完了';$('sheetTitle').textContent='注文を保存しました';
+  $('sheetBody').innerHTML=`<div class="success"><div class="successMark">✓</div><h3>保存・同期が完了しました</h3><p>画面を閉じても、印刷しても注文は残ります。別の端末からも確認できます。</p><div class="summary"><div class="summaryRow"><span>店舗</span><b>${esc(d.store)}</b></div><div class="summaryRow"><span>区分</span><b>${esc(labelOrder(d))}</b></div>${d.receiptNo?`<div class="summaryRow"><span>受付番号</span><b>${esc(d.receiptNo)}</b></div>`:''}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div></div><div class="stickyActions"><button id="successPrint" class="secondary">PDF・印刷</button><button id="continueOrder" class="primary">次の注文を作る</button></div><div class="underActions"><button id="backDash" class="secondary">注文一覧へ戻る</button></div>`;
+  $('backDash').onclick=()=>{state.draft=null;closeSheet();revealOrder()};$('successPrint').onclick=()=>printOrder(d);$('continueOrder').onclick=()=>{state.draft=null;closeSheet();startOrder()};
 }
 
 function showDetail(id){
-  const order=state.orders.find(item=>item.localId===id);if(!order)return;openSheet('注文詳細','');
-  const sharingRow=needsHeadOfficeShare(order)?`<div class="summaryRow"><span>本社共有</span><b class="${order.headOfficeShared?'statusSent':'statusPending'}">${order.headOfficeShared?'共有済み':'未共有'}</b></div>${order.headOfficeSharedAt?`<div class="summaryRow"><span>共有確認日時</span><b>${new Date(order.headOfficeSharedAt).toLocaleString('ja-JP')}</b></div>`:''}`:'';
-  $('sheetBody').innerHTML=`<div class="step"><div class="section"><div class="summaryRow"><span>店舗</span><b>${esc(order.store)}</b></div><div class="summaryRow"><span>区分</span><b>${esc(labelOrder(order))}</b></div><div class="summaryRow"><span>電話</span><b>${esc(order.phone)}</b></div>${order.customer?`<div class="summaryRow"><span>お客様</span><b>${esc(order.customer)}</b></div>`:''}${order.account?`<div class="summaryRow"><span>卸屋・帳合先</span><b>${esc(order.account)}</b></div>`:''}${order.staff?`<div class="summaryRow"><span>担当</span><b>${esc(order.staff)}</b></div>`:''}${order.receiptNo?`<div class="summaryRow"><span>一時番号</span><b>${esc(order.receiptNo)}</b></div>`:''}${sharingRow}${order.type===ORDER_TYPE.SPOT?`<div class="summaryRow"><span>会計</span><b>${order.paid?'会計済み':'未会計'}・${order.paymentMethod===PAYMENT.CASH?'現金':'クレジット'}</b></div>`:''}<div class="summaryRow"><span>受け渡し</span><b>${esc(handoffLabel(order))}</b></div><div class="summaryRow"><span>現在</span><b>${{active:'要対応',waiting:'受取待ち',done:'完了'}[groupOf(order)]}</b></div><div class="summaryRow"><span>作成日時</span><b>${esc(formatDateTime(order.createdAt||order.created_at))}</b></div><div class="summaryRow"><span>最終更新日時</span><b>${esc(formatDateTime(order.updatedAt||order.updated_at||order.createdAt||order.created_at))}</b></div>${order.notes?`<div class="summaryRow"><span>備考</span><b class="multiline">${esc(order.notes)}</b></div>`:''}</div><div class="section"><div class="sectionTitle">商品</div>${order.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${item.qty}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow total"><span>合計</span><b>${yen(totalOf(order))}</b></div></div><div class="hintBox">PDF保存・印刷の画面を閉じると、この注文はメモリから消去されます。</div><button id="editOrderBtn" class="primary fullButton">この注文を修正</button><button id="customerCopyBtn" class="secondary fullButton">お客様控えをPDF保存・印刷</button><button id="printBtn" class="secondary fullButton">この注文をPDF保存・印刷</button><button id="deleteBtn" class="dangerBtn fullButton">削除</button></div><div class="stickyActions one"><button id="detailClose" class="primary">閉じる</button></div>`;
+  const order=state.orders.find(item=>item.localId===id);if(!order)return;openSheet('注文詳細','保存済み');
+  const rows=[['店舗',order.store],['区分',labelOrder(order)],['電話',order.phone],['お客様',order.customer],['卸屋・帳合先',order.account],['担当',order.staff],['受付番号',order.receiptNo],['受け渡し',handoffLabel(order)],['会計方法',order.type===ORDER_TYPE.SPOT?(order.paymentMethod===PAYMENT.CASH?'現金':'クレジット'):''],['ホテル',order.hotelName],['宿泊者',order.guestName],['部屋番号',order.roomNo],['チェックアウト',order.checkoutDate],['配送先',order.shipAddress],['作成日時',formatDateTime(order.createdAt)],['最終更新',formatDateTime(order.updatedAt)],['備考',order.notes]];
+  $('sheetBody').innerHTML=`<div class="step"><div class="section">${rows.filter(([,value])=>value).map(([label,value])=>`<div class="summaryRow"><span>${esc(label)}</span><b class="multiline">${esc(value)}</b></div>`).join('')}</div><div class="section"><div class="sectionTitle">商品</div>${order.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${item.qty}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow total"><span>合計</span><b>${yen(totalOf(order))}</b></div></div><button id="editOrderBtn" class="primary fullButton">注文を修正</button><div class="two"><button id="customerCopyBtn" class="secondary">お客様控え</button><button id="printBtn" class="secondary">注文書を印刷</button></div><button id="deleteBtn" class="linkBtn hideOrderButton">この注文を一覧から非表示</button></div><div class="stickyActions one"><button id="detailClose" class="secondary">閉じる</button></div>`;
   $('detailClose').onclick=closeSheet;$('editOrderBtn').onclick=()=>startEditOrder(order);$('customerCopyBtn').onclick=()=>printCustomerCopy(order);$('printBtn').onclick=()=>printOrder(order);
   $('deleteBtn').onclick=async()=>{
-    if(!confirm('この注文を削除しますか？'))return;$('deleteBtn').disabled=true;
-    wipeOrderData(order);state.orders=state.orders.filter(item=>item!==order);
-    closeSheet();render();
+    if(!confirm('この注文を全端末の一覧から非表示にしますか？\n復旧用のデータはSupabaseに残ります。'))return;
+    $('deleteBtn').disabled=true;
+    try{await hideOrder(order);if(state.draft?.localId===order.localId)state.draft=null;closeSheet();toast('一覧から非表示にしました')}
+    catch(error){showError(error.message==='SYNC_CONFLICT'?'別の端末で更新されました。一覧から開き直してください。':'非表示にできませんでした。接続を確認してください。');$('deleteBtn').disabled=false}
   };
 }
 function printOrder(order){
@@ -221,11 +263,11 @@ function printOrder(order){
 function printCustomerCopy(order){printOrders([order],'お客様控え',false,{customerCopy:true})}
 function receiptOrderNumber(order){return order.receiptNo||order.orderNo||order.localId||'登録前'}
 function receiptDocumentHtml(order,{customerCopy=false}={}){
-  const orderNumber=receiptOrderNumber(order),status={active:'要対応',waiting:'受取待ち',done:'完了'}[groupOf(order)];
+  const orderNumber=receiptOrderNumber(order);
   const itemCount=(order.items||[]).reduce((sum,item)=>sum+Number(item.qty||0),0);
   const customerName=customerCopy?customerNameWithHonorific(order.customer):order.customer||'-';
   const internalInfo=receiptInternalInfo(order,{customerCopy});
-  const info=[['店舗名',order.store],['電話番号',order.phone],['お客様名',customerName],['注文区分',labelOrder(order)]];if(!customerCopy)info.push(['卸屋・帳合先',order.account||'-'],['担当',order.staff||state.staff?.display_name||'-']);if(internalInfo.showHandoff)info.push(['受け渡し',handoffLabel(order)]);if(internalInfo.showStatus)info.push(['状態',status]);
+  const info=[['店舗名',order.store],['電話番号',order.phone],['お客様名',customerName],['注文区分',labelOrder(order)]];if(!customerCopy)info.push(['卸屋・帳合先',order.account||'-'],['担当',order.staff||state.staff?.display_name||'-']);if(internalInfo.showHandoff)info.push(['受け渡し',handoffLabel(order)]);
   const createdAtHtml=internalInfo.showCreatedAt?`<br><b>作成日時</b> ${new Date(order.createdAt||Date.now()).toLocaleString('ja-JP')}`:'';
   const infoHtml=info.map(([label,value])=>`<div class="receiptInfoCard"><div class="receiptInfoLabel">${esc(label)}</div><div class="receiptInfoValue">${esc(value||'-')}</div></div>`).join('');
   const itemsHtml=(order.items||[]).map(item=>`<tr><td><b>${esc(item.code)}</b></td><td>${esc(item.name)}</td><td class="num">${item.qty}</td><td class="num">${yen(item.price)}</td><td class="num"><b>${yen(item.price*item.qty)}</b></td></tr>`).join('');
@@ -233,52 +275,86 @@ function receiptDocumentHtml(order,{customerCopy=false}={}){
   return `<div class="receiptHeaderSimple"><div class="receiptBrandBlock"><img class="receiptBrandLogo" src="assets/sun_nishimura_logo.jpg" alt="株式会社サンニシムラ"><div><div class="receiptBrandName">株式会社サンニシムラ</div><div class="receiptBrandSub">SAN NISHIMURA CO., LTD.${customerCopy?'':`<br>${esc(cfg.eventName||'展示会')}`}</div></div></div><div class="receiptDocMeta"><div class="receiptDocTitle">${customerCopy?'お客様控え':'展示会 注文書'}</div><div class="receiptDocSub">Exhibition Order Receipt</div><div class="receiptMetaLine"><b>注文番号</b> ${esc(orderNumber)}${createdAtHtml}</div></div></div><div class="receiptInfoBand">${infoHtml}</div><div class="receiptSection"><div class="receiptSectionHead"><div class="receiptSectionTitle">注文明細</div><div class="receiptSectionHint">${itemCount}点</div></div><table class="receiptTable"><colgroup><col class="code"><col><col class="qty"><col class="unit"><col class="subtotal"></colgroup><thead><tr><th>品番</th><th>商品名</th><th class="num">数量</th><th class="num">単価</th><th class="num">金額</th></tr></thead><tbody>${itemsHtml}</tbody></table></div><div class="receiptFooterGrid"><div class="receiptMemoStack">${notesHtml}</div><div><div class="receiptSummaryBox"><div class="receiptSummaryRow"><span>点数</span><span>${itemCount}</span></div><div class="receiptSummaryRow total"><span>合計</span><span>${yen(totalOf(order))}</span></div></div><div class="receiptCurrencyNote">通貨：JPY</div></div></div><div class="receiptFooterMini"><span>株式会社サンニシムラ</span><span>${customerCopy?`注文番号 ${esc(orderNumber)}`:`${esc(cfg.eventName||'展示会')}・${esc(orderNumber)}`}</span></div>`;
 }
 function printSheetHtml(order,{customerCopy=false}={}){return `<article class="printSheet printPage receiptSheet">${receiptDocumentHtml(order,{customerCopy})}</article>`}
-function purgePrintedOrders(list){
-  const ids=new Set(list.map(orderMemoryId).filter(Boolean));
-  state.orders=purgePrintedOrderData(state.orders,list);
-  for(const order of list)wipeOrderData(order);
-  if(state.draft&&ids.has(orderMemoryId(state.draft))){wipeOrderData(state.draft);state.draft=null}
-  $('printArea').innerHTML='';closeSheet();render();updateNewOrderButton();toast('印刷対象の顧客情報と注文明細を消去しました');
-}
+
 function printOrders(orders,title,withCover=true,{targetLabel='全期間',customerCopy=false}={}){
   const list=orders.filter(order=>!order.deleted).sort(compareOrdersForPrint);
   if(!list.length)return toast('印刷する注文がありません');
   const totalQty=list.reduce((sum,order)=>sum+(order.items||[]).reduce((value,item)=>value+Number(item.qty||0),0),0),grandTotal=list.reduce((sum,order)=>sum+totalOf(order),0);
-  const cover=withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(cfg.eventName||'展示会')}</div><h1>${esc(title)}</h1><p><b>対象受付日 ${esc(targetLabel)}</b><br>出力日時 ${new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'medium'}).format(new Date())}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>受付日時</th><th>区分</th><th>卸屋・帳合先</th><th>店舗・お客様</th><th>状態</th><th>合計</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(formatDateTime(order.createdAt||order.created_at,true))}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.account||'-')}</td><td>${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${{active:'要対応',waiting:'受取待ち',done:'完了'}[groupOf(order)]}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
+  const cover=withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(cfg.eventName||'展示会')}</div><h1>${esc(title)}</h1><p><b>対象受付日 ${esc(targetLabel)}</b><br>出力日時 ${new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'medium'}).format(new Date())}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>受付日時</th><th>区分</th><th>卸屋・帳合先</th><th>店舗・お客様</th><th>合計</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(formatDateTime(order.createdAt||order.created_at,true))}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.account||'-')}</td><td>${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
   $('printArea').innerHTML=`${cover}${list.map(order=>printSheetHtml(order,{customerCopy})).join('')}<div class="printFoot">出力日時 ${new Date().toLocaleString('ja-JP')}</div>`;
   window.print();
-  purgePrintedOrders(list);
+  toast('注文データは保存したままです');
 }
 function showPrintMenu(){
   const orders=state.orders.filter(order=>!order.deleted),normal=orders.filter(order=>order.type===ORDER_TYPE.NORMAL);
-  openSheet('提出・印刷','用途を選択');
-  $('sheetBody').innerHTML=`<div class="step"><p class="stepIntro">用途を選んだ後、対象受付日と出力前の件数を確認します。印刷画面を閉じた注文はメモリから消去されます。</p><div class="printChoices"><button id="printNormalBatch" class="choice full ${normal.length?'':'disabled'}" ${normal.length?'':'disabled'}><b>国内通常注文をまとめて印刷</b><small>伝票打ちへ提出する注文書です。このタブ内 ${normal.length}件。</small></button><button id="printAllBatch" class="choice full ${orders.length?'':'disabled'}" ${orders.length?'':'disabled'}><b>展示会の全注文データをPDF・印刷</b><small>このタブ内の最終提出用です。${orders.length}件。</small></button></div></div><div class="stickyActions one"><button id="printMenuClose" class="secondary">閉じる</button></div>`;
+  openSheet('まとめて印刷','対象を選択');
+  $('sheetBody').innerHTML=`<div class="step"><p class="stepIntro">印刷する注文と受付日を選びます。印刷後も注文は保存されます。</p><div class="printChoices"><button id="printNormalBatch" class="choice full ${normal.length?'':'disabled'}" ${normal.length?'':'disabled'}><b>国内通常注文をまとめて印刷</b><small>伝票打ちへ提出する注文書です。保存済み ${normal.length}件。</small></button><button id="printAllBatch" class="choice full ${orders.length?'':'disabled'}" ${orders.length?'':'disabled'}><b>展示会の全注文データをPDF・印刷</b><small>すべての保存済み注文です。${orders.length}件。</small></button></div></div><div class="stickyActions one"><button id="printMenuClose" class="secondary">閉じる</button></div>`;
   $('printMenuClose').onclick=closeSheet;if($('printNormalBatch'))$('printNormalBatch').onclick=()=>showPrintDateOptions('normal');if($('printAllBatch'))$('printAllBatch').onclick=()=>showPrintDateOptions('final');
 }
 
 function showPrintDateOptions(kind,mode='today',start=today(),end=today()){
-  const all=state.orders.filter(order=>!order.deleted),base=kind==='normal'?all.filter(order=>order.type===ORDER_TYPE.NORMAL):all,list=filterOrdersByCreatedDate(base,{mode,today:today(),start,end}),summary=batchSummary(list),isFinal=kind==='final';
-  const targetLabel=mode==='all'?'全期間':mode==='today'?today():start===end?start:`${start} ～ ${end}`;
-  const unresolved=summary.unshared||summary.active||summary.waiting,needsAck=isFinal&&Boolean(unresolved),dateInvalid=mode==='range'&&(!start||!end||start>end);
-  $('stepLabel').textContent=isFinal?'展示会最終提出':'通常注文の伝票打ち';$('sheetTitle').textContent='対象受付日と出力前確認';
-  $('sheetBody').innerHTML=`<div class="step"><div class="dateModeChoices"><button data-date-mode="today" class="${mode==='today'?'on':''}">本日</button><button data-date-mode="range" class="${mode==='range'?'on':''}">日付を指定</button><button data-date-mode="all" class="${mode==='all'?'on':''}">全期間</button></div>${mode==='range'?`<div class="two topGap"><div class="field"><label for="printStart">開始日</label><input id="printStart" type="date" value="${esc(start)}"></div><div class="field"><label for="printEnd">終了日</label><input id="printEnd" type="date" value="${esc(end)}"></div></div>`:''}<div class="section topGap"><div class="sectionTitle">出力前確認</div><div class="summaryRow"><span>対象受付日</span><b>${esc(targetLabel)}</b></div><div class="summaryRow"><span>注文数</span><b>${summary.orders}件</b></div><div class="summaryRow"><span>商品点数</span><b>${summary.items}点</b></div><div class="summaryRow"><span>合計金額</span><b>${yen(summary.total)}</b></div><div class="summaryRow"><span>本社未共有</span><b class="${summary.unshared?'statusPending':''}">${summary.unshared}件</b></div><div class="summaryRow"><span>要対応</span><b class="${summary.active?'statusPending':''}">${summary.active}件</b></div><div class="summaryRow"><span>受取待ち</span><b class="${summary.waiting?'statusPending':''}">${summary.waiting}件</b></div><div class="summaryRow"><span>未会計</span><b class="${summary.unpaid?'statusPending':''}">${summary.unpaid}件</b></div></div>${dateInvalid?'<div class="blockingWarning">開始日と終了日を正しく指定してください。</div>':''}${unresolved?`<div class="strongWarning"><b>${isFinal?'未完了注文があります':'対象に未完了注文が含まれます'}</b><br>本社未共有・要対応・受取待ちを確認してください。</div>`:''}${needsAck?'<label class="warningAck"><input id="printWarningAck" type="checkbox"> 責任者と警告内容を確認し、この対象で出力する</label>':''}<div class="hintBox topGap">印刷画面を閉じると、対象注文の顧客情報と注文明細はメモリから消去されます。</div></div><div class="stickyActions"><button id="printDateBack" class="secondary">用途へ戻る</button><button id="executeBatchPrint" class="primary" ${(needsAck||dateInvalid||!summary.orders)?'disabled':''}>${isFinal?'最終提出をPDF・印刷':'通常注文をPDF・印刷'}</button></div>`;
+  const all=state.orders.filter(order=>!order.deleted),base=kind==='normal'?all.filter(order=>order.type===ORDER_TYPE.NORMAL):all,list=filterOrdersByCreatedDate(base,{mode,today:today(),start,end}),summary=batchSummary(list);
+  const targetLabel=mode==='all'?'全期間':mode==='today'?today():start===end?start:`${start} ～ ${end}`,dateInvalid=mode==='range'&&(!start||!end||start>end);
+  $('stepLabel').textContent=kind==='normal'?'国内通常注文':'すべての注文';$('sheetTitle').textContent='印刷する受付日';
+  $('sheetBody').innerHTML=`<div class="step"><div class="dateModeChoices"><button data-date-mode="today" class="${mode==='today'?'on':''}">本日</button><button data-date-mode="range" class="${mode==='range'?'on':''}">日付を指定</button><button data-date-mode="all" class="${mode==='all'?'on':''}">全期間</button></div>${mode==='range'?`<div class="two topGap"><div class="field"><label for="printStart">開始日</label><input id="printStart" type="date" value="${esc(start)}"></div><div class="field"><label for="printEnd">終了日</label><input id="printEnd" type="date" value="${esc(end)}"></div></div>`:''}<div class="section topGap"><div class="summaryRow"><span>対象受付日</span><b>${esc(targetLabel)}</b></div><div class="summaryRow"><span>注文数</span><b>${summary.orders}件</b></div><div class="summaryRow"><span>商品点数</span><b>${summary.items}点</b></div><div class="summaryRow"><span>合計金額</span><b>${yen(summary.total)}</b></div></div>${dateInvalid?'<div class="blockingWarning">開始日と終了日を正しく指定してください。</div>':''}<div class="hintBox">印刷・PDF保存後も注文は残ります。</div></div><div class="stickyActions"><button id="printDateBack" class="secondary">戻る</button><button id="executeBatchPrint" class="primary" ${dateInvalid||!summary.orders?'disabled':''}>PDF・印刷</button></div>`;
   document.querySelectorAll('[data-date-mode]').forEach(button=>button.onclick=()=>showPrintDateOptions(kind,button.dataset.dateMode,start,end));
   if($('printStart'))$('printStart').onchange=()=>showPrintDateOptions(kind,'range',$('printStart').value,$('printEnd').value);
   if($('printEnd'))$('printEnd').onchange=()=>showPrintDateOptions(kind,'range',$('printStart').value,$('printEnd').value);
-  if($('printWarningAck'))$('printWarningAck').onchange=()=>{$('executeBatchPrint').disabled=!$('printWarningAck').checked};
-  $('printDateBack').onclick=showPrintMenu;$('executeBatchPrint').onclick=()=>printOrders(list,isFinal?'展示会 全注文データ':'国内通常注文 一括注文書',true,{targetLabel});
+  $('printDateBack').onclick=showPrintMenu;$('executeBatchPrint').onclick=()=>printOrders(list,kind==='normal'?'国内通常注文 一括注文書':'展示会 全注文データ',true,{targetLabel});
 }
 
-function showFilter(){openSheet('絞り込み','');$('sheetBody').innerHTML=`<div class="step"><div class="choiceGrid"><button class="choice" data-f="unshared"><b>本社未共有</b><small>Slackなどで本社共有が必要</small></button><button class="choice" data-f="pickup"><b>受取待ち</b><small>共有済み・お客様の来場待ち</small></button><button class="choice" data-f="unpaid"><b>未会計</b><small>現売りの会計確認</small></button><button class="choice" data-f=""><b>すべて</b></button></div></div>`;document.querySelectorAll('[data-f]').forEach(button=>button.onclick=()=>{state.filter=button.dataset.f;closeSheet();render()})}
-
-async function bootOnline(){let saved=null;try{saved=JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY)||'null')}catch{}if(!saved?.access_token){showLogin();bindConnectivitySignals();return}state.session=saved;try{await ensureFreshSession();await loadStaff();await loadPrivateReferenceData();state.online=true;showApp()}catch(error){console.warn(error);sessionStorage.removeItem(SESSION_STORAGE_KEY);state.session=null;state.online=false;showLogin();$('loginMsg').textContent=navigator.onLine?'ログイン情報を確認できませんでした。もう一度ログインしてください。':'再接続後、登録スタッフでログインしてください。'}bindConnectivitySignals()}
+async function bootOnline(){
+  const saved=storedSession();bindConnectivitySignals();
+  if(!saved?.access_token){showLogin();return}
+  state.session=saved;
+  try{saveSession(saved);await ensureFreshSession();await loadStaff();await Promise.all([loadPrivateReferenceData(),loadOrders()]);state.online=true;showApp()}
+  catch(error){
+    state.online=false;
+    if(error.status===400||error.status===401||error.message==='SESSION_EXPIRED'){clearStoredSession();state.session=null}
+    showLogin();$('loginMsg').textContent='接続またはログイン情報を確認できません。再接続後に更新するか、ログインしてください。';
+  }
+}
 function showLogin(){$('loginView').classList.remove('hidden');$('appView').classList.add('hidden');$('loginNetworkGuide').classList.toggle('hidden',navigator.onLine);$('loginBtn').disabled=!navigator.onLine}
-function showApp(){$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('eventName').textContent=cfg.eventName||'EXHIBITION';$('logoutBtn').classList.remove('hidden');setSync(navigator.onLine?'online':'error',navigator.onLine?'認証済み・注文はこのタブのみ（保存なし）':'オフライン・表示中の商品と注文だけ利用可能');render();updateNewOrderButton()}
-function bindConnectivitySignals(){if(state.signalsBound)return;state.signalsBound=true;window.addEventListener('online',()=>{if(state.online)setSync('online','認証済み・注文はこのタブのみ（保存なし）');else showLogin()});window.addEventListener('offline',()=>{if(state.online)setSync('error','オフライン・表示中の商品と注文だけ利用可能');else showLogin()})}
-async function refreshPrivateData(){if(!state.online||!navigator.onLine)return toast('オンライン接続が必要です');$('refreshBtn').disabled=true;setSync('busy','商品データを再取得中…');try{await loadPrivateReferenceData();setSync('online','認証済み・注文はこのタブのみ（保存なし）');toast('商品データを更新しました')}catch(error){console.error(error);setSync('error','商品データの再取得に失敗しました');toast('商品データを更新できませんでした')}finally{$('refreshBtn').disabled=false}}
-async function login(){const email=$('loginEmail').value.trim(),password=$('loginPassword').value;if(!navigator.onLine)return $('loginMsg').textContent='現在オフラインです。再接続してからログインしてください。';if(!email||!password)return $('loginMsg').textContent='メールとパスワードを入力してください。';$('loginMsg').textContent='';$('loginBtn').disabled=true;try{await signIn(email,password);await loadStaff();await loadPrivateReferenceData();state.online=true;showApp();bindConnectivitySignals()}catch(error){console.error(error);sessionStorage.removeItem(SESSION_STORAGE_KEY);state.session=null;state.online=false;$('loginMsg').textContent='ログインできませんでした。登録スタッフのアカウントまたは通信を確認してください。'}finally{$('loginPassword').value='';$('loginBtn').disabled=!navigator.onLine}}
-function logout(){for(const order of state.orders)wipeOrderData(order);state.orders=[];if(state.draft)wipeOrderData(state.draft);state.draft=null;state.products=[];state.accounts=[];sessionStorage.removeItem(SESSION_STORAGE_KEY);localStorage.removeItem(LS_STAFF);state.session=null;state.staff=null;state.online=false;$('loginPassword').value='';closeSheet();showLogin()}
-
-$('loginBtn').onclick=login;$('loginPassword').onkeydown=event=>{if(event.key==='Enter')login()};$('logoutBtn').onclick=logout;$('refreshBtn').onclick=refreshPrivateData;$('newOrderBtn').onclick=startOrder;$('discardDraftBtn').onclick=showDiscardDraftConfirm;$('closeSheet').onclick=closeSheet;$('sheet').onclick=event=>{if(event.target===$('sheet'))closeSheet()};$('filterBtn').onclick=showFilter;$('printMenuBtn').onclick=showPrintMenu;$('orderSearch').oninput=render;$('tabs').onclick=event=>{const button=event.target.closest('[data-tab]');if(!button)return;state.tab=button.dataset.tab;clearListModes();render()};document.querySelectorAll('.metric').forEach(button=>button.onclick=()=>{state.filter=button.dataset.filter;$('orderSearch').value='';render()});
+function showApp(){$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('eventName').textContent=cfg.eventName||'EXHIBITION';$('logoutBtn').classList.remove('hidden');markSynced();render();updateNewOrderButton();if(!state.syncTimer)state.syncTimer=setInterval(()=>{if(document.visibilityState==='visible')syncOrders().catch(()=>{})},12000)}
+function bindConnectivitySignals(){
+  if(state.signalsBound)return;state.signalsBound=true;
+  window.addEventListener('online',()=>{if(state.online)syncOrders().catch(()=>{});else if(storedSession())bootOnline();else showLogin()});
+  window.addEventListener('offline',()=>{if(state.online)setSync('error','オフライン・保存は接続後に行ってください');else showLogin()});
+  window.addEventListener('focus',()=>syncOrders().catch(()=>{}));
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncOrders().catch(()=>{})});
+  window.addEventListener('storage',event=>{if(event.key===PERSISTENT_SESSION_KEY){if(!event.newValue)clearLocalApp();else state.session=storedSession()}});
+  window.addEventListener('beforeunload',event=>{state.rememberDraftInput?.();if(state.draft&&state.draft.stage!=='success'&&(state.draft.items?.length||state.draft.store)){event.preventDefault();event.returnValue=''}});
+}
+async function refreshPrivateData(){
+  if(!state.online||!navigator.onLine)return toast('オンライン接続が必要です');
+  $('refreshBtn').disabled=true;setSync('busy','注文と商品を同期中…');
+  try{await Promise.all([loadPrivateReferenceData(),syncOrders()]);markSynced();toast('最新の注文と商品に更新しました')}
+  catch(error){setSync('error','同期できません。接続を確認してください');toast('更新できませんでした')}
+  finally{$('refreshBtn').disabled=false}
+}
+async function login(){
+  const email=$('loginEmail').value.trim(),password=$('loginPassword').value;
+  if(!navigator.onLine)return $('loginMsg').textContent='接続してからログインしてください。';
+  if(!email||!password)return $('loginMsg').textContent='メールとパスワードを入力してください。';
+  $('loginMsg').textContent='';$('loginBtn').disabled=true;
+  try{await signIn(email,password);await loadStaff();await Promise.all([loadPrivateReferenceData(),loadOrders()]);state.online=true;showApp();bindConnectivitySignals()}
+  catch(error){clearStoredSession();state.session=null;state.online=false;$('loginMsg').textContent='ログインできませんでした。アカウントまたは通信を確認してください。'}
+  finally{$('loginPassword').value='';$('loginBtn').disabled=!navigator.onLine}
+}
+function clearLocalApp(){
+  state.dataEpoch++;
+  for(const order of state.orders)wipeOrderData(order);state.orders=[];
+  if(state.draft)wipeOrderData(state.draft);state.draft=null;state.rememberDraftInput=null;state.products=[];state.accounts=[];
+  clearStoredSession();state.session=null;state.staff=null;state.online=false;clearInterval(state.syncTimer);state.syncTimer=null;
+  $('loginPassword').value='';closeSheet();$('sheetBody').innerHTML='';$('orders').innerHTML='';$('printArea').innerHTML='';showLogin();
+}
+async function logout(){
+  if(state.draft&&state.draft.stage!=='success'&&!confirm('未保存の入力内容は失われます。ログアウトしますか？'))return;
+  try{if(state.session?.access_token)await fetchJson(`${sbBase()}/auth/v1/logout?scope=local`,{method:'POST',headers:sbHeaders()})}catch{}
+  clearLocalApp();
+}
+$('loginBtn').onclick=login;$('loginPassword').onkeydown=event=>{if(event.key==='Enter')login()};
+window.addEventListener('afterprint',()=>{$('printArea').innerHTML=''});
+$('logoutBtn').onclick=logout;$('refreshBtn').onclick=refreshPrivateData;$('newOrderBtn').onclick=startOrder;$('discardDraftBtn').onclick=showDiscardDraftConfirm;$('closeSheet').onclick=closeSheet;$('sheet').onclick=event=>{if(event.target===$('sheet'))closeSheet()};$('printMenuBtn').onclick=showPrintMenu;$('orderSearch').oninput=render;
 
 purgeLegacyLocalData();if(location.hash.startsWith('#receipt='))history.replaceState(null,'',`${location.pathname}${location.search}`);await bootOnline();

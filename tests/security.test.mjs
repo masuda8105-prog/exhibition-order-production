@@ -2,17 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
-import {ORDER_SENSITIVE_FIELDS,purgePrintedOrderData,wipeOrderData} from '../security.js';
-
-test('印刷対象だけを消去し、未印刷の注文はメモリに残す',()=>{
-  const printed={localId:'printed',clientSubmissionId:'submission-a',store:'会社A',customer:'担当A',phone:'000',notes:'備考',account:'帳合',accountChoice:'その他',accountOther:'帳合',pickupDate:'2099-01-01',shipAddress:'住所',hotelName:'ホテル',guestName:'宿泊者',roomNo:'1',checkoutDate:'2099-01-02',items:[{code:'TEST',name:'テスト商品',price:1,qty:2}]};
-  const remaining={localId:'remaining',store:'会社B',items:[{code:'SAFE',name:'テスト商品',price:1,qty:1}]};
-  const result=purgePrintedOrderData([printed,remaining],[{clientSubmissionId:'submission-a'}]);
-  assert.deepEqual(result,[remaining]);
-  for(const field of ORDER_SENSITIVE_FIELDS)assert.equal(printed[field],'');
-  assert.deepEqual(printed.items,[]);
-  assert.equal(remaining.store,'会社B');
-});
+import {ORDER_SENSITIVE_FIELDS,wipeOrderData} from '../security.js';
 
 test('下書き単体もすべての顧客欄と数量を消去できる',()=>{
   const draft=Object.fromEntries(ORDER_SENSITIVE_FIELDS.map(field=>[field,'value']));

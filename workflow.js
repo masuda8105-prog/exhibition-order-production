@@ -82,11 +82,11 @@ export function customerNameWithHonorific(name){
 export function receiptInternalInfo(order,{customerCopy=false}={}){
   if(customerCopy) return {showStatus:false,showHandoff:false,showCreatedAt:false,showGuide:false,headOfficeShare:''};
   return {
-    showStatus:true,
+    showStatus:false,
     showHandoff:true,
     showCreatedAt:true,
     showGuide:true,
-    headOfficeShare:needsHeadOfficeShare(order)?(order?.headOfficeShared?'共有済み':'未共有'):'',
+    headOfficeShare:'',
   };
 }
 
@@ -162,6 +162,48 @@ export function handoffLabel(order){
   if(order?.handoff===HANDOFF.HOTEL) return `本社対応・ホテル配送${order?.hotelName?`（${order.hotelName}）`:''}`;
   if(order?.handoff===HANDOFF.SHIP) return '本社対応・指定先配送';
   return '-';
+}
+
+const CLOUD_ORDER_FIELDS=Object.freeze([
+  'receiptNo','type','handoff','customerRegion','store','phone','customer',
+  'account','accountChoice','accountOther','staff','paymentMethod','paid',
+  'delivered','shipped','prepared','headOfficeShared','headOfficeSharedAt',
+  'pickupDate','notes','hotelName','guestName','roomNo','checkoutDate','shipAddress',
+]);
+
+export function orderPayloadForCloud(order){
+  const payload={};
+  for(const field of CLOUD_ORDER_FIELDS)payload[field]=order?.[field]??'';
+  payload.paid=Boolean(order?.paid);
+  payload.delivered=Boolean(order?.delivered);
+  payload.shipped=Boolean(order?.shipped);
+  payload.headOfficeShared=Boolean(order?.headOfficeShared);
+  payload.items=(order?.items||[]).map(item=>({
+    productId:String(item?.productId||''),
+    code:String(item?.code||''),
+    name:String(item?.name||''),
+    price:Number(item?.price||0),
+    imageUrl:String(item?.imageUrl||''),
+    status:String(item?.status||''),
+    orderable:Boolean(item?.orderable),
+    lineId:String(item?.lineId||''),
+    qty:Number(item?.qty||0),
+  }));
+  return payload;
+}
+
+export function orderFromCloudRow(row){
+  const payload=row?.payload&&typeof row.payload==='object'&&!Array.isArray(row.payload)?row.payload:{};
+  return {
+    ...payload,
+    items:Array.isArray(payload.items)?payload.items.map(item=>({...item})):[],
+    localId:String(row?.id||''),
+    clientSubmissionId:String(row?.id||''),
+    createdAt:row?.created_at||'',
+    updatedAt:row?.updated_at||'',
+    cloudUpdatedAt:row?.updated_at||'',
+    syncState:'synced',
+  };
 }
 
 export function normalizeForSave(draft){

@@ -28,26 +28,39 @@ test('QR公開控えと匿名注文取得を公開画面から除去する',()=>
   assert.match(server,/status:410/);
 });
 
-test('認証セッションはタブ終了で消えるsessionStorageだけを使う',()=>{
-  assert.match(app,/sessionStorage\.setItem\(SESSION_STORAGE_KEY/);
-  assert.match(app,/sessionStorage\.removeItem\(SESSION_STORAGE_KEY\)/);
-  assert.doesNotMatch(app,/localStorage\.setItem\([^\n]*(session|orders)/i);
+test('認証状態は端末に保持し更新トークンを安全に更新する',()=>{
+  assert.match(app,/localStorage\.setItem\(PERSISTENT_SESSION_KEY/);
+  assert.match(app,/navigator\.locks\.request/);
+  assert.match(app,/grant_type=refresh_token/);
+  assert.match(app,/logout\?scope=local/);
   assert.match(app,/\$\('loginPassword'\)\.value=''/);
 });
-
-test('注文はメモリだけに保持しクラウド保存処理を持たない',()=>{
-  assert.match(app,/syncState:'memory'/);
-  assert.match(app,/注文はこのタブのみ（保存なし）/);
-  assert.doesNotMatch(app,/onlineCreate|onlinePatch|onlineLoad|localSave|syncPendingOrders/);
-  assert.doesNotMatch(app,/exhibition_orders/);
+test('注文はクラウド保存を確認してから完了し自動同期する',()=>{
+  assert.match(app,/exhibition_app_orders/);
+  assert.match(app,/return=representation/);
+  assert.match(app,/SAVE_NOT_CONFIRMED/);
+  assert.match(app,/SYNC_CONFLICT/);
+  assert.match(app,/setInterval/);
+  assert.match(app,/12000/);
+  assert.doesNotMatch(app,/localStorage\.setItem\([^\n]*orders/i);
+});
+test('印刷後も保存済み注文と顧客情報を保持する',()=>{
+  assert.match(app,/window\.print\(\)/);
+  assert.match(app,/addEventListener\('afterprint'/);
+  assert.doesNotMatch(app,/window\.print\(\);\s*\$\('printArea'\)\.innerHTML=''/);
+  assert.doesNotMatch(app,/purgePrintedOrders|purgePrintedOrderData/);
+  assert.match(app,/注文データは保存したままです/);
 });
 
-test('印刷画面を閉じると顧客情報と注文明細を消去する',()=>{
-  assert.match(app,/window\.print\(\);\s*purgePrintedOrders\(list\)/);
-  assert.match(app,/purgePrintedOrderData\(state\.orders,list\)/);
-  assert.match(app,/for\(const order of list\)wipeOrderData\(order\)/);
-  for(const field of ['store','customer','phone','notes','account','pickupDate','shipAddress','hotelName','guestName'])assert.match(security,new RegExp(`'${field}'`));
-  assert.match(security,/order\.items=\[\]/);
+test('保存応答が途切れた再試行は重複を防ぎ変更内容を保持する',()=>{
+  assert.match(app,/order\.clientSubmissionId=id/);
+  assert.match(app,/error\.status!==409/);
+  assert.match(app,/previousPayload=order\.pendingSavePayload/);
+  assert.match(app,/patchCloudOrder\(existing,\{payload\}\)/);
+});
+
+test('別スタッフの既存注文を編集しても担当者名を保持する',()=>{
+  assert.match(app,/new Set\(\[d\.staff,state\.staff\?\.display_name\]/);
 });
 
 test('注文作成画面を閉じてもタブ内の下書きは再開できる',()=>{
@@ -65,11 +78,11 @@ test('固定入力キーと商品の渡し方のスマホUIを維持する',()=>
   assert.match(styles,/\.handoffChoices\{grid-template-columns:1fr\}/);
 });
 
-test('件数・絞り込み・検索はフォルダ横断の操作感を維持する',()=>{
-  assert.match(app,/\(state\.filter\|\|q\)\|\|groupOf\(order\)===state\.tab/);
-  assert.match(app,/orderMatchesOperationalFilter\(order,state\.filter\)/);
+test('全注文を一つの一覧で検索し不要な状態表示を出さない',()=>{
   assert.match(app,/orderMatchesSearch\(order,q\)/);
-  assert.match(app,/検索結果.*全フォルダ/);
+  assert.match(index,/id="orderCount"/);
+  assert.doesNotMatch(index,/本社未共有|受取待ち|未会計|id="tabs"/);
+  assert.doesNotMatch(app,/本社未共有|受取待ち|未会計|showShareConfirm/);
 });
 
 test('印刷レイアウトと主要タップ領域を維持する',()=>{

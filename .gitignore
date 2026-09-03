@@ -9,6 +9,8 @@ online-config.js
 _site/
 exhibition_order_production_preview.html
 .tmp-spreadsheet-audit/
+tmp/
+supabase/.temp/
 
 # Private business data and generated audits
 private-data/

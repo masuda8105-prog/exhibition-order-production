@@ -15,8 +15,9 @@ test('お客様控えには本社共有済み・未共有を表示しない',()=
   const unshared={...shared,headOfficeShared:false};
   assert.deepEqual(receiptInternalInfo(shared,{customerCopy:true}),{showStatus:false,showHandoff:false,showCreatedAt:false,showGuide:false,headOfficeShare:''});
   assert.deepEqual(receiptInternalInfo(unshared,{customerCopy:true}),{showStatus:false,showHandoff:false,showCreatedAt:false,showGuide:false,headOfficeShare:''});
-  assert.equal(receiptInternalInfo(shared).headOfficeShare,'共有済み');
-  assert.equal(receiptInternalInfo(unshared).headOfficeShare,'未共有');
+  assert.equal(receiptInternalInfo(shared).headOfficeShare,'');
+  assert.equal(receiptInternalInfo(unshared).headOfficeShare,'');
+  assert.equal(receiptInternalInfo(shared).showStatus,false);
 });
 
 test('国内通常注文は卸屋・帳合先と担当必須',()=>{

@@ -1,3 +1,4 @@
+export const PERSISTENT_SESSION_KEY='exhibitionOps.session.v3';
 export const SESSION_STORAGE_KEY='exhibitionOps.session.v2';
 
 export const LEGACY_LOCAL_STORAGE_KEYS=Object.freeze([
@@ -27,16 +28,4 @@ export function wipeOrderData(order){
   for(const key of ORDER_SENSITIVE_FIELDS)order[key]='';
   order.items=[];
   return order;
-}
-
-export function orderMemoryId(order){
-  return order?.clientSubmissionId||order?.localId||'';
-}
-
-export function purgePrintedOrderData(orders,printedOrders){
-  const ids=new Set((printedOrders||[]).map(orderMemoryId).filter(Boolean));
-  for(const order of orders||[]){
-    if(ids.has(orderMemoryId(order)))wipeOrderData(order);
-  }
-  return (orders||[]).filter(order=>!ids.has(orderMemoryId(order)));
 }
