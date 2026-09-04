@@ -5,7 +5,7 @@ import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,s
 const cfg=window.EXHIBITION_CONFIG||{};
 const $=id=>document.getElementById(id);
 const LS_STAFF='exhibitionOps.staff.v2',LS_KEYPAD_ALIGN='exhibitionOps.keypadAlign.v1';
-const pendingHandovers=new Set();
+const pendingHandovers=new Set(),pendingDeletes=new Set();
 const state={online:false,session:null,staff:null,orders:[],products:[],accounts:[],draft:null,rememberDraftInput:null,signalsBound:false,syncTimer:null,syncInFlight:null,refreshPromise:null,lastSyncedAt:null,dataEpoch:0,tab:'active',sheetVersion:0,receiptBlobUrl:null};
 const yen=n=>Number.isFinite(Number(n))?`¥${Math.round(Number(n)).toLocaleString('ja-JP')}`:'価格未定';
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -154,10 +154,34 @@ function renderOrders(){
   wrap.innerHTML=list.map(cardHtml).join('');
   wrap.querySelectorAll('[data-detail]').forEach(button=>button.onclick=()=>showDetail(button.dataset.detail));
   wrap.querySelectorAll('[data-handover]').forEach(button=>button.onclick=()=>handOverFromCard(button.dataset.handover));
+  wrap.querySelectorAll('[data-delete]').forEach(button=>button.onclick=()=>deleteOrderWithConfirmation(state.orders.find(order=>order.localId===button.dataset.delete)));
 }
 function cardHtml(order){
   const handover=isPickupOrder(order)&&!order.delivered?`<button class="primary handoverButton" data-handover="${esc(order.localId)}" ${pendingHandovers.has(order.localId)?'disabled':''}>${pendingHandovers.has(order.localId)?'保存中…':'お渡し済み'}</button>`:'';
-  return `<article class="orderCard"><div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store)}</div></div><div class="amount">${yen(totalOf(order))}</div></div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span><span class="chip">${itemCountOf(order)}点</span></div><div class="cardNote">${order.customer?`${esc(order.customer)} ／ `:''}${esc(handoffLabel(order))}</div><div class="cardBottom"><span class="receivedAt">${esc(formatDateTime(order.createdAt,true))}</span><button class="secondary compact" data-detail="${esc(order.localId)}">詳細・印刷</button></div>${handover}</article>`;
+  const deleting=pendingDeletes.has(order.localId);
+  const deleteButton=groupOf(order)==='done'?`<button type="button" class="dangerBtn compact deleteOrderButton" data-delete="${esc(order.localId)}" aria-label="${esc(order.store)}の注文を削除" ${deleting?'disabled':''}>${deleting?'削除中…':'削除'}</button>`:'';
+  return `<article class="orderCard"><div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store)}</div></div><div class="amount">${yen(totalOf(order))}</div></div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span><span class="chip">${itemCountOf(order)}点</span></div><div class="cardNote">${order.customer?`${esc(order.customer)} ／ `:''}${esc(handoffLabel(order))}</div><div class="cardBottom"><span class="receivedAt">${esc(formatDateTime(order.createdAt,true))}</span><div class="cardButtons"><button class="secondary compact" data-detail="${esc(order.localId)}" ${deleting?'disabled':''}>詳細・印刷</button>${deleteButton}</div></div>${handover}</article>`;
+}
+
+async function deleteOrderWithConfirmation(order,{fromDetail=false}={}){
+  if(!order||pendingDeletes.has(order.localId))return;
+  if(!confirm(`この注文を削除しますか？\n\n店舗：${order.store||'未入力'}\n${order.receiptNo?`受付番号：${order.receiptNo}\n`:''}合計：${yen(totalOf(order))}\n\n全端末の一覧・集計・一括印刷から除外します。\n復旧用のデータはSupabaseに残ります。\n共有済みのPDF・控え画像やSlack投稿は取り消されません。`))return;
+  const version=state.sheetVersion,id=order.localId;
+  const controls=fromDetail?[...$('sheetBody').querySelectorAll('button,input,select')].map(element=>({element,disabled:element.disabled})):[];
+  controls.forEach(({element})=>element.disabled=true);
+  pendingDeletes.add(id);renderOrders();
+  try{
+    await hideOrder(order);
+    if(state.draft?.localId===id||state.draft?.editingId===id)state.draft=null;
+    if(fromDetail&&version===state.sheetVersion)closeSheet();
+    updateNewOrderButton();toast('注文を削除しました');
+  }catch(error){
+    const message=error.message==='SYNC_CONFLICT'?'別の端末で更新・削除されています。最新の注文を確認してください。':'削除を確認できませんでした。接続後に同期し、注文が残っていればもう一度お試しください。';
+    if(fromDetail&&version===state.sheetVersion)showError(message);else toast(message);
+  }finally{
+    controls.forEach(({element,disabled})=>element.disabled=disabled);
+    pendingDeletes.delete(id);renderOrders();
+  }
 }
 
 async function handOverFromCard(id){
@@ -316,12 +340,8 @@ function showDetail(id){
   $('customerCopyBtn').textContent='お客様控え（QR・画像）';
   $('customerCopyBtn').classList.add('customerCopyAction');$('customerCopyBtn').parentElement.className='detailReceiptActions';
   $('detailClose').onclick=closeSheet;$('editOrderBtn').onclick=()=>startEditOrder(order);$('customerCopyBtn').onclick=()=>showCustomerReceipt(order);$('printBtn').onclick=()=>printOrder(order);
-  $('deleteBtn').onclick=async()=>{
-    if(!confirm('この注文を全端末の一覧から非表示にしますか？\n復旧用のデータはSupabaseに残ります。'))return;
-    $('deleteBtn').disabled=true;
-    try{await hideOrder(order);if(state.draft?.localId===order.localId)state.draft=null;closeSheet();toast('一覧から非表示にしました')}
-    catch(error){showError(error.message==='SYNC_CONFLICT'?'別の端末で更新されました。一覧から開き直してください。':'非表示にできませんでした。接続を確認してください。');$('deleteBtn').disabled=false}
-  };
+  $('deleteBtn').textContent='この注文を削除（キャンセル）';
+  $('deleteBtn').onclick=()=>deleteOrderWithConfirmation(order,{fromDetail:true});
 }
 function printOrder(order,{inputOnly=false}={}){
   printOrders([order],'展示会 注文書',false,{inputOnly});
