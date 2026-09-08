@@ -52,6 +52,8 @@ test('印刷後も保存済み注文と顧客情報を保持する',()=>{
   assert.doesNotMatch(app,/window\.print\(\);\s*\$\('printArea'\)\.innerHTML=''/);
   assert.doesNotMatch(app,/purgePrintedOrders|purgePrintedOrderData/);
   assert.match(app,/注文データは保存したままです/);
+  assert.match(app,/document\.title=printFileBase\(list,\{customerCopy\}\)/);
+  assert.match(app,/document\.title=printOriginalTitle/);
 });
 
 test('保存応答が途切れた再試行は重複を防ぎ変更内容を保持する',()=>{
@@ -86,7 +88,7 @@ test('3状態タブを残し検索は全状態を横断する',()=>{
   assert.match(index,/id="tabs"/);
   assert.match(app,/renderTabs/);
   assert.match(app,/すべての状態から検索/);
-  assert.doesNotMatch(app,/本社未共有|未会計|showShareConfirm/);
+  assert.doesNotMatch(app,/本社未共有|showShareConfirm/);
 });
 
 test('印刷レイアウトと主要タップ領域を維持する',()=>{

@@ -41,18 +41,18 @@ test('旧版で共有だけで完了になった後日受取はデータを書�
   assert.equal(groupOf({type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,slackShared:true}),'waiting');
 });
 
-test('お渡し済みだけで後日受取を完了し、会計や共有状態は勝手に変えない',()=>{
-  const original={type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,slackShared:false,paid:false,workflowStatus:'active',items:[]};
+test('会計済みの後日受取をお渡し完了し、会計や共有状態は勝手に変えない',()=>{
+  const original={type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,slackShared:false,paid:true,paymentMethod:'cash',workflowStatus:'active',items:[]};
   const delivered=markPickupDelivered(original,'2099-01-02T12:00:00Z');
   assert.equal(delivered.delivered,true);assert.equal(groupOf(delivered),'done');assert.equal(statusOnConfirmation(delivered,original),'done');
-  assert.equal(delivered.paid,false);assert.equal(delivered.slackShared,false);assert.equal(original.delivered,undefined);
+  assert.equal(delivered.paid,true);assert.equal(delivered.paymentMethod,'cash');assert.equal(delivered.slackShared,false);assert.equal(original.delivered,undefined);
   assert.equal(markPickupDelivered(delivered).deliveredAt,delivered.deliveredAt);
   for(const shared of [false,true])assert.equal(groupOf(setSlackShared(delivered,shared)),'done');
   for(const handoff of [HANDOFF.NOW,HANDOFF.HOTEL,HANDOFF.SHIP]){const order={type:ORDER_TYPE.SPOT,handoff};assert.deepEqual(markPickupDelivered(order),order)}
 });
 
 test('お渡し状況と日時を同期し、旧注文には架空のお渡し日時を付けない',()=>{
-  const payload=orderPayloadForCloud(markPickupDelivered({type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER},'2099-01-02T12:00:00Z'));
+  const payload=orderPayloadForCloud(markPickupDelivered({type:ORDER_TYPE.SPOT,handoff:HANDOFF.LATER,paid:true,paymentMethod:'credit'},'2099-01-02T12:00:00Z'));
   const restored=orderFromCloudRow({id:'fixture-id',payload});
   assert.equal(restored.delivered,true);assert.equal(restored.deliveredAt,'2099-01-02T12:00:00Z');assert.equal(groupOf(restored),'done');
   assert.equal(orderPayloadForCloud({delivered:true}).deliveredAt,'');

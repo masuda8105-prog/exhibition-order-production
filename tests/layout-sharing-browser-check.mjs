@@ -146,6 +146,11 @@ try{
       assert.equal(await page.locator(`[data-handover="${saved.id}"]`).count(),1);
       assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.workflowStatus,'done');
       await page.click(`[data-detail="${saved.id}"]`);await waitStatus(page,'waiting',true);
+      assert.equal(await page.isDisabled('#handOverBtn'),true);
+      await page.click('#recordPaymentBtn');assert.equal(await page.isDisabled('#paymentConfirm'),true);
+      await page.click('[data-payment-method="credit"]');await page.click('#paymentConfirm');await waitStatus(page,'waiting',true);
+      const paidPickup=(await rows(page)).find(row=>row.id===saved.id);
+      assert.equal(paidPickup.payload.paid,true);assert.equal(paidPickup.payload.paymentMethod,'credit');assert.ok(paidPickup.payload.paidAt);assert.equal(paidPickup.payload.delivered,false);
       await page.route('**/rest/v1/exhibition_app_orders?*',route=>route.request().method()==='PATCH'?route.fulfill({status:503,contentType:'application/json',body:'{"error":"fixture_offline"}'}):route.continue());
       await page.click('#handOverBtn');await page.waitForFunction(()=>document.querySelector('#sheetError').textContent.includes('変更できませんでした'));
       assert.equal((await rows(page)).find(row=>row.id===saved.id).payload.delivered,false);assert.equal(await page.isDisabled('#handOverBtn'),false);

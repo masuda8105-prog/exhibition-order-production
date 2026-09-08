@@ -1,6 +1,6 @@
 export const ORDER_TYPE = Object.freeze({ NORMAL:'normal', SPOT:'spot' });
 export const HANDOFF = Object.freeze({ NOW:'now', LATER:'later', HOTEL:'hotel', SHIP:'ship' });
-export const PAYMENT = Object.freeze({ CREDIT:'credit', CASH:'cash', NONE:'none' });
+export const PAYMENT = Object.freeze({ CREDIT:'credit', CASH:'cash', ON_PICKUP:'on_pickup', NONE:'none' });
 export const PREP = Object.freeze({ NONE:'none', PREPARING:'preparing', READY:'ready' });
 export const ORDER_STATUS=Object.freeze({active:'要対応',waiting:'受け取り待ち',done:'完了'});
 
@@ -14,8 +14,28 @@ export function needsReceipt(order){
 
 export const isPickupOrder=needsReceipt;
 
+export function paymentMethodOnHandoffChange(order,handoff){
+  if(order.paid)return order.paymentMethod;
+  if(handoff===HANDOFF.LATER&&order.handoff!==HANDOFF.LATER)return PAYMENT.ON_PICKUP;
+  if(handoff!==HANDOFF.LATER&&order.paymentMethod===PAYMENT.ON_PICKUP)return PAYMENT.CREDIT;
+  return order.paymentMethod;
+}
+
+export function paymentMethodLabel(order){
+  return {[PAYMENT.CREDIT]:'クレジット',[PAYMENT.CASH]:'現金',[PAYMENT.ON_PICKUP]:'受け取り時会計'}[order?.paymentMethod]||'未選択';
+}
+
+export function isPickupPaymentRecorded(order){
+  return isPickupOrder(order)&&order.paid===true&&[PAYMENT.CREDIT,PAYMENT.CASH].includes(order.paymentMethod);
+}
+
+export function markPickupPaid(order,method,now=new Date().toISOString()){
+  if(!isPickupOrder(order)||order.delivered||isPickupPaymentRecorded(order)||![PAYMENT.CREDIT,PAYMENT.CASH].includes(method))return {...order};
+  return {...order,paymentMethod:method,paid:true,paidAt:order.paidAt||now};
+}
+
 export function markPickupDelivered(order,now=new Date().toISOString()){
-  if(!isPickupOrder(order))return {...order};
+  if(!isPickupPaymentRecorded(order)||order.delivered)return {...order};
   return {...order,delivered:true,deliveredAt:order.deliveredAt||now,workflowStatus:'done'};
 }
 
@@ -113,7 +133,8 @@ export function validate(order){
   }
   if(order?.type===ORDER_TYPE.SPOT){
     if(!String(order?.customer||'').trim()) errors.push('お客様名は必須です。');
-    if(![PAYMENT.CREDIT,PAYMENT.CASH].includes(order?.paymentMethod)) errors.push('会計方法を選択してください。');
+    const allowedPayments=isPickupOrder(order)&&!order.paid?[PAYMENT.CREDIT,PAYMENT.CASH,PAYMENT.ON_PICKUP]:[PAYMENT.CREDIT,PAYMENT.CASH];
+    if(!allowedPayments.includes(order?.paymentMethod)) errors.push('会計方法を選択してください。');
     if(!Object.values(HANDOFF).includes(order?.handoff)) errors.push('受け渡し方法を選択してください。');
     if(order?.handoff===HANDOFF.LATER && !order?.pickupDate) errors.push('受取予定日を選択してください。');
     if(order?.handoff===HANDOFF.HOTEL){
@@ -188,6 +209,16 @@ export function compareOrdersForPrint(a,b){
   return compareText(accountA,accountB)||compareText(a?.store,b?.store)||compareText(a?.customer,b?.customer)||compareText(a?.createdAt,b?.createdAt)||compareText(a?.receiptNo||a?.localId,b?.receiptNo||b?.localId);
 }
 
+export function printFileBase(orders,{customerCopy=false,now=new Date()}={}){
+  const list=(orders||[]).filter(order=>!order?.deleted);
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(now);
+  const value=type=>parts.find(part=>part.type===type)?.value||'';
+  const stamp=`${value('year')}${value('month')}${value('day')}_${value('hour')}${value('minute')}`;
+  const clean=value=>String(value||'').trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').replace(/[. ]+$/g,'').slice(0,60)||'お客様名なし';
+  if(list.length!==1)return `全注文_${stamp}`;
+  return `${customerCopy?'お客様控え':'注文書'}_${clean(list[0].customer||list[0].store)}_${stamp}`;
+}
+
 export function handoffLabel(order){
   if(order?.type===ORDER_TYPE.NORMAL) return '帰社後にまとめて印刷';
   if(order?.handoff===HANDOFF.NOW) return 'その場で会計・お渡し';
@@ -199,7 +230,7 @@ export function handoffLabel(order){
 
 const CLOUD_ORDER_FIELDS=Object.freeze([
   'receiptNo','type','handoff','customerRegion','store','phone','customer','workflowStatus',
-  'account','accountChoice','accountOther','staff','paymentMethod','paid',
+  'account','accountChoice','accountOther','staff','paymentMethod','paid','paidAt',
   'delivered','deliveredAt','shipped','prepared','headOfficeShared','headOfficeSharedAt',
   'slackShared','slackSharedAt',
   'pickupDate','notes','hotelName','guestName','roomNo','checkoutDate','shipAddress',
@@ -250,7 +281,7 @@ export function normalizeForSave(draft){
     updatedAt:now,
     prepared:draft.prepared||PREP.NONE,
     paid:Boolean(draft.paid), delivered:Boolean(draft.delivered), shipped:Boolean(draft.shipped),
-    deliveredAt:draft.deliveredAt||'',
+    deliveredAt:draft.deliveredAt||'',paidAt:draft.paidAt||'',
     headOfficeShared:Boolean(draft.headOfficeShared), headOfficeSharedAt:draft.headOfficeSharedAt||'',
     slackShared:Boolean(draft.slackShared), slackSharedAt:draft.slackSharedAt||'',
     syncState:draft.syncState||'memory',
