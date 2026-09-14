@@ -22,6 +22,8 @@ const publicFiles=new Map([
 ]);
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.jpg':'image/jpeg'};
 const orders=new Map();
+let pickupNumberSequence=0;
+const allocatePickup=row=>{if(!row.pickup_number&&row.payload?.type==='spot'&&row.payload?.handoff==='later'&&!row.deleted_at)row.pickup_number=++pickupNumberSequence;return row};
 const receiptImages=new Map(),signedImages=new Map();
 
 function sendJson(response,status,value){
@@ -82,13 +84,13 @@ const server=http.createServer(async(request,response)=>{
     if(request.method==='POST'){
       const body=await readJson(request);
       if(orders.has(body.id))return sendJson(response,409,{error:'duplicate'});
-      const now=new Date().toISOString(),row={...body,created_at:now,updated_at:now,deleted_at:null};orders.set(body.id,row);
+      const now=new Date().toISOString(),row=allocatePickup({...body,pickup_number:null,created_at:now,updated_at:now,deleted_at:null});orders.set(body.id,row);
       return sendJson(response,201,[row]);
     }
     if(request.method==='PATCH'){
       const row=orders.get(id),expected=url.searchParams.get('updated_at')?.replace(/^eq\./,'');
       if(!row||row.deleted_at||(expected&&row.updated_at!==expected))return sendJson(response,200,[]);
-      const body=await readJson(request);Object.assign(row,body,{updated_at:new Date(Date.now()+1).toISOString()});return sendJson(response,200,[row]);
+      const body=await readJson(request);Object.assign(row,body,{pickup_number:row.pickup_number,updated_at:new Date(Date.now()+1).toISOString()});allocatePickup(row);return sendJson(response,200,[row]);
     }
     let list=[...orders.values()].filter(row=>!row.deleted_at&&(!id||row.id===id));
     const event=url.searchParams.get('event_name')?.replace(/^eq\./,'');if(event)list=list.filter(row=>row.event_name===event);

@@ -4,6 +4,14 @@ export const PAYMENT = Object.freeze({ CREDIT:'credit', CASH:'cash', ON_PICKUP:'
 export const PREP = Object.freeze({ NONE:'none', PREPARING:'preparing', READY:'ready' });
 export const ORDER_STATUS=Object.freeze({active:'要対応',waiting:'受け取り待ち',done:'完了'});
 
+export const SHIPPING_FEE=500;
+export const isShippingItem=item=>item?.productId==='service-shipping-500';
+export function addShippingFee(order,lineId){
+  if((order.items||[]).some(isShippingItem))return false;
+  (order.items||=[]).push({productId:'service-shipping-500',code:'送料',name:'配送料（一律）',price:SHIPPING_FEE,qty:1,lineId,orderable:true,status:'active',imageUrl:''});
+  return true;
+}
+
 export function needsHeadOfficeShare(order){
   return order?.type===ORDER_TYPE.SPOT && [HANDOFF.LATER,HANDOFF.HOTEL,HANDOFF.SHIP].includes(order?.handoff);
 }
@@ -13,6 +21,11 @@ export function needsReceipt(order){
 }
 
 export const isPickupOrder=needsReceipt;
+
+export function pickupNumberLabel(order){
+  const number=String(order?.pickupNumber||'');
+  return isPickupOrder(order)&&/^[1-9][0-9]*$/.test(number)?`NEO-${number}`:'';
+}
 
 export function paymentMethodOnHandoffChange(order,handoff){
   if(order.paid)return order.paymentMethod;
@@ -44,7 +57,7 @@ export function totalOf(order){
 }
 
 export function itemCountOf(order){
-  return (order?.items||[]).reduce((sum,item)=>sum+Number(item?.qty||0),0);
+  return (order?.items||[]).reduce((sum,item)=>sum+(isShippingItem(item)?0:Number(item?.qty||0)),0);
 }
 
 export function phoneHasUnexpectedCharacters(value){
@@ -83,7 +96,7 @@ export function orderMatchesOperationalFilter(order,filter){
 export function orderMatchesSearch(order,query){
   const q=String(query??'').trim().toLowerCase();
   if(!q) return true;
-  return [order?.receiptNo,order?.serverOrderNo,order?.orderNo,order?.store,order?.customer,order?.phone,...(order?.items||[]).flatMap(item=>[item?.code,item?.name])]
+  return [pickupNumberLabel(order),order?.receiptNo,order?.serverOrderNo,order?.orderNo,order?.store,order?.customer,order?.phone,...(order?.items||[]).flatMap(item=>[item?.code,item?.name])]
     .join(' ').toLowerCase().includes(q);
 }
 
@@ -120,7 +133,9 @@ export function receiptInternalInfo(order,{customerCopy=false}={}){
 
 export function validate(order){
   const errors=[];
-  if(!(order?.items||[]).length) errors.push('商品を1点以上追加してください。');
+  if(!(order?.items||[]).some(item=>!isShippingItem(item))) errors.push('商品を1点以上追加してください。');
+  const shipping=(order?.items||[]).filter(isShippingItem);
+  if(shipping.length>1||shipping.some(item=>Number(item.price)!==SHIPPING_FEE||Number(item.qty)!==1)) errors.push('送料は1注文につき500円です。送料を入れ直してください。');
   if((order?.items||[]).some(item=>!String(item?.code||'').trim()||!String(item?.name||'').trim())) errors.push('商品情報が不完全です。商品を選び直してください。');
   if((order?.items||[]).some(item=>!Number.isFinite(Number(item?.price))||Number(item.price)<=0)) errors.push('価格未定の商品は注文できません。');
   if((order?.items||[]).some(item=>!Number.isInteger(Number(item?.qty))||Number(item.qty)<=0)) errors.push('商品数量が不正です。');
@@ -137,11 +152,6 @@ export function validate(order){
     if(!allowedPayments.includes(order?.paymentMethod)) errors.push('会計方法を選択してください。');
     if(!Object.values(HANDOFF).includes(order?.handoff)) errors.push('受け渡し方法を選択してください。');
     if(order?.handoff===HANDOFF.LATER && !order?.pickupDate) errors.push('受取予定日を選択してください。');
-    if(order?.handoff===HANDOFF.HOTEL){
-      if(!String(order?.hotelName||'').trim()) errors.push('ホテル名は必須です。');
-      if(!String(order?.guestName||'').trim()) errors.push('宿泊者名は必須です。');
-    }
-    if(order?.handoff===HANDOFF.SHIP && !String(order?.shipAddress||'').trim()) errors.push('配送先住所は必須です。');
   }
   return errors;
 }
@@ -262,6 +272,7 @@ export function orderFromCloudRow(row){
   const payload=row?.payload&&typeof row.payload==='object'&&!Array.isArray(row.payload)?row.payload:{};
   return {
     ...payload,
+    pickupNumber:/^[1-9][0-9]*$/.test(String(row?.pickup_number||''))?String(row.pickup_number):'',
     items:Array.isArray(payload.items)?payload.items.map(item=>({...item})):[],
     localId:String(row?.id||''),
     clientSubmissionId:String(row?.id||''),

@@ -83,9 +83,9 @@ try{
     let printedReceiptNo;
     if(sharing){
       const count=await page.evaluate(()=>window.__SHARE_PRINT_COUNT__),before=await rows(page);
-      await page.click('#fSlackSharedPrint');assert.equal(await page.evaluate(()=>window.__SHARE_PRINT_COUNT__),count+1);
-      const printText=await page.textContent('#printArea');assert.match(printText,new RegExp(`架空レイアウト検証店-${kind}`));assert.match(printText,/TEST-001/);assert.doesNotMatch(printText,/未確定|確認用|登録前/);
-      if(kind==='later')printedReceiptNo=(await page.textContent('.receiptMetaLine')).match(/受付-[\dA-F-]+/)[0];
+      await page.click('#fSlackSharedPrint');assert.equal(await page.evaluate(()=>window.__SHARE_PRINT_COUNT__),count+(kind==='later'?0:1));
+      if(kind==='later')assert.match(await page.textContent('#sheetError'),/お渡し番号は注文確定時に発行/);
+      else{const printText=await page.textContent('#printArea');assert.match(printText,new RegExp(`架空レイアウト検証店-${kind}`));assert.match(printText,/TEST-001/);assert.doesNotMatch(printText,/未確定|確認用|登録前/)}
       assert.equal(await page.isChecked('#fSlackShared'),false);assert.deepEqual(await rows(page),before);
       await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));assert.equal(await page.inputValue('#fStore'),`架空レイアウト検証店-${kind}`);
       if(kind==='ship'||kind==='later')await page.check('#fSlackShared');
@@ -95,7 +95,7 @@ try{
     await page.click('#saveBtn');await page.waitForSelector('#successCustomerCopy');
     const saved=(await rows(page)).find(row=>row.payload.store===`架空レイアウト検証店-${kind}`);
     assert.equal(saved.payload.slackShared,kind==='ship'||kind==='later');assert.equal(saved.payload.workflowStatus,!sharing||kind==='ship'?'done':kind==='later'?'waiting':'active');
-    if(kind==='later')assert.equal(saved.payload.delivered,false);
+    if(kind==='later'){assert.equal(saved.payload.delivered,false);assert.ok(saved.pickup_number>0);assert.match(await page.textContent('#sheetBody'),new RegExp(`NEO-${saved.pickup_number}`))}
     if(printedReceiptNo)assert.equal(saved.payload.receiptNo,printedReceiptNo);
     for(const width of [320,390,1280]){await page.setViewportSize({width,height:900});await layout(page,`${kind} success ${width}`)}
     await page.click('#backDash');await page.click(`[data-detail="${saved.id}"]`);
