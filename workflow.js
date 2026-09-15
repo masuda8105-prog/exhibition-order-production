@@ -226,7 +226,7 @@ export function printFileBase(orders,{customerCopy=false,now=new Date()}={}){
   const stamp=`${value('year')}${value('month')}${value('day')}_${value('hour')}${value('minute')}`;
   const clean=value=>String(value||'').trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').replace(/[. ]+$/g,'').slice(0,60)||'お客様名なし';
   if(list.length!==1)return `全注文_${stamp}`;
-  return `${customerCopy?'お客様控え':'注文書'}_${clean(list[0].customer||list[0].store)}_${stamp}`;
+  return `${customerCopy?(list[0].customerRegion==='overseas'?'Customer_Copy':'お客様控え'):'注文書'}_${clean(list[0].customer||list[0].store)}_${stamp}`;
 }
 
 export function handoffLabel(order){
