@@ -22,6 +22,22 @@ export function needsReceipt(order){
 
 export const isPickupOrder=needsReceipt;
 
+export const isUnconfirmed=order=>order?.confirmationState==='draft';
+
+export function prepareOrderForSharing(order){
+  return {...order,confirmationState:'draft',workflowStatus:'active',slackShared:false,slackSharedAt:'',headOfficeShared:false,headOfficeSharedAt:''};
+}
+
+export function canConfirmSharedOrder(order){
+  return isUnconfirmed(order)&&needsHeadOfficeShare(order)&&order.slackShared===true&&Boolean(order.slackSharedAt)&&Boolean(order.cloudUpdatedAt)&&(!isPickupOrder(order)||Boolean(pickupNumberLabel(order)))&&validate(order).length===0;
+}
+
+export function confirmSharedOrder(order){
+  if(!canConfirmSharedOrder(order))throw new Error('SHARE_REQUIRED');
+  const next={...order,confirmationState:'confirmed'};
+  return {...next,workflowStatus:statusOnConfirmation(next)};
+}
+
 export function pickupNumberLabel(order){
   const number=String(order?.pickupNumber||'');
   return isPickupOrder(order)&&/^[1-9][0-9]*$/.test(number)?`NEO-${number}`:'';
@@ -74,7 +90,7 @@ export function createdDateInTokyo(order){
 }
 
 export function filterOrdersByCreatedDate(orders,{mode='all',today='',start='',end=''}={}){
-  const visible=(orders||[]).filter(order=>!order?.deleted);
+  const visible=(orders||[]).filter(order=>!order?.deleted&&!isUnconfirmed(order));
   if(mode==='all') return visible;
   const from=mode==='today'?today:start;
   const to=mode==='today'?today:(end||start);
@@ -101,7 +117,7 @@ export function orderMatchesSearch(order,query){
 }
 
 export function batchSummary(orders){
-  const list=(orders||[]).filter(order=>!order?.deleted);
+  const list=(orders||[]).filter(order=>!order?.deleted&&!isUnconfirmed(order));
   return {
     orders:list.length,
     items:list.reduce((sum,order)=>sum+itemCountOf(order),0),
@@ -157,7 +173,7 @@ export function validate(order){
 }
 
 export function isDone(order){
-  if(order?.deleted) return false;
+  if(order?.deleted||isUnconfirmed(order)) return false;
   if(order?.type===ORDER_TYPE.NORMAL) return true;
   if(order?.handoff===HANDOFF.NOW) return Boolean(order?.paid && order?.delivered);
   if(order?.handoff===HANDOFF.LATER) return Boolean(order?.delivered);
@@ -166,6 +182,7 @@ export function isDone(order){
 }
 
 export function groupOf(order){
+  if(isUnconfirmed(order))return 'active';
   if(isPickupOrder(order)){
     if(order.delivered)return 'done';
     if(order.workflowStatus==='done')return 'waiting';
@@ -181,10 +198,11 @@ export function groupOf(order){
 export function setSlackShared(order,shared,now=new Date().toISOString()){
   if(!needsHeadOfficeShare(order))return {...order};
   const status=isPickupOrder(order)?(order.delivered?'done':shared?'waiting':'active'):(shared?'done':'active');
-  return {...order,slackShared:Boolean(shared),slackSharedAt:shared?(order?.slackSharedAt||now):'',workflowStatus:status};
+  return {...order,slackShared:Boolean(shared),slackSharedAt:shared?(order?.slackSharedAt||now):'',workflowStatus:isUnconfirmed(order)?'active':status};
 }
 
 export function statusOnConfirmation(order,previousOrder){
+  if(isUnconfirmed(order))return 'active';
   if(isPickupOrder(order)){
     if(order.delivered)return 'done';
     if(order.slackShared)return 'waiting';
@@ -239,6 +257,7 @@ export function handoffLabel(order){
 }
 
 const CLOUD_ORDER_FIELDS=Object.freeze([
+  'confirmationState',
   'receiptNo','type','handoff','customerRegion','store','phone','customer','workflowStatus',
   'account','accountChoice','accountOther','staff','paymentMethod','paid','paidAt',
   'delivered','deliveredAt','shipped','prepared','headOfficeShared','headOfficeSharedAt',
@@ -249,6 +268,7 @@ const CLOUD_ORDER_FIELDS=Object.freeze([
 export function orderPayloadForCloud(order){
   const payload={};
   for(const field of CLOUD_ORDER_FIELDS)payload[field]=order?.[field]??'';
+  payload.confirmationState=order?.confirmationState||'confirmed';
   payload.paid=Boolean(order?.paid);
   payload.delivered=Boolean(order?.delivered);
   payload.shipped=Boolean(order?.shipped);
@@ -272,6 +292,7 @@ export function orderFromCloudRow(row){
   const payload=row?.payload&&typeof row.payload==='object'&&!Array.isArray(row.payload)?row.payload:{};
   return {
     ...payload,
+    confirmationState:row?.confirmation_state==='draft'?'draft':'confirmed',
     pickupNumber:/^[1-9][0-9]*$/.test(String(row?.pickup_number||''))?String(row.pickup_number):'',
     items:Array.isArray(payload.items)?payload.items.map(item=>({...item})):[],
     localId:String(row?.id||''),

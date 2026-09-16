@@ -99,21 +99,21 @@ test('印刷レイアウトと主要タップ領域を維持する',()=>{
   assert.match(styles,/\.secondary,\.primary,\.dangerBtn\{[^}]*min-height:48px/);
 });
 
-test('対象の注文だけ共有チェックを表示し、注文確定で区分に応じて状態を決める',()=>{
+test('対象の注文だけ共有・確定の手順に進み、通常とその場渡しはそのまま確定できる',()=>{
   assert.match(app,/slackShared:false,slackSharedAt:'',workflowStatus:'active'/);
-  assert.match(app,/slackSharedField\(d,'fSlackShared'\)/);
+  assert.match(app,/needsHeadOfficeShare\(d\)[\s\S]*?d.stage='finalize'/);
   assert.match(app,/slackSharedField\(order,'detailSlackShared'\)/);
   assert.match(app,/変更を確定':'注文確定'/);
-  assert.doesNotMatch(app,/注文を保存/);
+  assert.match(app,/canConfirmSharedOrder\(d\)/);
   assert.match(app,/if\(!needsHeadOfficeShare\(order\)\)return ''/);
   assert.match(app,/d\.workflowStatus=statusOnConfirmation\(/);
 });
 
-test('Slackチェック横の共有ボタンで既存の注文書を印刷し未確定表示を加えない',()=>{
-  assert.match(app,/class="slackShareRow"/);
-  assert.match(app,/aria-label="Slack共有用にPDF保存・印刷">共有/);
-  assert.match(app,/\$\('fSlackSharedPrint'\)\.onclick/);
-  assert.match(app,/\$\('detailSlackSharedPrint'\)\.onclick=\(\)=>printOrder\(order\)/);
+test('共有用PDFと手動送信確認を分離し、印刷だけでSlack送信済みにしない',()=>{
+  assert.match(app,/id="prepareSharePdf"/);
+  assert.match(app,/このボタンだけではSlackに送信されません/);
+  assert.match(app,/printOrder\(d,\{inputOnly:true\}\);d.pdfPrepared=true/);
+  assert.match(app,/run\(\(\)=>updateOrder\(setSlackShared\(d,checked\)\)\)/);
   assert.doesNotMatch(app,/printDraftNotice|確認用・未確定|draftPreview/);
   assert.match(styles,/\.slackShareRow\{display:flex/);
 });
