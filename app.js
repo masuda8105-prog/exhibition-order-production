@@ -592,9 +592,24 @@ function printOrders(orders,title,withCover=true,{targetLabel='全期間',custom
   return preparePrintImages().then(finish).catch(()=>{if(generation===printGeneration){$('printArea').innerHTML='';toast('写真を印刷用に準備できませんでした。写真を確認して、もう一度お試しください。')}return false});
 }
 async function preparePrintImages(){
+  const images=[...$('printArea').querySelectorAll('.shareAttachmentPage img')];
   let timeout;
-  try{await Promise.race([Promise.all([...$('printArea').querySelectorAll('.shareAttachmentPage img')].map(image=>image.decode())),new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('PHOTO_PRINT_TIMEOUT')),15000)})])}
-  finally{clearTimeout(timeout)}
+  const ready=image=>new Promise((resolve,reject)=>{
+    if(image.complete&&image.naturalWidth){resolve();return}
+    image.onload=()=>resolve();image.onerror=()=>reject(new Error('PHOTO_PRINT_LOAD'));
+  });
+  try{
+    await Promise.race([Promise.all(images.map(async image=>{
+      // Blob URLs can be dropped by Safari/iOS while the print snapshot is taken.
+      // Embed a data URL in the print-only DOM so the PDF renderer has stable bytes.
+      if((image.currentSrc||image.src).startsWith('blob:')){
+        const blob=await fetch(image.currentSrc||image.src).then(response=>{if(!response.ok)throw new Error('PHOTO_PRINT_FETCH');return response.blob()});
+        image.src=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('PHOTO_PRINT_READ'));reader.readAsDataURL(blob)});
+      }
+      try{await image.decode()}catch{await ready(image)}
+      if(!(image.complete&&image.naturalWidth))await ready(image);
+    })),new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('PHOTO_PRINT_TIMEOUT')),20000)})]);
+  }finally{clearTimeout(timeout)}
 }
 function showPrintMenu(){
   openSheet('全注文データを印刷','展示会');

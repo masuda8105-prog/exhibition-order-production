@@ -49,6 +49,7 @@ try{
   }
   await printShare(page);assert.equal(await page.locator('#printArea .shareAttachmentPage').count(),2);
   assert.equal(await page.locator('#printArea .shareAttachmentPage img').evaluateAll(images=>images.every(image=>image.complete&&image.naturalWidth>0)),true);
+  assert.equal(await page.locator('#printArea .shareAttachmentPage img').evaluateAll(images=>images.every(image=>image.src.startsWith('data:image/'))),true);
   assert.match(await page.textContent('#printArea .shareAttachmentPage'),/NEO-/);
   if(engine==='chromium'){
     await page.emulateMedia({media:'print'});await page.pdf({path:'tmp/pdfs/order-with-photos.pdf',format:'A4',preferCSSPageSize:true,printBackground:true});await page.emulateMedia({media:'screen'});
