@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
+import * as attachments from '../order-attachments.js';
 import * as workflow from '../workflow.js';
 
 const source=(await readFile(new URL('../app.js',import.meta.url),'utf8')).replace(/^import .*;\r?\n/gm,'').split("$('loginBtn').onclick=login;")[0];
@@ -12,7 +13,7 @@ function harness({confirmed=true,fetchImpl}={}){
     if(!elements.has(id))elements.set(id,{value:'',textContent:'',innerHTML:'',disabled:false,classList:{add(){},remove(){},toggle(){}},querySelectorAll(){return[]},style:{}});
     return elements.get(id);
   };
-  const context=vm.createContext({...workflow,window:{EXHIBITION_CONFIG:{supabaseUrl:'https://fixture.invalid',publishableKey:'fixture-key'}},document:{getElementById:element,body:{style:{}}},navigator:{},URL,AbortController,setTimeout:()=>0,clearTimeout(){},confirm:message=>{messages.push(message);return confirmed},fetch:async(url,options)=>{calls.push({url,options});return fetchImpl?fetchImpl(url,options):{ok:true,json:async()=>[{id:'fixture-order'}]}}});
+  const context=vm.createContext({...attachments,...workflow,window:{EXHIBITION_CONFIG:{supabaseUrl:'https://fixture.invalid',publishableKey:'fixture-key'}},document:{getElementById:element,body:{style:{}}},navigator:{},URL,AbortController,setTimeout:()=>0,clearTimeout(){},confirm:message=>{messages.push(message);return confirmed},fetch:async(url,options)=>{calls.push({url,options});return fetchImpl?fetchImpl(url,options):{ok:true,json:async()=>[{id:'fixture-order'}]}}});
   vm.runInContext(source+'\nglobalThis.subject={state,pendingDeletes,cardHtml,deleteOrderWithConfirmation,loadOrders};',context);
   context.subject.state.session={access_token:'fixture-token',expires_at:4102444800,user:{id:'fixture-user'}};
   context.subject.state.orders=[order()];

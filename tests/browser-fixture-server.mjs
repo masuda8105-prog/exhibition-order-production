@@ -16,6 +16,7 @@ const publicFiles=new Map([
   ['/workflow.js','workflow.js'],
   ['/security.js','security.js'],
   ['/receipt-share.js','receipt-share.js'],
+  ['/order-attachments.js','order-attachments.js'],
   ['/vendor/qrcode.min.js','vendor/qrcode.min.js'],
   ['/vendor/html2canvas.min.js','vendor/html2canvas.min.js'],
   ['/assets/sun_nishimura_logo.jpg','assets/sun_nishimura_logo.jpg'],

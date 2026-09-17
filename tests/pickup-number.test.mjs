@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
+import * as attachments from '../order-attachments.js';
 import * as flow from '../workflow.js';
 
 const pickup={type:'spot',handoff:'later',pickupNumber:'12',receiptNo:'受付-別番号',localId:'fixture',customer:'架空のお客様',store:'架空店舗',items:[{code:'TEST',name:'商品',price:100,qty:1}]};
@@ -25,7 +26,7 @@ test('番号はDB専用列から復元し、端末の番号を送信・信頼し
 
 test('一覧・注文書・お客様控えは同じNEO番号を表示し、送料を合計に含める',async()=>{
   const source=(await readFile(new URL('../app.js',import.meta.url),'utf8')).replace(/^import .*;\r?\n/gm,'').split("$('loginBtn').onclick=login;")[0];
-  const ctx=vm.createContext({...flow,window:{EXHIBITION_CONFIG:{}},document:{},URL,setTimeout(){},clearTimeout(){}});
+  const ctx=vm.createContext({...attachments,...flow,window:{EXHIBITION_CONFIG:{}},document:{},URL,setTimeout(){},clearTimeout(){}});
   vm.runInContext(source+'\nglobalThis.subject={cardHtml,receiptDocumentHtml};',ctx);
   const order={...pickup,items:pickup.items.map(item=>({...item}))};flow.addShippingFee(order,'fee');
   for(const html of [ctx.subject.cardHtml(order),ctx.subject.receiptDocumentHtml(order),ctx.subject.receiptDocumentHtml(order,{customerCopy:true})]){

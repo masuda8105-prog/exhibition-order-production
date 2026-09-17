@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
+import * as attachments from '../order-attachments.js';
 import * as flow from '../workflow.js';
 
 const {ORDER_TYPE,HANDOFF,PAYMENT,paymentMethodOnHandoffChange,paymentMethodLabel,isPickupPaymentRecorded,markPickupPaid,markPickupDelivered,groupOf,validate,orderPayloadForCloud,orderFromCloudRow,normalizeForSave,printFileBase}=flow;
@@ -64,7 +65,7 @@ function harness(fetchImpl){
   };
   const credit=element('creditChoice'),cash=element('cashChoice');credit.dataset.paymentMethod='credit';cash.dataset.paymentMethod='cash';
   element('sheetBody').querySelectorAll=selector=>selector==='[data-payment-method]'?[credit,cash]:selector==='button'?[credit,cash,element('paymentCancel'),element('paymentConfirm')]:[];
-  const context=vm.createContext({...flow,window:{EXHIBITION_CONFIG:{supabaseUrl:'https://fixture.invalid',publishableKey:'fixture-key'}},document:{getElementById:element,body:{style:{}}},navigator:{},URL,AbortController,setTimeout:()=>0,clearTimeout(){},fetch:async(url,options)=>{
+  const context=vm.createContext({...attachments,...flow,window:{EXHIBITION_CONFIG:{supabaseUrl:'https://fixture.invalid',publishableKey:'fixture-key'}},document:{getElementById:element,body:{style:{}}},navigator:{},URL,AbortController,setTimeout:()=>0,clearTimeout(){},fetch:async(url,options)=>{
     calls.push({url,options});return fetchImpl?fetchImpl(url,options):{ok:true,json:async()=>[{id:'fixture-pickup',payload:JSON.parse(options.body).payload,updated_at:'2099-01-02T00:00:00Z'}]};
   }});
   vm.runInContext(source+'\nglobalThis.subject={state,pendingPayments,cardHtml,showPickupPayment,handOverFromCard,loadOrders,receiptDocumentHtml};',context);

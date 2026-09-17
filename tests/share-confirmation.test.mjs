@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
+import * as attachments from '../order-attachments.js';
 import * as flow from '../workflow.js';
 
 const source=(await readFile(new URL('../app.js',import.meta.url),'utf8')).replace(/^import .*;\r?\n/gm,'').split("$('loginBtn').onclick=login;")[0];
@@ -37,9 +38,9 @@ test('未確定は集計・一括印刷から除外し、状態はDB専用列を
 
 function harness({afterWrite,beforeWrite}={}){
   const elements=new Map(),calls=[],rows=new Map();let revision=0,sequence=0;
-  const element=id=>{if(!elements.has(id))elements.set(id,{id,innerHTML:'',value:'',disabled:false,checked:false,textContent:'',classList:{add(){},remove(){},toggle(){}},querySelectorAll:()=>[],scrollTo(){}});return elements.get(id)};
+  const element=id=>{if(!elements.has(id))elements.set(id,{id,innerHTML:'',value:'',disabled:false,checked:false,textContent:'',classList:{add(){},remove(){},toggle(){}},querySelectorAll:()=>[],insertAdjacentHTML(){},scrollTo(){}});return elements.get(id)};
   element('sheet').querySelectorAll=()=>[...elements.values()];
-  const ctx=vm.createContext({...flow,window:{EXHIBITION_CONFIG:{supabaseUrl:'https://fixture.invalid'},print(){}},document:{getElementById:element,title:'Test',body:{style:{}}},navigator:{},URL,AbortController,setTimeout(){},clearTimeout(){},fetch:async(url,options)=>{
+  const ctx=vm.createContext({...attachments,...flow,window:{EXHIBITION_CONFIG:{supabaseUrl:'https://fixture.invalid'},print(){}},document:{getElementById:element,title:'Test',body:{style:{}}},navigator:{},URL,AbortController,setTimeout(){},clearTimeout(){},fetch:async(url,options)=>{
     calls.push({url,options});const body=options.body?JSON.parse(options.body):null;
     if(!body)return{ok:true,json:async()=>[...rows.values()]};
     await beforeWrite?.(body,options);
@@ -59,7 +60,7 @@ test('番号発行→PDF→送信確認→確定を順番に保存し、印刷�
   await h.element('confirmSharedOrder').onclick();assert.equal(h.calls.length,0);
   await h.element('prepareSharing').onclick();assert.equal(h.state.draft.pickupNumber,'1');assert.equal(h.state.draft.confirmationState,'draft');
   assert.match(h.cardHtml(h.state.orders[0]),/未確定/);assert.doesNotMatch(h.cardHtml(h.state.orders[0]),/data-payment|data-handover/);
-  h.element('prepareSharePdf').onclick();assert.equal(h.state.draft.slackShared,false);
+  await h.element('prepareSharePdf').onclick();assert.equal(h.state.draft.slackShared,false);
   await h.element('confirmSharedOrder').onclick();assert.equal(h.calls.length,1);
   h.element('acknowledgeSlack').checked=true;await h.element('acknowledgeSlack').onchange();
   assert.equal(h.state.draft.slackShared,true);assert.equal(h.state.draft.confirmationState,'draft');assert.equal(flow.groupOf(h.state.orders[0]),'active');
@@ -76,14 +77,14 @@ test('番号発行の応答が途切れても同じIDで照合し、番号を再
   await h.element('prepareSharing').onclick();assert.equal(h.rows.size,1);assert.equal(h.sequence(),1);assert.equal(h.state.draft.pickupNumber,'1');
 });
 test('送信確認の通信失敗は確定を開放せず再試行できる',async()=>{
-  let fail=false;const h=harness({beforeWrite:()=>{if(fail)throw Error('offline')}});h.render();await h.element('prepareSharing').onclick();h.element('prepareSharePdf').onclick();
+  let fail=false;const h=harness({beforeWrite:()=>{if(fail)throw Error('offline')}});h.render();await h.element('prepareSharing').onclick();await h.element('prepareSharePdf').onclick();
   fail=true;h.element('acknowledgeSlack').checked=true;await h.element('acknowledgeSlack').onchange();assert.equal(h.state.draft.slackShared,false);assert.equal(h.element('acknowledgeSlack').checked,false);
   await h.element('confirmSharedOrder').onclick();assert.equal(h.state.draft.confirmationState,'draft');
   fail=false;h.element('acknowledgeSlack').checked=true;await h.element('acknowledgeSlack').onchange();assert.equal(h.state.draft.slackShared,true);
 });
 test('未確定の再開と他端末更新の競合保護を維持する',async()=>{
   const h=harness();h.render();await h.element('prepareSharing').onclick();h.resumeFinalization(h.state.orders[0]);assert.equal(h.state.draft.sharingSaved,true);
-  const row=h.rows.get(h.state.draft.localId);row.updated_at='2099-01-02T00:00:00Z';h.element('prepareSharePdf').onclick();h.element('acknowledgeSlack').checked=true;await h.element('acknowledgeSlack').onchange();
+  const row=h.rows.get(h.state.draft.localId);row.updated_at='2099-01-02T00:00:00Z';await h.element('prepareSharePdf').onclick();h.element('acknowledgeSlack').checked=true;await h.element('acknowledgeSlack').onchange();
   assert.equal(h.state.draft.slackShared,false);assert.match(h.element('sheetError').textContent,/別の端末/);
 });
 test('未確定の会計・お渡し、共有なしの直接保存は止める',async()=>{

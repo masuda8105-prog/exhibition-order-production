@@ -1,12 +1,15 @@
 import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from './workflow.js?v=20260916-number1';
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
+import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20260917-photo1';
 
 const cfg=window.EXHIBITION_CONFIG||{};
 const $=id=>document.getElementById(id);
 const LS_STAFF='exhibitionOps.staff.v2',LS_KEYPAD_ALIGN='exhibitionOps.keypadAlign.v1';
 const pendingHandovers=new Set(),pendingDeletes=new Set(),pendingPayments=new Set();
 const pendingFinalizations=new Set();
+const attachmentStore=createAttachmentStore();
+let attachmentOperation=null,attachmentPrintBusy=false,printGeneration=0;
 let printOriginalTitle='';
 const state={online:false,session:null,staff:null,orders:[],products:[],accounts:[],draft:null,rememberDraftInput:null,signalsBound:false,syncTimer:null,syncInFlight:null,refreshPromise:null,lastSyncedAt:null,dataEpoch:0,tab:'active',sheetVersion:0,receiptBlobUrl:null};
 const yen=n=>Number.isFinite(Number(n))?`¥${Math.round(Number(n)).toLocaleString('ja-JP')}`:'価格未定';
@@ -179,7 +182,7 @@ async function deleteOrderWithConfirmation(order,{fromDetail=false}={}){
   controls.forEach(({element})=>element.disabled=true);
   pendingDeletes.add(id);renderOrders();
   try{
-    await hideOrder(order);
+    await hideOrder(order);attachmentStore.clearOrder(id);
     if(state.draft?.localId===id||state.draft?.editingId===id)state.draft=null;
     if(fromDetail&&version===state.sheetVersion)closeSheet();
     updateNewOrderButton();toast('注文を削除しました');
@@ -248,7 +251,7 @@ function showError(msg){$('sheetError').textContent=msg;$('sheetError').classLis
 function clearError(){$('sheetError').classList.add('hidden');$('sheetError').textContent=''}
 function savedKeypadAlign(){try{return localStorage.getItem(LS_KEYPAD_ALIGN)==='left'?'left':'right'}catch{return'right'}}
 function freshDraft(){return{stage:'products',productQuery:'',keypadMode:'number',keypadAlign:savedKeypadAlign(),type:null,handoff:null,customerRegion:'domestic',items:[],store:'',phone:'',customer:'',account:'',accountChoice:'',accountOther:'',staff:state.staff?.display_name||'',paymentMethod:PAYMENT.CREDIT,paid:false,delivered:false,shipped:false,prepared:PREP.NONE,headOfficeShared:false,headOfficeSharedAt:'',slackShared:false,slackSharedAt:'',workflowStatus:'active',pickupDate:dateOffset(1),notes:'',clientSubmissionId:newUuid()}}
-function startOrder(){const resume=hasResumableDraft();if(!resume)state.draft=freshDraft();openSheet('新しい注文','1 / 3');renderDraft();if(resume)toast('入力途中の注文を再開しました')}
+function startOrder(){const resume=hasResumableDraft();if(!resume){attachmentStore.clear();state.draft=freshDraft()}openSheet('新しい注文','1 / 3');renderDraft();if(resume)toast('入力途中の注文を再開しました')}
 function showDiscardDraftConfirm(){if(!hasResumableDraft())return startOrder();state.rememberDraftInput?.();const d=state.draft,count=itemCountOf(d),store=String(d.store||'').trim();openSheet('入力途中の注文を破棄','確認');$('sheetBody').innerHTML=`<div class="step"><div class="shareConfirm"><div class="successMark pending">!</div><h3>入力途中の内容を破棄しますか？</h3><p>破棄を確定した場合だけ新しい注文へ切り替わります。</p></div><div class="section"><div class="summaryRow"><span>追加済み商品</span><b>${count}点</b></div>${store?`<div class="summaryRow"><span>入力済み店舗</span><b>${esc(store)}</b></div>`:''}</div></div><div class="stickyActions"><button id="discardCancel" class="secondary">キャンセル</button><button id="discardConfirm" class="dangerBtn">破棄して新規開始</button></div>`;$('discardCancel').onclick=renderDraft;$('discardConfirm').onclick=()=>{state.draft=null;startOrder();toast('入力途中の注文を破棄しました')}}
 function startEditOrder(order){if(!(state.draft?.editingId===order.localId&&state.draft.stage!=='success'))state.draft={...order,productQuery:'',keypadMode:'number',keypadAlign:savedKeypadAlign(),items:(order.items||[]).map(item=>({...item,lineId:item.lineId||newUuid()})),stage:'products',editingId:order.localId};openSheet('注文を修正','1 / 3');renderDraft()}
 function renderDraft(){state.rememberDraftInput=null;clearError();if(!state.draft)return;const d=state.draft;$('sheet').classList.toggle('productFullscreen',d.stage==='products');if(d.stage==='products')renderProductStep(d);else if(d.stage==='type')renderTypeStep(d);else if(d.stage==='info')renderInfoStep(d);else if(d.stage==='finalize')renderFinalizeStep(d);else if(d.stage==='success')renderSuccess(d)}
@@ -349,7 +352,7 @@ async function prepareSharingDraft(d){
 }
 async function runFinalization(d,action){
   const version=state.sheetVersion,key=d.clientSubmissionId||d.localId;
-  if(pendingFinalizations.has(key))return;
+  if(pendingFinalizations.has(key)||attachmentOperation||attachmentPrintBusy)return;
   pendingFinalizations.add(key);clearError();
   const controls=[...$('sheet').querySelectorAll('button,input,select')].map(element=>({element,disabled:element.disabled}));controls.forEach(({element})=>element.disabled=true);
   const issueButton=$('prepareSharing');if(issueButton)issueButton.textContent=isPickupOrder(d)?'番号を確認・保存中…':'保存中…';
@@ -370,15 +373,21 @@ function renderFinalizeStep(d){
   const stepOne=pickup?'お渡し番号を発行':'共有の準備';
   $('stepLabel').textContent='最後の手順：上から順に進めてください';$('sheetTitle').textContent='Slack共有 → 注文確定';
   $('sheetBody').innerHTML=`<div class="step finalizeFlow"><div class="finalizeSummary"><b>${esc(d.store)} / ${esc(d.customer)}</b><span>${esc(handoffLabel(d))}</span><strong>${yen(totalOf(d))} · ${itemCountOf(d)}点</strong><button id="finalizeEdit" class="linkBtn">入力内容を修正する</button></div><section class="finalizeStep ${saved?'complete':'current'}"><div class="finalizeHeading"><span class="stepNumber">${saved?'✓':'1'}</span><h3>${stepOne}</h3><small>${saved?'準備済み':'まずここから'}</small></div>${saved?pickup?pickupNumberHtml(d):'<p>共有用の注文を保存しました。</p>':`<p>${pickup?'注文確定前に、重複しないNEO番号を発行します。':'PDFにする注文内容を先に保存します。'}<br>この時点では、まだ注文は確定しません。</p><button id="prepareSharing" class="primary fullButton">${pickup?pickupNumberLabel(d)?'同じお渡し番号で変更を保存':'お渡し番号を発行する':'共有用の注文を保存する'}</button>`}</section><section class="finalizeStep ${shared?'complete':saved?'current':'locked'}"><div class="finalizeHeading"><span class="stepNumber">${shared?'✓':'2'}</span><h3>Slackに共有</h3><small>${shared?'送信確認済み':saved?'次にここ':'1のあと'}</small></div><p>① 下のボタンからPDFを保存<br>② いつものSlackの共有先へPDFを添付して送信<br>③ Slack上の投稿を確認して、下にチェック</p><button id="prepareSharePdf" class="secondary fullButton" ${saved?'':'disabled'}>Slackに送るPDFを保存・印刷</button><p class="shareManualNote">このボタンだけではSlackに送信されません。印刷画面を閉じたら、Slackで送信してください。</p><label class="shareAcknowledgement"><input id="acknowledgeSlack" type="checkbox" ${shared?'checked':''} ${saved&&(d.pdfPrepared||shared)?'':'disabled'}><span>この内容のPDFをSlackに送信し、<br>投稿を確認しました</span></label>${shared?`<small>確認日時：${esc(formatDateTime(d.slackSharedAt))}</small>`:''}</section><section class="finalizeStep ${ready?'current':'locked'}"><div class="finalizeHeading"><span class="stepNumber">3</span><h3>注文確定</h3><small>${ready?'あと1回':'2のあと'}</small></div><p>${pickup?'確定すると「受け取り待ち」に移ります。会計・お渡しは受け取り時に行います。':'確定すると「完了」に移ります。'}</p><button id="confirmSharedOrder" class="primary fullButton" ${ready?'':'disabled'}>Slack共有を完了して、注文確定</button>${!ready?'<small>Slackへの送信確認が済むと押せます。</small>':''}</section><p class="draftRetentionNote">${saved?'保存済みのため、閉じても「要対応」から再開できます。未確定の注文は受注件数・一括印刷に含めません。':'手順1を完了すると、入力内容がスタッフ間で保存・同期されます。'}</p>${d.localId?'<button id="cancelReservedOrder" class="linkBtn">この注文をキャンセルする</button>':''}</div><div class="stickyActions one"><button id="finalizeClose" class="secondary">閉じる・あとで続ける</button></div>`;
+  $('prepareSharePdf').insertAdjacentHTML('beforebegin',attachmentPickerHtml(d,saved));
+  bindAttachmentPicker(d,saved);
   const key=d.clientSubmissionId||d.localId,run=action=>runFinalization(d,action);
   $('finalizeEdit').onclick=()=>{d.stage='info';d.sharingSaved=false;d.pdfPrepared=false;renderDraft()};
   $('finalizeClose').onclick=closeSheet;
   if($('prepareSharing'))$('prepareSharing').onclick=()=>run(()=>prepareSharingDraft(d));
-  $('prepareSharePdf').onclick=()=>{
-    if(!saved||pendingFinalizations.has(key))return;
+  $('prepareSharePdf').onclick=async()=>{
+    if(!saved||pendingFinalizations.has(key)||attachmentOperation||attachmentPrintBusy)return;
     const current=state.orders.find(order=>order.localId===d.localId);
     if(!current||current.cloudUpdatedAt!==d.cloudUpdatedAt)return showError('注文が更新されています。閉じて一覧から最新の内容を開き直してください。');
-    printOrder(d,{inputOnly:true});d.pdfPrepared=true;renderDraft();
+    const version=state.sheetVersion;attachmentPrintBusy=true;
+    const controls=[...$('sheet').querySelectorAll('button,input,select')].map(element=>({element,disabled:element.disabled}));controls.forEach(({element})=>element.disabled=true);
+    let failure='';
+    try{if(await printOrder(d,{inputOnly:true}))d.pdfPrepared=true}catch{failure='写真を印刷用に準備できませんでした。写真を確認して、もう一度お試しください。'}
+    finally{attachmentPrintBusy=false;controls.forEach(({element,disabled})=>element.disabled=disabled);if(version===state.sheetVersion&&state.draft===d){renderDraft();if(failure)showError(failure)}}
   };
   $('acknowledgeSlack').onchange=()=>{
     const checked=$('acknowledgeSlack').checked;
@@ -389,6 +398,40 @@ function renderFinalizeStep(d){
   };
   $('confirmSharedOrder').onclick=()=>{if(ready)return run(()=>updateOrder(confirmSharedOrder(d)))};
   if($('cancelReservedOrder'))$('cancelReservedOrder').onclick=()=>deleteOrderWithConfirmation(state.orders.find(order=>order.localId===d.localId),{fromDetail:true});
+}
+
+function attachmentPickerHtml(order,saved){
+  const photos=attachmentStore.list(order.localId),locked=!saved||order.slackShared||Boolean(attachmentOperation)||attachmentPrintBusy;
+  return `<div class="attachmentPicker"><h4>別紙・写真を添付（任意）</h4><p>ホテル送りの記入用紙などを追加できます。共有用PDFでは、注文書の後に写真を1枚ずつ載せます。</p><div class="attachmentButtons"><button id="choosePhotos" type="button" class="secondary" ${locked||photos.length>=MAX_PHOTOS?'disabled':''}>写真フォルダから選ぶ</button><button id="takePhoto" type="button" class="secondary" ${locked||photos.length>=MAX_PHOTOS?'disabled':''}>カメラで撮影</button></div><input id="photoFiles" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden><input id="cameraPhoto" type="file" accept="image/*" capture="environment" hidden><p class="attachmentPrivacy">最大${MAX_PHOTOS}枚・1枚20MBまで。写真はこの端末で一時保持します。再読み込み・ログアウト・新しい注文で消えるので、先にPDF保存・共有してください。写真は他の端末には同期されません。</p>${order.slackShared?'<p>写真を変更する場合は、下の送信確認チェックを外してください。</p>':''}<div class="attachmentList">${photos.map((photo,index)=>`<div class="attachmentItem"><details><summary><img src="${esc(photo.url)}" alt="添付写真 ${index+1}"><span>写真${index+1}を大きく確認</span></summary><img class="attachmentLarge" src="${esc(photo.url)}" alt="${esc(photo.name)}"></details><button type="button" class="secondary" data-remove-photo="${esc(photo.id)}" ${locked?'disabled':''}>写真${index+1}を削除</button></div>`).join('')}</div><p id="attachmentStatus" role="status">${photos.length}枚添付済み</p></div>`;
+}
+function bindAttachmentPicker(order,saved){
+  $('choosePhotos').onclick=()=>$('photoFiles').click();$('takePhoto').onclick=()=>$('cameraPhoto').click();
+  for(const id of ['photoFiles','cameraPhoto'])$(id).onchange=async event=>{
+    const files=[...event.target.files];event.target.value='';
+    if(!files.length||!saved||order.slackShared||attachmentOperation||attachmentPrintBusy||state.draft!==order)return;
+    const operation={id:order.localId,generation:attachmentStore.generation},version=state.sheetVersion;attachmentOperation=operation;
+    const controls=[...$('sheet').querySelectorAll('button,input,select')].map(element=>({element,disabled:element.disabled}));controls.forEach(({element})=>element.disabled=true);
+    $('attachmentStatus').textContent='写真を読み込んでいます…';const errors=[];let added=0;
+    try{
+      for(const file of files){
+        if(attachmentStore.generation!==operation.generation)break;
+        if(attachmentStore.list(order.localId).length>=MAX_PHOTOS){errors.push(`最大${MAX_PHOTOS}枚までです。残りは追加していません。`);break}
+        try{if(attachmentStore.add(order.localId,await preparePhoto(file),operation.generation))added++}catch(error){errors.push(`${file.name}: ${error.message}`)}
+      }
+    }finally{
+      if(attachmentOperation===operation)attachmentOperation=null;
+      controls.forEach(({element,disabled})=>element.disabled=disabled);
+      if(added)order.pdfPrepared=false;
+      if(version===state.sheetVersion&&state.draft===order){renderDraft();$('attachmentStatus').textContent=`${attachmentStore.list(order.localId).length}枚添付済み。${errors.join(' ')||'写真を開いて文字が読めるか確認してください。'}`}
+    }
+  };
+  $('sheetBody').querySelectorAll('[data-remove-photo]').forEach(button=>button.onclick=()=>{
+    if(state.draft!==order||order.slackShared||attachmentOperation||attachmentPrintBusy)return;
+    attachmentStore.remove(order.localId,button.dataset.removePhoto);order.pdfPrepared=false;renderDraft();
+  });
+}
+function attachmentPagesHtml(order){
+  return attachmentStore.list(order.localId).map((photo,index)=>`<section class="shareAttachmentPage"><header><b>会社控え・添付資料 ${index+1}</b><p>注文番号 ${esc(receiptOrderNumber(order))}${pickupNumberLabel(order)?` ／ お渡し番号 ${esc(pickupNumberLabel(order))}`:''}</p><p>${esc(order.store)}${order.customer?` ／ ${esc(order.customer)}`:''}</p></header><img src="${esc(photo.url)}" alt="添付資料 ${index+1}"></section>`).join('');
 }
 
 function renderSuccess(d){
@@ -450,7 +493,7 @@ function showDetail(id){
   $('deleteBtn').onclick=()=>deleteOrderWithConfirmation(order,{fromDetail:true});
 }
 function printOrder(order,{inputOnly=false}={}){
-  printOrders([order],'展示会 注文書',false,{inputOnly});
+  return printOrders([order],'展示会 注文書',false,{inputOnly,includeAttachments:true});
 }
 function printCustomerCopy(order){printOrders([order],'お客様控え',false,{customerCopy:true})}
 
@@ -527,7 +570,8 @@ function englishCustomerReceiptHtml(order){
   return `<div lang="en"><div class="receiptHeaderSimple"><div class="receiptBrandBlock"><img class="receiptBrandLogo" src="assets/sun_nishimura_logo.jpg" alt="SAN NISHIMURA CO., LTD."><div><div class="receiptBrandName">SAN NISHIMURA CO., LTD.</div></div></div><div class="receiptDocMeta"><div class="receiptDocTitle">Customer Copy</div><div class="receiptDocSub">Exhibition Order Receipt</div><div class="receiptMetaLine"><b>Order No.</b> ${esc(orderNumber)}</div></div></div>${pickup?`<div class="pickupNumber"><span>Pickup No.</span><strong>${esc(pickup)}</strong></div>`:''}<div class="receiptInfoBand">${infoHtml}</div><div class="receiptSection"><div class="receiptSectionHead"><div class="receiptSectionTitle">Order Details</div><div class="receiptSectionHint">${count} ${count===1?'item':'items'}</div></div><table class="receiptTable"><colgroup><col class="code"><col><col class="qty"><col class="unit"><col class="subtotal"></colgroup><thead><tr><th>Item No.</th><th>Product</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Amount</th></tr></thead><tbody>${itemsHtml}</tbody></table></div><div class="receiptFooterGrid"><div class="receiptMemoStack"></div><div><div class="receiptSummaryBox"><div class="receiptSummaryRow"><span>Items</span><span>${count}</span></div><div class="receiptSummaryRow total"><span>Total</span><span>${yen(totalOf(order))}</span></div></div><div class="receiptCurrencyNote">Currency: JPY</div></div></div><div class="receiptFooterMini"><span>SAN NISHIMURA CO., LTD.</span><span>Order No. ${esc(orderNumber)}</span></div></div>`;
 }
 
-function printOrders(orders,title,withCover=true,{targetLabel='全期間',customerCopy=false,inputOnly=false}={}){
+function printOrders(orders,title,withCover=true,{targetLabel='全期間',customerCopy=false,inputOnly=false,includeAttachments=false}={}){
+  if(attachmentOperation){toast('写真の読み込みが終わるまでお待ちください。');return false}
   const list=orders.filter(order=>!order.deleted&&(!withCover||!isUnconfirmed(order))).sort(compareOrdersForPrint);
   if(!list.length)return toast('印刷する注文がありません');
   if(list.some(order=>isPickupOrder(order)&&!pickupNumberLabel(order)))return toast('お渡し番号が未発行です。「お渡し番号を発行する」を先に押してください。');
@@ -535,10 +579,22 @@ function printOrders(orders,title,withCover=true,{targetLabel='全期間',custom
   const cover=withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(cfg.eventName||'展示会')}</div><h1>${esc(title)}</h1><p><b>対象受付日 ${esc(targetLabel)}</b><br>出力日時 ${new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'medium'}).format(new Date())}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>受付日時</th><th>区分</th><th>卸屋・帳合先</th><th>店舗・お客様</th><th>合計</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(formatDateTime(order.createdAt||order.created_at,true))}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.account||'-')}</td><td>${pickupNumberLabel(order)?`<b>${esc(pickupNumberLabel(order))}</b><br>`:''}${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
   const englishCopy=customerCopy&&list.every(order=>order.customerRegion==='overseas');
   const printedAt=new Intl.DateTimeFormat(englishCopy?'en-GB':'ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'short'}).format(new Date());
-  $('printArea').innerHTML=`${cover}${list.map(order=>printSheetHtml(order,{customerCopy})).join('')}<div class="printFoot">${englishCopy?'Printed (JST)':'出力日時'} ${esc(printedAt)}</div>`;
-  if(!printOriginalTitle)printOriginalTitle=document.title;document.title=printFileBase(list,{customerCopy});
-  window.print();
-  toast(inputOnly?'PDFをSlackへ送った後、共有済みにチェックしてください。':'注文データは保存したままです');
+  const photosIncluded=includeAttachments&&!customerCopy&&!withCover&&list.some(order=>attachmentStore.list(order.localId).length);
+  $('printArea').innerHTML=`${cover}${list.map(order=>printSheetHtml(order,{customerCopy})+(photosIncluded?attachmentPagesHtml(order):'')).join('')}<div class="printFoot">${englishCopy?'Printed (JST)':'出力日時'} ${esc(printedAt)}</div>`;
+  const generation=++printGeneration,version=state.sheetVersion;
+  const finish=()=>{
+    if(generation!==printGeneration||version!==state.sheetVersion)return false;
+    if(!printOriginalTitle)printOriginalTitle=document.title;document.title=printFileBase(list,{customerCopy});
+    window.print();
+    toast(inputOnly?'PDFをSlackへ送った後、共有済みにチェックしてください。':'注文データは保存したままです');return true;
+  };
+  if(!photosIncluded)return finish();
+  return preparePrintImages().then(finish).catch(()=>{if(generation===printGeneration){$('printArea').innerHTML='';toast('写真を印刷用に準備できませんでした。写真を確認して、もう一度お試しください。')}return false});
+}
+async function preparePrintImages(){
+  let timeout;
+  try{await Promise.race([Promise.all([...$('printArea').querySelectorAll('.shareAttachmentPage img')].map(image=>image.decode())),new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('PHOTO_PRINT_TIMEOUT')),15000)})])}
+  finally{clearTimeout(timeout)}
 }
 function showPrintMenu(){
   openSheet('全注文データを印刷','展示会');
@@ -576,7 +632,7 @@ function bindConnectivitySignals(){
   window.addEventListener('focus',()=>syncOrders().catch(()=>{}));
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncOrders().catch(()=>{})});
   window.addEventListener('storage',event=>{if(event.key===PERSISTENT_SESSION_KEY){if(!event.newValue)clearLocalApp();else state.session=storedSession()}});
-  window.addEventListener('beforeunload',event=>{state.rememberDraftInput?.();if(state.draft&&state.draft.stage!=='success'&&(state.draft.items?.length||state.draft.store)){event.preventDefault();event.returnValue=''}});
+  window.addEventListener('beforeunload',event=>{state.rememberDraftInput?.();if(attachmentStore.hasPhotos()||(state.draft&&state.draft.stage!=='success'&&(state.draft.items?.length||state.draft.store))){event.preventDefault();event.returnValue=''}});
 }
 async function refreshPrivateData(){
   if(!state.online||!navigator.onLine)return toast('オンライン接続が必要です');
@@ -595,6 +651,7 @@ async function login(){
   finally{$('loginPassword').value='';$('loginBtn').disabled=!navigator.onLine}
 }
 function clearLocalApp(){
+  attachmentStore.clear();attachmentOperation=null;attachmentPrintBusy=false;printGeneration++;
   state.dataEpoch++;
   for(const order of state.orders)wipeOrderData(order);state.orders=[];
   if(state.draft)wipeOrderData(state.draft);state.draft=null;state.rememberDraftInput=null;state.products=[];state.accounts=[];

@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
+import * as attachments from '../order-attachments.js';
 import * as flow from '../workflow.js';
 import {receiptImagePath} from '../receipt-share.js';
 
 const source=(await readFile(new URL('../app.js',import.meta.url),'utf8')).replace(/^import .*;\r?\n/gm,'').split("$('loginBtn').onclick=login;")[0];
 const elements=new Map();
-const ctx=vm.createContext({...flow,window:{EXHIBITION_CONFIG:{},print(){}},document:{title:'展示会 注文管理',getElementById(id){if(!elements.has(id))elements.set(id,{innerHTML:'',classList:{add(){},remove(){}}});return elements.get(id)}},URL,setTimeout(){},clearTimeout(){}});
+const ctx=vm.createContext({...attachments,...flow,window:{EXHIBITION_CONFIG:{},print(){}},document:{title:'展示会 注文管理',getElementById(id){if(!elements.has(id))elements.set(id,{innerHTML:'',classList:{add(){},remove(){}}});return elements.get(id)}},URL,setTimeout(){},clearTimeout(){}});
 vm.runInContext(source+'\nglobalThis.subject={receiptDocumentHtml,printOrders};',ctx);
 const order={localId:'00000000-0000-4000-8000-000000000001',type:'spot',handoff:'later',pickupNumber:'12',receiptNo:'RECEIPT-001',customerRegion:'overseas',customer:'Alex Tan',store:'Example Optical',phone:'+81 000',paymentMethod:'on_pickup',notes:'INTERNAL-NOTE',staff:'INTERNAL-STAFF',account:'INTERNAL-ACCOUNT',items:[{code:'TEST-001',name:'登録商品名',qty:2,price:100}]};
 
