@@ -1,3 +1,4 @@
+import {createOrderPdf} from './order-pdf.js?v=20260924-pdf1';
 import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from './workflow.js?v=20260916-number1';
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
@@ -368,13 +369,38 @@ async function runFinalization(d,action){
     showError(error.message==='SYNC_CONFLICT'?'別の端末で更新されたか、直前の保存が完了している可能性があります。この画面を閉じ、一覧から最新の注文を開き直してください。':'保存結果を確認できませんでした。入力内容は残っています。接続を確認して再試行してください。');
   }finally{pendingFinalizations.delete(key);controls.forEach(({element,disabled})=>element.disabled=disabled)}
 }
+
+const sharePdfCache=new WeakMap();
+async function generateSharePdf(order){
+  const card=document.createElement('div');
+  card.innerHTML=printSheetHtml(order)+printSheetHtml(order,{customerCopy:true})+attachmentPagesHtml(order);
+  return createOrderPdf(card,true);
+}
+function offerSharePdf(order){
+  const {blob,pages}=sharePdfCache.get(order),panel=$('pdfOutput');
+  const message=document.createElement('p');message.textContent=`PDFを作成しました（${pages}ページ）。`;panel.append(message);
+  const filename=printFileBase([order])+'.pdf',file=new File([blob],filename,{type:'application/pdf'});
+  const button=document.createElement('button');button.type='button';button.className='primary';button.textContent='PDFを共有する';
+  button.onclick=async()=>{
+    if(attachmentPrintBusy||attachmentOperation||state.draft!==order||!order.pdfPrepared)return;
+    if(!navigator.canShare?.({files:[file]})){
+      const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=filename;panel.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+      message.textContent='この端末では直接共有に対応していないため、PDFを保存します。保存したPDFをSlackなどへ添付してください。';return;
+    }
+    button.disabled=true;
+    try{await navigator.share({files:[file]})}catch(error){if(error.name!=='AbortError')message.textContent='共有できませんでした。もう一度「PDFを共有する」を押してください。'}finally{button.disabled=false}
+  };
+  panel.append(button);
+}
+
 function renderFinalizeStep(d){
   const pickup=isPickupOrder(d),saved=d.sharingSaved&&isUnconfirmed(d),shared=saved&&d.slackShared,ready=saved&&canConfirmSharedOrder(d);
   const stepOne=pickup?'お渡し番号を発行':'共有の準備';
   $('stepLabel').textContent='最後の手順：上から順に進めてください';$('sheetTitle').textContent='Slack共有 → 注文確定';
-  $('sheetBody').innerHTML=`<div class="step finalizeFlow"><div class="finalizeSummary"><b>${esc(d.store)} / ${esc(d.customer)}</b><span>${esc(handoffLabel(d))}</span><strong>${yen(totalOf(d))} · ${itemCountOf(d)}点</strong><button id="finalizeEdit" class="linkBtn">入力内容を修正する</button></div><section class="finalizeStep ${saved?'complete':'current'}"><div class="finalizeHeading"><span class="stepNumber">${saved?'✓':'1'}</span><h3>${stepOne}</h3><small>${saved?'準備済み':'まずここから'}</small></div>${saved?pickup?pickupNumberHtml(d):'<p>共有用の注文を保存しました。</p>':`<p>${pickup?'注文確定前に、重複しないNEO番号を発行します。':'PDFにする注文内容を先に保存します。'}<br>この時点では、まだ注文は確定しません。</p><button id="prepareSharing" class="primary fullButton">${pickup?pickupNumberLabel(d)?'同じお渡し番号で変更を保存':'お渡し番号を発行する':'共有用の注文を保存する'}</button>`}</section><section class="finalizeStep ${shared?'complete':saved?'current':'locked'}"><div class="finalizeHeading"><span class="stepNumber">${shared?'✓':'2'}</span><h3>Slackに共有</h3><small>${shared?'送信確認済み':saved?'次にここ':'1のあと'}</small></div><p>① 下のボタンからPDFを保存<br>② いつものSlackの共有先へPDFを添付して送信<br>③ Slack上の投稿を確認して、下にチェック</p><button id="prepareSharePdf" class="secondary fullButton" ${saved?'':'disabled'}>Slackに送るPDFを保存・印刷</button><p class="shareManualNote">このボタンだけではSlackに送信されません。印刷画面を閉じたら、Slackで送信してください。</p><label class="shareAcknowledgement"><input id="acknowledgeSlack" type="checkbox" ${shared?'checked':''} ${saved&&(d.pdfPrepared||shared)?'':'disabled'}><span>この内容のPDFをSlackに送信し、<br>投稿を確認しました</span></label>${shared?`<small>確認日時：${esc(formatDateTime(d.slackSharedAt))}</small>`:''}</section><section class="finalizeStep ${ready?'current':'locked'}"><div class="finalizeHeading"><span class="stepNumber">3</span><h3>注文確定</h3><small>${ready?'あと1回':'2のあと'}</small></div><p>${pickup?'確定すると「受け取り待ち」に移ります。会計・お渡しは受け取り時に行います。':'確定すると「完了」に移ります。'}</p><button id="confirmSharedOrder" class="primary fullButton" ${ready?'':'disabled'}>Slack共有を完了して、注文確定</button>${!ready?'<small>Slackへの送信確認が済むと押せます。</small>':''}</section><p class="draftRetentionNote">${saved?'保存済みのため、閉じても「要対応」から再開できます。未確定の注文は受注件数・一括印刷に含めません。':'手順1を完了すると、入力内容がスタッフ間で保存・同期されます。'}</p>${d.localId?'<button id="cancelReservedOrder" class="linkBtn">この注文をキャンセルする</button>':''}</div><div class="stickyActions one"><button id="finalizeClose" class="secondary">閉じる・あとで続ける</button></div>`;
+  $('sheetBody').innerHTML=`<div class="step finalizeFlow"><div class="finalizeSummary"><b>${esc(d.store)} / ${esc(d.customer)}</b><span>${esc(handoffLabel(d))}</span><strong>${yen(totalOf(d))} · ${itemCountOf(d)}点</strong><button id="finalizeEdit" class="linkBtn">入力内容を修正する</button></div><section class="finalizeStep ${saved?'complete':'current'}"><div class="finalizeHeading"><span class="stepNumber">${saved?'✓':'1'}</span><h3>${stepOne}</h3><small>${saved?'準備済み':'まずここから'}</small></div>${saved?pickup?pickupNumberHtml(d):'<p>共有用の注文を保存しました。</p>':`<p>${pickup?'注文確定前に、重複しないNEO番号を発行します。':'PDFにする注文内容を先に保存します。'}<br>この時点では、まだ注文は確定しません。</p><button id="prepareSharing" class="primary fullButton">${pickup?pickupNumberLabel(d)?'同じお渡し番号で変更を保存':'お渡し番号を発行する':'共有用の注文を保存する'}</button>`}</section><section class="finalizeStep ${shared?'complete':saved?'current':'locked'}"><div class="finalizeHeading"><span class="stepNumber">${shared?'✓':'2'}</span><h3>Slackに共有</h3><small>${shared?'送信確認済み':saved?'次にここ':'1のあと'}</small></div><p>会社控え・お客様控え・添付写真を1つのPDFにまとめます。PDFを作成したら、下に表示される「PDFを共有する」からSlackへ投稿してください。会社控えは常に日本語です。</p><button id="prepareSharePdf" class="secondary fullButton" ${saved?'':'disabled'}>PDFを作成する</button><div id="pdfOutput" class="pdfOutput" role="status"></div><label class="flowShareCheck" ${d.pdfPrepared||shared?'':'hidden'}><input id="acknowledgeSlack" type="checkbox" ${shared?'checked':''} ${saved&&(d.pdfPrepared||shared)?'':'disabled'}><span>Slackに共有済み<br><small>投稿できたことを確認してチェック</small></span></label>${shared?`<small>確認日時：${esc(formatDateTime(d.slackSharedAt))}</small>`:''}</section><section class="finalizeStep ${ready?'current':'locked'}"><div class="finalizeHeading"><span class="stepNumber">3</span><h3>注文確定</h3><small>${ready?'あと1回':'2のあと'}</small></div><p>${pickup?'確定すると「受け取り待ち」に移ります。会計・お渡しは受け取り時に行います。':'確定すると「完了」に移ります。'}</p><button id="confirmSharedOrder" class="primary fullButton" ${ready?'':'disabled'}>Slack共有を完了して、注文確定</button>${!ready?'<small>Slackへの送信確認が済むと押せます。</small>':''}</section><p class="draftRetentionNote">${saved?'保存済みのため、閉じても「要対応」から再開できます。未確定の注文は受注件数・一括印刷に含めません。':'手順1を完了すると、入力内容がスタッフ間で保存・同期されます。'}</p>${d.localId?'<button id="cancelReservedOrder" class="linkBtn">この注文をキャンセルする</button>':''}</div><div class="stickyActions one"><button id="finalizeClose" class="secondary">閉じる・あとで続ける</button></div>`;
   $('prepareSharePdf').insertAdjacentHTML('beforebegin',attachmentPickerHtml(d,saved));
   bindAttachmentPicker(d,saved);
+  if(d.pdfPrepared&&sharePdfCache.has(d))offerSharePdf(d);
   const key=d.clientSubmissionId||d.localId,run=action=>runFinalization(d,action);
   $('finalizeEdit').onclick=()=>{d.stage='info';d.sharingSaved=false;d.pdfPrepared=false;renderDraft()};
   $('finalizeClose').onclick=closeSheet;
@@ -386,7 +412,7 @@ function renderFinalizeStep(d){
     const version=state.sheetVersion;attachmentPrintBusy=true;
     const controls=[...$('sheet').querySelectorAll('button,input,select')].map(element=>({element,disabled:element.disabled}));controls.forEach(({element})=>element.disabled=true);
     let failure='';
-    try{if(await printOrder(d,{inputOnly:true}))d.pdfPrepared=true}catch{failure='写真を印刷用に準備できませんでした。写真を確認して、もう一度お試しください。'}
+    try{toast('PDFを作成しています…');const result=await generateSharePdf(d);if(version===state.sheetVersion&&state.draft===d){sharePdfCache.set(d,result);d.pdfPrepared=true;toast('PDFを作成しました。')}}catch(error){console.error('PDF作成エラー',error.message);failure='PDFを作成できませんでした。写真の枚数や通信を確認して再度お試しください。'}
     finally{attachmentPrintBusy=false;controls.forEach(({element,disabled})=>element.disabled=disabled);if(version===state.sheetVersion&&state.draft===d){renderDraft();if(failure)showError(failure)}}
   };
   $('acknowledgeSlack').onchange=()=>{

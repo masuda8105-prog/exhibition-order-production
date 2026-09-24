@@ -51,7 +51,7 @@ function harness({afterWrite,beforeWrite}={}){
     await afterWrite?.(row,options);
     return{ok:true,json:async()=>[row]};
   }});
-  vm.runInContext(source+"\nrender=()=>{};renderDraft=()=>{if(state.draft.stage==='finalize')renderFinalizeStep(state.draft)};globalThis.subject={state,renderFinalizeStep,resumeFinalization,cardHtml,saveNew,saveEdited,handOverFromCard,showPickupPayment,pendingFinalizations};",ctx);
+  vm.runInContext(source+"\ngenerateSharePdf=async()=>({blob:{},pages:2});offerSharePdf=()=>{};render=()=>{};renderDraft=()=>{if(state.draft.stage==='finalize')renderFinalizeStep(state.draft)};globalThis.subject={state,renderFinalizeStep,resumeFinalization,cardHtml,saveNew,saveEdited,handOverFromCard,showPickupPayment,pendingFinalizations};",ctx);
   const api=ctx.subject;api.state.session={access_token:'fixture',expires_at:4102444800,user:{id:'fixture'}};api.state.draft=draft();
   return{...api,ctx,calls,rows,element,sequence:()=>sequence,render:()=>api.renderFinalizeStep(api.state.draft)};
 }

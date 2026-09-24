@@ -6,8 +6,8 @@ import {browserConfigSource,loadConfigEnvironment} from './config.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const destination=path.join(root,'_site');
 const files=[
-  'index.html','styles.css','app.js','workflow.js','security.js','receipt-share.js','order-attachments.js','assets/sun_nishimura_logo.jpg',
-  'vendor/qrcode.min.js','vendor/html2canvas.min.js',
+  'index.html','styles.css','app.js','workflow.js','security.js','receipt-share.js','order-attachments.js','order-pdf.js','assets/sun_nishimura_logo.jpg',
+  'vendor/jspdf.umd.min.js','vendor/jspdf.LICENSE','vendor/qrcode.min.js','vendor/html2canvas.min.js',
 ];
 
 await fs.rm(destination,{recursive:true,force:true});

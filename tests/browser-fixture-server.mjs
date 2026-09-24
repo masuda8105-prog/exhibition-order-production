@@ -13,6 +13,8 @@ const publicFiles=new Map([
   ['/index.html','index.html'],
   ['/styles.css','styles.css'],
   ['/app.js','app.js'],
+  ['/order-pdf.js','order-pdf.js'],
+  ['/vendor/jspdf.umd.min.js','vendor/jspdf.umd.min.js'],
   ['/workflow.js','workflow.js'],
   ['/security.js','security.js'],
   ['/receipt-share.js','receipt-share.js'],
