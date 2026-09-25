@@ -111,6 +111,8 @@ test('対象の注文だけ共有・確定の手順に進み、通常とその�
 
 test('共有用PDFと手動送信確認を分離し、印刷だけでSlack送信済みにしない',()=>{
   assert.match(app,/id="prepareSharePdf"/);
+  assert.match(app,/card\.innerHTML=printSheetHtml\(order\)\+attachmentPagesHtml\(order\)/);
+  assert.doesNotMatch(app,/card\.innerHTML=[^;]*printSheetHtml\(order,\{customerCopy:true\}\)/);
   assert.match(app,/投稿できたことを確認してチェック/);
   assert.match(app,/await generateSharePdf\(d\)/);
   assert.match(app,/run\(\(\)=>updateOrder\(setSlackShared\(d,checked\)\)\)/);
