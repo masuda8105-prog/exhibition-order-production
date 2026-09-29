@@ -25,8 +25,9 @@ const publicFiles=new Map([
 ]);
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.jpg':'image/jpeg'};
 const orders=new Map();
-let pickupNumberSequence=0;
-const allocatePickup=row=>{if(!row.pickup_number&&row.payload?.type==='spot'&&row.payload?.handoff==='later'&&!row.deleted_at)row.pickup_number=++pickupNumberSequence;return row};
+let pickupNumberSequence=0,pickupGeneration=1;
+const resetRequests=new Map();
+const allocatePickup=row=>{if(!row.pickup_number&&row.payload?.type==='spot'&&row.payload?.handoff==='later'&&!row.deleted_at){row.pickup_number=++pickupNumberSequence;row.pickup_generation=pickupGeneration}return row};
 const receiptImages=new Map(),signedImages=new Map();
 
 function sendJson(response,status,value){
@@ -82,6 +83,13 @@ const server=http.createServer(async(request,response)=>{
     return sendJson(response,403,{error:'private_bucket'});
   }
   if(url.pathname.startsWith('/rest/v1/')&&request.headers.authorization!=='Bearer fixture-access-token')return sendJson(response,401,{error:'login_required'});
+  if(url.pathname==='/rest/v1/rpc/reset_exhibition_pickup_counter'&&request.method==='POST'){
+    const body=await readJson(request);
+    if(body.p_confirmation!=='リセット'||!body.p_request_id)return sendJson(response,400,{error:'confirmation_required'});
+    if(resetRequests.has(body.p_request_id))return sendJson(response,200,resetRequests.get(body.p_request_id));
+    pickupGeneration++;pickupNumberSequence=0;resetRequests.set(body.p_request_id,pickupGeneration);
+    return sendJson(response,200,pickupGeneration);
+  }
   if(url.pathname==='/rest/v1/exhibition_app_orders'){
     const id=url.searchParams.get('id')?.replace(/^eq\./,'');
     if(request.method==='POST'){

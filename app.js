@@ -645,6 +645,29 @@ function showPrintMenu(){
   showPrintDateOptions();
 }
 
+function showPickupResetDialog(){
+  if(!state.online||!state.session)return toast('オンライン接続が必要です');
+  openSheet('お渡し番号のリセット','管理用の設定');
+  const version=state.sheetVersion,requestId=newUuid();
+  let pending=false;
+  $('sheetBody').innerHTML=`<div class="step"><div class="section"><p>今後発行するお渡し番号を <b>NEO-1</b> から始めます。発行済みの注文番号は変わりません。</p><p>過去の注文と同じNEO番号が表示される場合があります。現在の注文やSlack投稿は変更されません。</p></div><div class="field"><label for="pickupResetConfirm">操作する場合は「リセット」と入力</label><input id="pickupResetConfirm" type="text" autocomplete="off" spellcheck="false" placeholder="リセット"></div></div><div class="stickyActions"><button id="pickupResetCancel" type="button" class="secondary">戻る</button><button id="pickupResetSubmit" type="button" class="dangerBtn" disabled>番号を1から始める</button></div>`;
+  const input=$('pickupResetConfirm'),submit=$('pickupResetSubmit');
+  input.oninput=()=>{submit.disabled=pending||input.value!=='リセット';clearError()};
+  $('pickupResetCancel').onclick=closeSheet;
+  submit.onclick=async()=>{
+    if(pending||input.value!=='リセット')return;
+    pending=true;submit.disabled=true;input.disabled=true;$('pickupResetCancel').disabled=true;
+    try{
+      await ensureFreshSession();
+      await fetchJson(`${sbBase()}/rest/v1/rpc/reset_exhibition_pickup_counter`,{method:'POST',headers:sbHeaders(),body:JSON.stringify({p_confirmation:'リセット',p_request_id:requestId})});
+      if(version===state.sheetVersion){$('pickupResetTools').open=false;closeSheet()}
+      toast('次のお渡し番号はNEO-1です');
+    }catch(error){
+      if(version===state.sheetVersion){pending=false;input.disabled=false;$('pickupResetCancel').disabled=false;submit.disabled=input.value!=='リセット';showError('リセットできませんでした。接続とスタッフ権限を確認して、もう一度お試しください。')}
+    }
+  };
+}
+
 function showPrintDateOptions(mode='all',start=today(),end=today()){
   const all=state.orders.filter(order=>!order.deleted),list=filterOrdersByCreatedDate(all,{mode,today:today(),start,end}),summary=batchSummary(list);
   const targetLabel=mode==='all'?'全期間':mode==='today'?today():start===end?start:`${start} ～ ${end}`,dateInvalid=mode==='range'&&(!start||!end||start>end);
@@ -709,6 +732,6 @@ async function logout(){
 }
 $('loginBtn').onclick=login;$('loginPassword').onkeydown=event=>{if(event.key==='Enter')login()};
 window.addEventListener('afterprint',()=>{$('printArea').innerHTML='';if(printOriginalTitle){document.title=printOriginalTitle;printOriginalTitle=''}});
-$('logoutBtn').onclick=logout;$('refreshBtn').onclick=refreshPrivateData;$('newOrderBtn').onclick=startOrder;$('discardDraftBtn').onclick=showDiscardDraftConfirm;$('closeSheet').onclick=closeSheet;$('sheet').onclick=event=>{if(event.target===$('sheet'))closeSheet()};$('printMenuBtn').onclick=showPrintMenu;$('orderSearch').oninput=render;
+$('logoutBtn').onclick=logout;$('refreshBtn').onclick=refreshPrivateData;$('newOrderBtn').onclick=startOrder;$('discardDraftBtn').onclick=showDiscardDraftConfirm;$('closeSheet').onclick=closeSheet;$('sheet').onclick=event=>{if(event.target===$('sheet'))closeSheet()};$('printMenuBtn').onclick=showPrintMenu;$('pickupResetButton').onclick=showPickupResetDialog;$('orderSearch').oninput=render;
 
 purgeLegacyLocalData();if(location.hash.startsWith('#receipt='))history.replaceState(null,'',`${location.pathname}${location.search}`);await bootOnline();

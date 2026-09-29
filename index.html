@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#111827">
 <title>展示会 注文管理</title>
 <meta name="referrer" content="no-referrer">
-<link rel="stylesheet" href="styles.css?v=20260924-pdf1">
+<link rel="stylesheet" href="styles.css?v=20260929-reset1">
 <script src="online-config.js?v=20260917-photo1"></script>
 </head>
 <body>
@@ -44,6 +44,10 @@
       <div class="searchWrap"><span>⌕</span><input id="orderSearch" type="search" placeholder="お渡し番号・店舗・受付番号・電話・品番・商品名"></div>
     </div>
     <button id="printMenuBtn" class="secondary printMenuButton">展示会の全注文データを印刷</button>
+    <details id="pickupResetTools" class="maintenanceTools">
+      <summary>管理用の設定</summary>
+      <button id="pickupResetButton" type="button" class="secondary">お渡し番号のカウンターをリセット</button>
+    </details>
     <div id="searchSummary" class="searchSummary">新しい注文から表示しています</div>
     <section id="orders" class="orders"></section>
   </main>
@@ -65,6 +69,6 @@
 <script src="vendor/qrcode.min.js"></script>
 <script src="vendor/html2canvas.min.js"></script>
 <script src="vendor/jspdf.umd.min.js"></script>
-<script type="module" src="app.js?v=20260924-pdf1"></script>
+<script type="module" src="app.js?v=20260929-reset1"></script>
 </body>
 </html>
