@@ -39,5 +39,8 @@ test('一覧・注文書・お客様控えは同じNEO番号を表示し、送�
   assert.match(companyCopy,/^<div class="receiptCopyLabel">会社控え<\/div>/);
   assert.ok(companyCopy.indexOf('receiptInfoBand')<companyCopy.indexOf('receiptPickupNumber'));
   assert.match(companyCopy,/お受け取り時に、この番号をご提示ください。/);
-  assert.match(ctx.subject.receiptDocumentHtml(order,{customerCopy:true}),/配送料（一律）/);
+  const customerCopy=ctx.subject.receiptDocumentHtml(order,{customerCopy:true});
+  assert.match(customerCopy,/^<div class="receiptCopyLabel">お客様控え<\/div>/);
+  assert.match(customerCopy,/配送料（一律）/);
+  assert.ok(customerCopy.indexOf('receiptInfoBand')<customerCopy.indexOf('receiptPickupNumber'));
 });

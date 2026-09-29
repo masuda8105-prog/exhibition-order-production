@@ -10,11 +10,15 @@ try{
   const staff=await browser.newContext({viewport:{width:1024,height:768}}),customer=await browser.newContext({viewport:{width:390,height:844}});
   const page=await staff.newPage(),recipient=await customer.newPage();page.on('pageerror',error=>failures.push(error.message));
   await page.goto(base);await page.fill('#loginEmail','fixture@example.invalid');await page.fill('#loginPassword','fixture-password');await page.click('#loginBtn');await page.waitForSelector('#appView:not(.hidden)');
+  await page.evaluate(()=>{const original=window.html2canvas;window.html2canvas=async(node,options)=>{if(node.classList.contains('captureMode'))window.__customerCopyText=node.textContent;return original(node,options)}});
   assert.equal(await page.locator('[role="tab"]').count(),3);
   assert.deepEqual(await page.locator('[role="tab"]').allTextContents(),['要対応0','受け取り待ち0','完了0']);
   await page.click('#newOrderBtn');await page.fill('#productQ','TEST-001');await page.click('[data-product-id="product-1"]');await page.click('#toType');await page.click('[data-type="normal"]');await page.click('#toInfo');
-  await page.fill('#fStore','QR検証用の架空店舗');await page.fill('#fPhone','000-0000-0000');await page.selectOption('#fAccount',{label:'検証帳合A'});await page.fill('#fCustomer','架空のお客様');await page.fill('#fNotes','社内限定・お客様画像に出してはいけない');
+  await page.fill('#fStore','QR検証用の架空店舗');await page.fill('#fPhone','000-0000-0000');await page.selectOption('#fAccount',{label:'検証帳合A'});await page.fill('#fCustomer','架空のお客様');await page.fill('#fNotes','納期：翌週予定\n入荷次第連絡');
   await page.click('#saveBtn');await page.waitForSelector('#successCustomerCopy');await page.click('#successCustomerCopy');await page.waitForSelector('#customerQrCode img',{timeout:30000});
+  const copyText=await page.evaluate(()=>window.__customerCopyText);
+  for(const value of ['お客様控え','検証帳合A','納期：翌週予定','入荷次第連絡','税抜合計','税込合計'])assert.ok(copyText.includes(value),value);
+  assert.doesNotMatch(copyText,/ご案内|担当スタッフ|本社共有/);
   const url=await page.getAttribute('#openReceiptImage','href');
   assert.match(url,/\/storage\/v1\/object\/sign\/exhibition-receipts\/.*token=/);
   assert.ok(!url.includes('QR検証')&&!url.includes('fixture-access-token'));

@@ -142,13 +142,11 @@ export function customerNameWithHonorific(name){
   return /(?:様|さま|御中|殿)$/.test(value)?value:`${value} 様`;
 }
 
-export function receiptInternalInfo(order,{customerCopy=false}={}){
-  if(customerCopy) return {showStatus:false,showHandoff:false,showCreatedAt:false,showGuide:false,headOfficeShare:''};
+export function receiptInternalInfo(){
   return {
     showStatus:false,
     showHandoff:true,
     showCreatedAt:true,
-    showGuide:true,
     headOfficeShare:'',
   };
 }
