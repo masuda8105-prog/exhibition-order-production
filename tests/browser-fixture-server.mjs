@@ -11,6 +11,11 @@ const keepPrint=process.argv.includes('--keep-print')||process.env.BROWSER_FIXTU
 const publicFiles=new Map([
   ['/','index.html'],
   ['/index.html','index.html'],
+  ['/manifest.webmanifest','manifest.webmanifest'],
+  ['/assets/neo-icon.svg','assets/neo-icon.svg'],
+  ['/assets/neo-icon-192.png','assets/neo-icon-192.png'],
+  ['/assets/neo-icon-512.png','assets/neo-icon-512.png'],
+  ['/assets/apple-touch-icon.png','assets/apple-touch-icon.png'],
   ['/styles.css','styles.css'],
   ['/app.js','app.js'],
   ['/order-pdf.js','order-pdf.js'],
@@ -23,7 +28,7 @@ const publicFiles=new Map([
   ['/vendor/html2canvas.min.js','vendor/html2canvas.min.js'],
   ['/assets/sun_nishimura_logo.jpg','assets/sun_nishimura_logo.jpg'],
 ]);
-const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.jpg':'image/jpeg'};
+const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.jpg':'image/jpeg','.png':'image/png','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
 const orders=new Map();
 let pickupNumberSequence=0,pickupGeneration=1;
 const resetRequests=new Map();

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NEO 注文管理">
+  <rect width="512" height="512" fill="#111827"/>
+  <rect x="72" y="77" width="104" height="14" rx="7" fill="#fb7185"/>
+  <text x="256" y="304" fill="#ffffff" font-family="Arial Black, Arial, sans-serif" font-size="151" font-weight="900" text-anchor="middle" textLength="390" lengthAdjust="spacingAndGlyphs">NEO</text>
+  <rect x="336" y="421" width="104" height="14" rx="7" fill="#fb7185"/>
+</svg>
