@@ -30,9 +30,12 @@ test('一覧・注文書・お客様控えは同じNEO番号を表示し、送�
   vm.runInContext(source+'\nglobalThis.subject={cardHtml,receiptDocumentHtml};',ctx);
   const order={...pickup,items:pickup.items.map(item=>({...item}))};flow.addShippingFee(order,'fee');
   for(const html of [ctx.subject.cardHtml(order),ctx.subject.receiptDocumentHtml(order),ctx.subject.receiptDocumentHtml(order,{customerCopy:true})]){
-    assert.match(html,/お渡し番号/);assert.match(html,/<strong>NEO-12<\/strong>/);assert.match(html,/¥600/);assert.match(html,/1点/);
+    assert.match(html,/お渡し番号/);assert.match(html,/<strong>NEO-12<\/strong>/);assert.match(html,/¥700/);assert.match(html,/1点/);
   }
   const companyCopy=ctx.subject.receiptDocumentHtml(order);
+  assert.match(companyCopy,/税抜合計<\/span><span>¥700/);
+  assert.match(companyCopy,/消費税（10%）<\/span><span>¥70/);
+  assert.match(companyCopy,/税込合計<\/span><span>¥770/);
   assert.match(companyCopy,/^<div class="receiptCopyLabel">会社控え<\/div>/);
   assert.ok(companyCopy.indexOf('receiptInfoBand')<companyCopy.indexOf('receiptPickupNumber'));
   assert.match(companyCopy,/お受け取り時に、この番号をご提示ください。/);

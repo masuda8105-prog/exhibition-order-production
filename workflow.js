@@ -4,11 +4,11 @@ export const PAYMENT = Object.freeze({ CREDIT:'credit', CASH:'cash', ON_PICKUP:'
 export const PREP = Object.freeze({ NONE:'none', PREPARING:'preparing', READY:'ready' });
 export const ORDER_STATUS=Object.freeze({active:'要対応',waiting:'受け取り待ち',done:'完了'});
 
-export const SHIPPING_FEE=500;
-export const isShippingItem=item=>item?.productId==='service-shipping-500';
+export const SHIPPING_FEE=600;
+export const isShippingItem=item=>['service-shipping-500','service-shipping-600'].includes(item?.productId);
 export function addShippingFee(order,lineId){
   if((order.items||[]).some(isShippingItem))return false;
-  (order.items||=[]).push({productId:'service-shipping-500',code:'送料',name:'配送料（一律）',price:SHIPPING_FEE,qty:1,lineId,orderable:true,status:'active',imageUrl:''});
+  (order.items||=[]).push({productId:'service-shipping-600',code:'送料',name:'配送料（一律）',price:SHIPPING_FEE,qty:1,lineId,orderable:true,status:'active',imageUrl:''});
   return true;
 }
 
@@ -70,6 +70,12 @@ export function markPickupDelivered(order,now=new Date().toISOString()){
 
 export function totalOf(order){
   return (order?.items||[]).reduce((sum,item)=>sum + Number(item.price||0)*Number(item.qty||0),0);
+}
+
+export function orderTaxSummary(order){
+  const subtotal=totalOf(order);
+  const tax=Math.round(subtotal*0.1);
+  return {subtotal,tax,total:subtotal+tax};
 }
 
 export function itemCountOf(order){
@@ -151,7 +157,7 @@ export function validate(order){
   const errors=[];
   if(!(order?.items||[]).some(item=>!isShippingItem(item))) errors.push('商品を1点以上追加してください。');
   const shipping=(order?.items||[]).filter(isShippingItem);
-  if(shipping.length>1||shipping.some(item=>Number(item.price)!==SHIPPING_FEE||Number(item.qty)!==1)) errors.push('送料は1注文につき500円です。送料を入れ直してください。');
+  if(shipping.length>1||shipping.some(item=>Number(item.price)!==(item.productId==='service-shipping-500'?500:SHIPPING_FEE)||Number(item.qty)!==1)) errors.push('送料は1注文につき600円（税抜）です。送料を入れ直してください。');
   if((order?.items||[]).some(item=>!String(item?.code||'').trim()||!String(item?.name||'').trim())) errors.push('商品情報が不完全です。商品を選び直してください。');
   if((order?.items||[]).some(item=>!Number.isFinite(Number(item?.price))||Number(item.price)<=0)) errors.push('価格未定の商品は注文できません。');
   if((order?.items||[]).some(item=>!Number.isInteger(Number(item?.qty))||Number(item.qty)<=0)) errors.push('商品数量が不正です。');
