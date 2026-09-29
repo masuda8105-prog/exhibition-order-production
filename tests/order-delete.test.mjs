@@ -20,10 +20,14 @@ function harness({confirmed=true,fetchImpl}={}){
   return{...context.subject,context,calls,messages,element};
 }
 
-test('完了カードだけに削除ボタンを表示し、店舗名を安全にエスケープする',()=>{
+test('各状態のカードに修正・削除を表示し、店舗名を安全にエスケープする',()=>{
   const h=harness();
-  assert.match(h.cardHtml(order()),/data-delete="fixture-order"/);
-  for(const workflowStatus of ['active','waiting'])assert.doesNotMatch(h.cardHtml({...order(),workflowStatus}),/data-delete=/);
+  for(const workflowStatus of ['active','waiting','done']){
+    const html=h.cardHtml({...order(),workflowStatus});
+    assert.match(html,/data-edit="fixture-order"/);assert.match(html,/data-delete="fixture-order"/);
+  }
+  const unconfirmed=h.cardHtml({...order(),confirmationState:'draft'});
+  assert.match(unconfirmed,/data-edit="fixture-order"/);assert.match(unconfirmed,/data-delete="fixture-order"/);
   const html=h.cardHtml({...order(),store:'<script>"悪意"</script>'});
   assert.doesNotMatch(html,/<script>/);assert.match(html,/&lt;script&gt;/);
   h.pendingDeletes.add('fixture-order');assert.match(h.cardHtml(order()),/disabled>削除中…/);
