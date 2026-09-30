@@ -92,5 +92,10 @@ html,body{max-width:100%;overflow-x:hidden}.app{padding-bottom:142px}.syncLine{f
 .printArea > :nth-last-child(2){break-after:auto!important;page-break-after:auto!important}
 }
 .amountBreakdown{display:grid;justify-items:end;gap:2px;text-align:right;white-space:nowrap}.amountBreakdown small{font-size:11px;color:var(--muted);font-weight:700}.amountBreakdown strong{font-size:18px;font-weight:950;color:#111827}
+@media print{
+.printBatchCover,.printPage,.shareAttachmentPage{break-after:auto!important;page-break-after:auto!important}
+.printArea > .printPage,.printArea > .shareAttachmentPage{break-before:auto!important;page-break-before:auto!important}
+.printArea > :is(.printPage,.shareAttachmentPage):not(:first-child){break-before:page!important;page-break-before:always!important}
+}
 .orderQuickActions{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr);gap:7px;margin-top:9px}.orderQuickActions.draftActions{grid-template-columns:repeat(2,minmax(0,1fr))}.orderQuickActions button{min-width:0;min-height:44px;padding:0 7px;font-size:12px;white-space:nowrap}.orderQuickActions .deleteOrderButton{background:#fff;color:var(--danger);border:1px solid var(--danger)}
 .maintenanceTools{margin:10px 14px 0;color:var(--muted);font-size:11px;text-align:right}.maintenanceTools summary{width:max-content;max-width:100%;margin-left:auto;cursor:pointer;font-weight:750}.maintenanceTools button{display:block;margin:12px 0 0 auto;min-height:44px;padding:0 12px;border-color:#fecdca;color:var(--danger);font-size:12px}.maintenanceTools:not([open]) button{display:none}
