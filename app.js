@@ -167,6 +167,8 @@ function renderOrders(){
   wrap.querySelectorAll('[data-delete]').forEach(button=>button.onclick=()=>deleteOrderWithConfirmation(state.orders.find(order=>order.localId===button.dataset.delete)));
 }
 function pickupNumberHtml(order){const label=pickupNumberLabel(order);return label?`<div class="pickupNumber"><span>お渡し番号</span><strong>${esc(label)}</strong></div>`:''}
+function amountBreakdownHtml(order){const tax=orderTaxSummary(order);return `<div class="amountBreakdown"><small>税抜 ${yen(tax.subtotal)}</small><strong>税込 ${yen(tax.total)}</strong></div>`}
+function taxSummaryRowsHtml(order){const tax=orderTaxSummary(order),totalLabel=order.type===ORDER_TYPE.SPOT?'税込合計（お会計金額）':'税込合計';return `<div class="summaryRow"><span>税抜合計</span><b>${yen(tax.subtotal)}</b></div><div class="summaryRow total"><span>${totalLabel}</span><b>${yen(tax.total)}</b></div>`}
 function cardHtml(order){
   const deleting=pendingDeletes.has(order.localId);
   const editButton=`<button type="button" class="secondary compact orderEditButton" data-edit="${esc(order.localId)}" aria-label="${esc(order.store)}の注文を修正" ${deleting?'disabled':''}>修正</button>`;
@@ -174,7 +176,7 @@ function cardHtml(order){
   if(isUnconfirmed(order))return `<article class="orderCard unconfirmedCard"><div class="unconfirmedBadge">未確定・${order.slackShared?'最後の確定待ち':'Slack共有待ち'}</div>${pickupNumberHtml(order)}<div class="orderTop"><div class="store">${esc(order.store)}</div><div class="amount">${yen(totalOf(order))}</div></div><div class="cardNote">${esc(order.customer)} ／ ${esc(handoffLabel(order))}</div><p>まだ受注件数・一括印刷には含まれていません。</p><button class="primary fullButton" data-detail="${esc(order.localId)}" ${deleting?'disabled':''}>${order.slackShared?'注文確定へ進む':'Slack共有・確定を続ける'}</button><div class="orderQuickActions draftActions">${editButton}${deleteButton}</div></article>`;
   const paid=isPickupPaymentRecorded(order),paymentBusy=pendingPayments.has(order.localId);
   const handover=isPickupOrder(order)&&!order.delivered?`<div class="pickupCardActions">${paid?`<div class="pickupPaidStatus">✓ 会計済（${esc(paymentMethodLabel(order))}）</div>`:`<button type="button" class="secondary paymentButton" data-payment="${esc(order.localId)}" ${paymentBusy?'disabled':''}>${paymentBusy?'保存中…':'会計済'}</button>`}<button class="primary handoverButton" data-handover="${esc(order.localId)}" ${!paid||pendingHandovers.has(order.localId)||paymentBusy?'disabled':''}>${pendingHandovers.has(order.localId)?'保存中…':'お渡し済み'}</button>${!paid?'<small>会計後に「会計済」で現金・クレジットを記録してください。</small>':''}</div>`:'';
-  return `<article class="orderCard">${pickupNumberHtml(order)}<div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store)}</div></div><div class="amount">${yen(totalOf(order))}</div></div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span><span class="chip">${itemCountOf(order)}点</span></div><div class="cardNote">${order.customer?`${esc(order.customer)} ／ `:''}${esc(handoffLabel(order))}</div><div class="cardBottom"><span class="receivedAt">${esc(formatDateTime(order.createdAt,true))}</span></div><div class="orderQuickActions"><button type="button" class="secondary compact" data-detail="${esc(order.localId)}" ${deleting?'disabled':''}>詳細・印刷</button>${editButton}${deleteButton}</div>${handover}</article>`;
+  return `<article class="orderCard">${pickupNumberHtml(order)}<div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store)}</div></div>${groupOf(order)==='waiting'?amountBreakdownHtml(order):`<div class="amount">${yen(totalOf(order))}</div>`}</div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span><span class="chip">${itemCountOf(order)}点</span></div><div class="cardNote">${order.customer?`${esc(order.customer)} ／ `:''}${esc(handoffLabel(order))}</div><div class="cardBottom"><span class="receivedAt">${esc(formatDateTime(order.createdAt,true))}</span></div><div class="orderQuickActions"><button type="button" class="secondary compact" data-detail="${esc(order.localId)}" ${deleting?'disabled':''}>詳細・印刷</button>${editButton}${deleteButton}</div>${handover}</article>`;
 }
 
 async function deleteOrderWithConfirmation(order,{fromDetail=false}={}){
@@ -216,7 +218,7 @@ function showPickupPayment(order,{fromDetail=false}={}){
   openSheet('会計済を記録',pickupNumberLabel(order)||'受け取り時会計');
   const version=state.sheetVersion,id=order.localId;
   let method='';
-  $('sheetBody').innerHTML=`<div class="step"><div class="section"><div class="summaryRow"><span>店舗</span><b>${esc(order.store)}</b></div>${order.receiptNo?`<div class="summaryRow"><span>受付番号</span><b>${esc(order.receiptNo)}</b></div>`:''}<div class="summaryRow total"><span>会計金額</span><b>${yen(totalOf(order))}</b></div></div><p class="stepIntro">実際のお会計を済ませてから、会計方法を選んで記録してください。この操作で決済や請求は行いません。</p><div class="choiceGrid paymentChoices" role="group" aria-label="実際の会計方法"><button type="button" class="choice" data-payment-method="credit" aria-pressed="false"><b>クレジット</b></button><button type="button" class="choice" data-payment-method="cash" aria-pressed="false"><b>現金</b></button></div><div id="paymentCashHint" class="hintBox topGap hidden">現金の受取金額を確認してください。</div><p class="stepIntro topGap">会計を記録しても「受け取り待ち」のままです。商品を渡した後に「お渡し済み」を押してください。</p></div><div class="stickyActions"><button id="paymentCancel" class="secondary">戻る</button><button id="paymentConfirm" class="primary" disabled>会計済を記録</button></div>`;
+  $('sheetBody').innerHTML=`<div class="step"><div class="section"><div class="summaryRow"><span>店舗</span><b>${esc(order.store)}</b></div>${order.receiptNo?`<div class="summaryRow"><span>受付番号</span><b>${esc(order.receiptNo)}</b></div>`:''}${taxSummaryRowsHtml(order)}</div><p class="stepIntro">実際のお会計を済ませてから、会計方法を選んで記録してください。この操作で決済や請求は行いません。</p><div class="choiceGrid paymentChoices" role="group" aria-label="実際の会計方法"><button type="button" class="choice" data-payment-method="credit" aria-pressed="false"><b>クレジット</b></button><button type="button" class="choice" data-payment-method="cash" aria-pressed="false"><b>現金</b></button></div><div id="paymentCashHint" class="hintBox topGap hidden">現金の受取金額を確認してください。</div><p class="stepIntro topGap">会計を記録しても「受け取り待ち」のままです。商品を渡した後に「お渡し済み」を押してください。</p></div><div class="stickyActions"><button id="paymentCancel" class="secondary">戻る</button><button id="paymentConfirm" class="primary" disabled>会計済を記録</button></div>`;
   const confirmButton=$('paymentConfirm'),controls=[...$('sheetBody').querySelectorAll('button')];
   $('sheetBody').querySelectorAll('[data-payment-method]').forEach(button=>button.onclick=()=>{
     method=button.dataset.paymentMethod;
@@ -314,6 +316,7 @@ function renderInfoStep(d){
   const saveLabel=isPickupOrder(d)?pickupNumberLabel(d)?'同じ番号で保存して進む':'お渡し番号を発行':needsHeadOfficeShare(d)?'共有・確定へ進む':d.editingId?'変更を確定':'注文確定';
   $('sheetBody').innerHTML=`<div class="step"><div class="section"><div class="field"><label for="fStore">店舗名 *</label><input id="fStore" value="${esc(d.store)}" placeholder="〇〇眼鏡店"></div><div class="field"><label for="fPhone">電話番号 *</label><input id="fPhone" inputmode="tel" autocomplete="tel" value="${esc(d.phone)}"><div id="phoneWarning" class="fieldWarning ${phoneHasUnexpectedCharacters(d.phone)?'':'hidden'}">数字、+、-、空白、括弧以外が含まれています。入力内容を確認してください。</div></div>${normal?normalFields:spotFields}<div class="field"><label for="fNotes">備考（任意）</label><textarea id="fNotes" placeholder="納期・連絡事項など">${esc(d.notes||'')}</textarea></div></div><div class="section"><div class="sectionTitle">注文確認</div>${d.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${esc(item.qty)}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div>${operationHint}${d.paymentMethod===PAYMENT.CASH?'<div class="hintBox topGap">現金は釣銭を用意しない運用です。受取金額を確認してください。</div>':''}</div><div class="stickyActions"><button id="backType" class="secondary">戻る</button><button id="saveBtn" class="primary">${saveLabel}</button></div>`;
   $('saveBtn').parentElement.classList.toggle('issueNumberActions',isPickupOrder(d));
+  $('sheetBody').querySelector('.sectionTitle').parentElement.querySelector('.summaryRow:last-child').outerHTML=taxSummaryRowsHtml(d);
   bindInfo(d,normal,now);
 }
 function bindInfo(d,normal,now){
@@ -549,6 +552,7 @@ function renderOfficePhotoManager(order){
 function renderSuccess(d){
   $('stepLabel').textContent='確定済み';$('sheetTitle').textContent='注文を確定しました';
   $('sheetBody').innerHTML=`<div class="success"><div class="successMark">✓</div><h3>保存・同期が完了しました</h3><p>画面を閉じても、印刷しても注文は残ります。別の端末からも確認できます。</p><div class="summary"><div class="summaryRow"><span>店舗</span><b>${esc(d.store)}</b></div><div class="summaryRow"><span>区分</span><b>${esc(labelOrder(d))}</b></div>${d.receiptNo?`<div class="summaryRow"><span>受付番号</span><b>${esc(d.receiptNo)}</b></div>`:''}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div></div><div class="stickyActions"><button id="successPrint" class="secondary">PDF・印刷</button><button id="continueOrder" class="primary">次の注文を作る</button></div>${supportsOfficePhotos(d)?'<button id="successOfficePhotos" class="secondary fullButton">写真を撮影・追加</button>':''}<div class="underActions"><button id="backDash" class="secondary">注文一覧へ戻る</button></div>`;
+  $('sheetBody').querySelector('.summaryRow:last-child').outerHTML=taxSummaryRowsHtml(d);
   $('sheetBody').querySelector('.success h3').textContent='注文確定・同期が完了しました';
   $('sheetBody').querySelector('.success').insertAdjacentHTML('afterbegin',pickupNumberHtml(d));
   $('sheetBody').querySelector('.summary').insertAdjacentHTML('afterbegin',`<div class="summaryRow"><span>注文の状態</span><b>${ORDER_STATUS[groupOf(d)]}</b></div>`);
@@ -563,6 +567,7 @@ function showDetail(id){
   const rows=[['店舗',order.store],['区分',labelOrder(order)],['電話',order.phone],['お客様',order.customer],['卸屋・帳合先',order.account],['担当',order.staff],['受付番号',order.receiptNo],['受け渡し',handoffLabel(order)],['会計方法',order.type===ORDER_TYPE.SPOT?paymentMethodLabel(order):''],['ホテル',order.hotelName],['宿泊者',order.guestName],['部屋番号',order.roomNo],['チェックアウト',order.checkoutDate],['配送先',order.shipAddress],['作成日時',formatDateTime(order.createdAt)],['最終更新',formatDateTime(order.updatedAt)],['備考',order.notes]];
   $('sheetBody').innerHTML=`<div class="step"><div class="section">${rows.filter(([,value])=>value).map(([label,value])=>`<div class="summaryRow"><span>${esc(label)}</span><b class="multiline">${esc(value)}</b></div>`).join('')}</div><div class="section"><div class="sectionTitle">商品</div>${order.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${esc(item.qty)}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow total"><span>合計</span><b>${yen(totalOf(order))}</b></div></div><button id="editOrderBtn" class="primary fullButton">注文を修正</button>${supportsOfficePhotos(order)?'<button id="manageOfficePhotos" class="secondary fullButton">写真を撮影・確認</button>':''}<div class="two"><button id="customerCopyBtn" class="secondary">お客様控え</button><button id="printBtn" class="secondary">注文書を印刷</button></div><button id="deleteBtn" class="linkBtn hideOrderButton">この注文を一覧から非表示</button></div><div class="stickyActions one"><button id="detailClose" class="secondary">閉じる</button></div>`;
   $('sheetBody').querySelector('.step').insertAdjacentHTML('afterbegin',`<div class="orderStatusEditor"><div class="field"><label for="orderStatus">注文の状態</label><select id="orderStatus">${Object.entries(ORDER_STATUS).map(([key,label])=>`<option value="${key}" ${groupOf(order)===key?'selected':''}>${label}</option>`).join('')}</select></div><button id="saveStatus" class="secondary" disabled>変更</button></div>`);
+  $('sheetBody').querySelector('.sectionTitle').parentElement.querySelector('.summaryRow:last-child').outerHTML=taxSummaryRowsHtml(order);
   $('sheetBody').querySelector('.step').insertAdjacentHTML('afterbegin',pickupNumberHtml(order));
   $('sheetBody').querySelector('.orderStatusEditor').insertAdjacentHTML('afterend',slackSharedField(order,'detailSlackShared'));
   if(isPickupOrder(order)){
@@ -655,6 +660,14 @@ async function showCustomerReceipt(order){
   }
 }
 function receiptOrderNumber(order){return order.receiptNo||order.orderNo||order.localId||'登録前'}
+function customerHandoffLabel(order){
+  if(order.type===ORDER_TYPE.NORMAL)return '';
+  if(order.handoff===HANDOFF.NOW)return 'その場でお渡し';
+  if(order.handoff===HANDOFF.LATER)return order.pickupDate?`${order.pickupDate} 会場で受け取り`:'会場で受け取り';
+  if(order.handoff===HANDOFF.HOTEL)return 'ホテルへ配送';
+  if(order.handoff===HANDOFF.SHIP)return '指定住所へ配送';
+  return '';
+}
 function receiptDocumentHtml(order,{customerCopy=false}={}){
   if(customerCopy&&order.customerRegion==='overseas')return englishCustomerReceiptHtml(order);
   const orderNumber=receiptOrderNumber(order);
@@ -662,7 +675,7 @@ function receiptDocumentHtml(order,{customerCopy=false}={}){
   const tax=orderTaxSummary(order);
   const customerName=customerCopy?customerNameWithHonorific(order.customer):order.customer||'-';
   const internalInfo=receiptInternalInfo();
-  const info=[['店舗名',order.store],['電話番号',order.phone],['お客様名',customerName],['注文区分',labelOrder(order)]];info.push(['卸屋・帳合先',order.account||'-']);if(!customerCopy)info.push(['担当',order.staff||state.staff?.display_name||'-']);if(internalInfo.showHandoff)info.push(['受け渡し',handoffLabel(order)]);
+  const info=[['店舗名',order.store],['電話番号',order.phone],['お客様名',customerName],['注文区分',labelOrder(order)]];info.push(['卸屋・帳合先',order.account||'-']);if(!customerCopy)info.push(['担当',order.staff||state.staff?.display_name||'-']);const handoff=customerCopy?customerHandoffLabel(order):handoffLabel(order);if(internalInfo.showHandoff&&handoff)info.push(['受け渡し',handoff]);
   if(isPickupOrder(order))info.push(['会計',isPickupPaymentRecorded(order)?`会計済（${paymentMethodLabel(order)}）`:order.paid?'会計済':order.paymentMethod===PAYMENT.ON_PICKUP?'受け取り時会計':`未会計（${paymentMethodLabel(order)}予定）`]);
   const createdAtHtml=internalInfo.showCreatedAt?`<br><b>作成日時</b> ${new Date(order.createdAt||Date.now()).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})}`:'';
   const pickupHtml=pickupNumberLabel(order)?`<div class="receiptPickupNumber"><span>お渡し番号</span><strong>${esc(pickupNumberLabel(order))}</strong><small>お受け取り時に、この番号をご提示ください。</small></div>`:'';
@@ -676,7 +689,8 @@ function printSheetHtml(order,{customerCopy=false}={}){return `<article class="p
 function englishCustomerReceiptHtml(order){
   const orderNumber=receiptOrderNumber(order),count=itemCountOf(order),pickup=pickupNumberLabel(order),tax=orderTaxSummary(order);
   const orderType=order.type===ORDER_TYPE.NORMAL?'Wholesale order':({now:'Immediate purchase',later:'Pickup at the venue',hotel:'Hotel delivery',ship:'Delivery to specified address'}[order.handoff]||'On-site purchase');
-  const info=[['Store',order.store],['Phone',order.phone],['Customer',order.customer],['Order type',orderType],['Wholesaler / Account',order.account||'-'],['Handoff',({now:'Immediate handoff',later:'Venue pickup',hotel:'Hotel delivery',ship:'Address delivery'}[order.handoff]||'-')]];
+  const info=[['Store',order.store],['Phone',order.phone],['Customer',order.customer],['Order type',orderType],['Wholesaler / Account',order.account||'-']];
+  if(order.type!==ORDER_TYPE.NORMAL)info.push(['Handoff',({now:'Immediate handoff',later:order.pickupDate?`Venue pickup on ${order.pickupDate}`:'Venue pickup',hotel:'Hotel delivery',ship:'Address delivery'}[order.handoff]||'-')]);
   if(isPickupOrder(order)){
     const method={credit:'Credit card',cash:'Cash',on_pickup:'Payment on pickup'}[order.paymentMethod]||'Not specified';
     info.push(['Payment',isPickupPaymentRecorded(order)?`Paid (${method})`:order.paid?'Paid':order.paymentMethod===PAYMENT.ON_PICKUP?'Payment on pickup':`Unpaid (${method})`]);

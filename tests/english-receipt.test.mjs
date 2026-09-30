@@ -45,3 +45,14 @@ test('英語控えの印刷フッターとファイル名も英語になり画�
   const en=ctx.subject.receiptDocumentHtml(order,{customerCopy:true});
   assert.notEqual(await receiptImagePath(order.localId,ja),await receiptImagePath(order.localId,en));
 });
+
+test('お客様控えには社内の受け渡し作業を表示しない',()=>{
+  const normal={...order,type:'normal',handoff:'',customerRegion:'domestic'};
+  const customer=ctx.subject.receiptDocumentHtml(normal,{customerCopy:true});
+  assert.doesNotMatch(customer,/帰社後にまとめて印刷|受け渡し/);
+  assert.match(ctx.subject.receiptDocumentHtml(normal),/帰社後にまとめて印刷/);
+  const hotel=ctx.subject.receiptDocumentHtml({...order,handoff:'hotel',customerRegion:'domestic'},{customerCopy:true});
+  assert.match(hotel,/ホテルへ配送/);assert.doesNotMatch(hotel,/本社対応/);
+  const english=ctx.subject.receiptDocumentHtml({...normal,customerRegion:'overseas'},{customerCopy:true});
+  assert.doesNotMatch(english,/Handoff|帰社後/);
+});
