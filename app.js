@@ -850,7 +850,11 @@ async function logout(){
   clearLocalApp();
 }
 $('loginBtn').onclick=login;$('loginPassword').onkeydown=event=>{if(event.key==='Enter')login()};
-window.addEventListener('afterprint',()=>{$('printArea').innerHTML='';if(printOriginalTitle){document.title=printOriginalTitle;printOriginalTitle=''}});
+window.addEventListener('afterprint',()=>{
+  // Some browsers fire afterprint when the preview opens, before the PDF is captured.
+  // Keep the hidden print DOM until the next print replaces it or logout clears it.
+  if(printOriginalTitle){document.title=printOriginalTitle;printOriginalTitle=''}
+});
 $('logoutBtn').onclick=logout;$('refreshBtn').onclick=refreshPrivateData;$('newOrderBtn').onclick=startOrder;$('discardDraftBtn').onclick=showDiscardDraftConfirm;$('closeSheet').onclick=closeSheet;$('sheet').onclick=event=>{if(event.target===$('sheet'))closeSheet()};$('printMenuBtn').onclick=showPrintMenu;$('pickupResetButton').onclick=showPickupResetDialog;$('orderSearch').oninput=render;
 
 purgeLegacyLocalData();if(location.hash.startsWith('#receipt='))history.replaceState(null,'',`${location.pathname}${location.search}`);await bootOnline();

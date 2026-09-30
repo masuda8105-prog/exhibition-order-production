@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
+import {pathToFileURL} from 'node:url';
 const require=createRequire(import.meta.url);
 const {chromium}=require('C:/Users/AONUSR02/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const pdfjs=await import(pathToFileURL('C:/Users/AONUSR02/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/pdfjs-dist/legacy/build/pdf.mjs'));
 const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
-const base='http://127.0.0.1:8797/';
+const base=process.env.BROWSER_FIXTURE_URL||'http://127.0.0.1:8797/';
 try{
-  const page=await browser.newPage();
+  const context=await browser.newContext();
+  await context.addInitScript(()=>{window.print=()=>window.dispatchEvent(new Event('afterprint'))});
+  const page=await context.newPage();
   await page.goto(base);await page.fill('#loginEmail','fixture@example.invalid');await page.fill('#loginPassword','fixture-password');await page.click('#loginBtn');await page.waitForSelector('#appView:not(.hidden)');
   await page.click('#newOrderBtn');await page.fill('#productQ','TEST-001');await page.click('[data-product-id="product-1"]');await page.click('#toType');await page.click('[data-type="spot"]');await page.click('[data-handoff="hotel"]');await page.click('#toInfo');
   const store=`写真一括印刷検証 ${Date.now()}`;
@@ -14,8 +18,16 @@ try{
   await page.setInputFiles('#photoFiles',{name:'hotel.png',mimeType:'image/png',buffer:Buffer.from(image,'base64')});await page.waitForFunction(()=>document.querySelector('#attachmentStatus')?.textContent?.includes('1枚添付済み'));
   await page.click('#prepareSharePdf');await page.waitForSelector('#acknowledgeSlack:enabled');await page.click('#acknowledgeSlack');await page.waitForSelector('#confirmSharedOrder:enabled');await page.click('#confirmSharedOrder');await page.waitForSelector('#successCustomerCopy');
   await page.reload();await page.waitForSelector('#appView:not(.hidden)');
-  await page.evaluate(target=>{window.__savedBatchPhoto=false;new MutationObserver(()=>{const sheets=[...document.querySelectorAll('#printArea .printSheet')];const sheet=sheets.find(item=>item.textContent.includes(target));const photo=sheet?.nextElementSibling?.querySelector('img');if(photo?.complete&&photo.naturalWidth>0&&photo.src.startsWith('data:image/'))window.__savedBatchPhoto=true}).observe(document.querySelector('#printArea'),{subtree:true,childList:true,attributes:true,attributeFilter:['src']})},store);
-  await page.click('#printMenuBtn');await page.click('#executeBatchPrint');await page.waitForFunction(()=>window.__savedBatchPhoto);
-  assert.equal(await page.evaluate(()=>window.__savedBatchPhoto),true);
-  console.log('PASS: saved hotel-delivery photo appears immediately after its order in batch print following reload');
+  await page.click('#printMenuBtn');await page.click('#executeBatchPrint');
+  await page.waitForFunction(target=>{const sheet=[...document.querySelectorAll('#printArea .printSheet')].find(item=>item.textContent.includes(target));const photo=sheet?.nextElementSibling?.querySelector('img');return photo?.complete&&photo.naturalWidth>0&&photo.src.startsWith('data:image/')},store);
+  assert.ok(await page.locator('#printArea .printSheet').count(),'early afterprint must retain print contents');
+  await page.emulateMedia({media:'print'});
+  const bytes=await page.pdf({format:'A4',preferCSSPageSize:true,printBackground:true});
+  const pdf=await pdfjs.getDocument({data:new Uint8Array(bytes),useSystemFonts:true}).promise;
+  assert.equal(pdf.numPages,3,'one order and one photo should produce a cover, company copy, and photo without a blank page');
+  const pageText=[];
+  for(let index=1;index<=pdf.numPages;index++)pageText.push((await (await pdf.getPage(index)).getTextContent()).items.map(item=>item.str).join(' '));
+  assert.ok(pageText[1].includes('会社控え'),'company copy must remain after early afterprint');
+  assert.ok(pageText[2].includes('添付資料'),'photo page must be the last page');
+  console.log('PASS: saved hotel photo and order remain in the batch PDF after an early afterprint event');
 }finally{await browser.close()}
