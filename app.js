@@ -346,6 +346,8 @@ function bindInfo(d,normal,now){
 function resumeFinalization(order){
   state.draft={...order,items:order.items.map(item=>({...item})),editingId:order.localId,stage:'finalize',sharingSaved:isUnconfirmed(order),pdfPrepared:Boolean(order.slackShared)};
   openSheet('Slack共有・注文確定');renderDraft();
+  const draft=state.draft,version=state.sheetVersion;
+  if(officePhotoPaths(order).length)loadOfficePhotos(order).then(()=>{if(version===state.sheetVersion&&state.draft===draft)renderDraft()}).catch(()=>{if(version===state.sheetVersion&&state.draft===draft)showError('写真を読み込めませんでした。接続を確認して開き直してください。')});
 }
 async function prepareSharingDraft(d){
   const errors=validate(d);if(errors.length)throw new Error(errors[0]);
@@ -430,22 +432,23 @@ function renderFinalizeStep(d){
 
 function attachmentPickerHtml(order,saved){
   const photos=attachmentStore.list(order.localId),locked=!saved||order.slackShared||Boolean(attachmentOperation)||attachmentPrintBusy;
-  return `<div class="attachmentPicker"><h4>別紙・写真を添付（任意）</h4><p>ホテル送りの記入用紙などを追加できます。共有用PDFでは、注文書の後に写真を1枚ずつ載せます。</p><div class="attachmentButtons"><button id="choosePhotos" type="button" class="secondary" ${locked||photos.length>=MAX_PHOTOS?'disabled':''}>写真フォルダから選ぶ</button><button id="takePhoto" type="button" class="secondary" ${locked||photos.length>=MAX_PHOTOS?'disabled':''}>カメラで撮影</button></div><input id="photoFiles" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden><input id="cameraPhoto" type="file" accept="image/*" capture="environment" hidden><p class="attachmentPrivacy">最大${MAX_PHOTOS}枚・1枚20MBまで。写真はこの端末で一時保持します。再読み込み・ログアウト・新しい注文で消えるので、先にPDF保存・共有してください。写真は他の端末には同期されません。</p>${order.slackShared?'<p>写真を変更する場合は、下の送信確認チェックを外してください。</p>':''}<div class="attachmentList">${photos.map((photo,index)=>`<div class="attachmentItem"><details><summary><img src="${esc(photo.url)}" alt="添付写真 ${index+1}"><span>写真${index+1}を大きく確認</span></summary><img class="attachmentLarge" src="${esc(photo.url)}" alt="${esc(photo.name)}"></details><button type="button" class="secondary" data-remove-photo="${esc(photo.id)}" ${locked?'disabled':''}>写真${index+1}を削除</button></div>`).join('')}</div><p id="attachmentStatus" role="status">${photos.length}枚添付済み</p></div>`;
+  return `<div class="attachmentPicker"><h4>別紙・写真を添付（任意）</h4><p>ホテル送りの記入用紙などを追加できます。共有用PDFと全注文印刷では、注文書の後に写真を1枚ずつ載せます。</p><div class="attachmentButtons"><button id="choosePhotos" type="button" class="secondary" ${locked||photos.length>=MAX_PHOTOS?'disabled':''}>写真フォルダから選ぶ</button><button id="takePhoto" type="button" class="secondary" ${locked||photos.length>=MAX_PHOTOS?'disabled':''}>カメラで撮影</button></div><input id="photoFiles" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden><input id="cameraPhoto" type="file" accept="image/*" capture="environment" hidden><p class="attachmentPrivacy">最大${MAX_PHOTOS}枚・1枚20MBまで。写真は注文に保存され、別端末からも印刷できます。</p>${order.slackShared?'<p>写真を変更する場合は、下の送信確認チェックを外してください。</p>':''}<div class="attachmentList">${photos.map((photo,index)=>`<div class="attachmentItem"><details><summary><img src="${esc(photo.url)}" alt="添付写真 ${index+1}"><span>写真${index+1}を大きく確認</span></summary><img class="attachmentLarge" src="${esc(photo.url)}" alt="${esc(photo.name)}"></details><button type="button" class="secondary" data-remove-photo="${esc(photo.id)}" ${locked?'disabled':''}>写真${index+1}を削除</button></div>`).join('')}</div><p id="attachmentStatus" role="status">${photos.length}枚添付済み</p></div>`;
 }
 function bindAttachmentPicker(order,saved){
   $('choosePhotos').onclick=()=>$('photoFiles').click();$('takePhoto').onclick=()=>$('cameraPhoto').click();
   for(const id of ['photoFiles','cameraPhoto'])$(id).onchange=async event=>{
     const files=[...event.target.files];event.target.value='';
     if(!files.length||!saved||order.slackShared||attachmentOperation||attachmentPrintBusy||state.draft!==order)return;
-    const operation={id:order.localId,generation:attachmentStore.generation},version=state.sheetVersion;attachmentOperation=operation;
+    const operation={id:order.localId},version=state.sheetVersion;attachmentOperation=operation;
     const controls=[...$('sheet').querySelectorAll('button,input,select')].map(element=>({element,disabled:element.disabled}));controls.forEach(({element})=>element.disabled=true);
     $('attachmentStatus').textContent='写真を読み込んでいます…';const errors=[];let added=0;
     try{
       for(const file of files){
-        if(attachmentStore.generation!==operation.generation)break;
-        if(attachmentStore.list(order.localId).length>=MAX_PHOTOS){errors.push(`最大${MAX_PHOTOS}枚までです。残りは追加していません。`);break}
-        try{if(attachmentStore.add(order.localId,await preparePhoto(file),operation.generation))added++}catch(error){errors.push(`${file.name}: ${error.message}`)}
+        if(version!==state.sheetVersion||state.draft!==order)break;
+        if(officePhotoPaths(order).length>=MAX_PHOTOS){errors.push(`最大${MAX_PHOTOS}枚までです。残りは追加していません。`);break}
+        try{const result=await saveOfficePhoto(order,file);Object.assign(order,result,{editingId:result.localId,stage:'finalize',sharingSaved:true,pdfPrepared:false});added++}catch(error){errors.push(`${file.name}: ${error.message}`);break}
       }
+      if(added)await loadOfficePhotos(order);
     }finally{
       if(attachmentOperation===operation)attachmentOperation=null;
       controls.forEach(({element,disabled})=>element.disabled=disabled);
@@ -453,16 +456,20 @@ function bindAttachmentPicker(order,saved){
       if(version===state.sheetVersion&&state.draft===order){renderDraft();$('attachmentStatus').textContent=`${attachmentStore.list(order.localId).length}枚添付済み。${errors.join(' ')||'写真を開いて文字が読めるか確認してください。'}`}
     }
   };
-  $('sheetBody').querySelectorAll('[data-remove-photo]').forEach(button=>button.onclick=()=>{
+  $('sheetBody').querySelectorAll('[data-remove-photo]').forEach(button=>button.onclick=async()=>{
     if(state.draft!==order||order.slackShared||attachmentOperation||attachmentPrintBusy)return;
-    attachmentStore.remove(order.localId,button.dataset.removePhoto);order.pdfPrepared=false;renderDraft();
+    const path=button.dataset.removePhoto;if(!officePhotoPaths(order).includes(path))return;
+    attachmentOperation={id:order.localId};
+    try{const result=await removeOfficePhoto(order,path);Object.assign(order,result,{editingId:result.localId,stage:'finalize',sharingSaved:true,pdfPrepared:false});await loadOfficePhotos(order);renderDraft()}
+    catch(error){showError('写真を削除できませんでした。接続を確認して再試行してください。')}
+    finally{attachmentOperation=null}
   });
 }
 function attachmentPagesHtml(order){
   return attachmentStore.list(order.localId).map((photo,index)=>`<section class="shareAttachmentPage"><div class="receiptCopyLabel">会社控え・添付資料 ${index+1}</div><p>注文番号 ${esc(receiptOrderNumber(order))}${pickupNumberLabel(order)?` ／ お渡し番号 ${esc(pickupNumberLabel(order))}`:''}</p><img src="${esc(photo.url)}" alt="添付資料 ${index+1}"></section>`).join('');
 }
 
-const supportsOfficePhotos=order=>order?.type===ORDER_TYPE.NORMAL||(order?.type===ORDER_TYPE.SPOT&&order?.handoff===HANDOFF.NOW);
+const supportsOfficePhotos=order=>order?.type===ORDER_TYPE.NORMAL||order?.type===ORDER_TYPE.SPOT;
 const officePhotoPaths=order=>validOfficePhotoPaths(order?.officePhotoPaths,order?.localId);
 const officePhotoUrl=path=>`${sbBase()}/storage/v1/object/${RECEIPT_BUCKET}/${path}`;
 async function deleteOfficePhotoFile(path){
@@ -690,7 +697,7 @@ function printOrders(orders,title,withCover=true,{targetLabel='全期間',custom
   const cover=withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(cfg.eventName||'展示会')}</div><h1>${esc(title)}</h1><p><b>対象受付日 ${esc(targetLabel)}</b><br>出力日時 ${new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'medium'}).format(new Date())}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計（税抜）</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>受付日時</th><th>区分</th><th>卸屋・帳合先</th><th>店舗・お客様</th><th>合計（税抜）</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(formatDateTime(order.createdAt||order.created_at,true))}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.account||'-')}</td><td>${pickupNumberLabel(order)?`<b>${esc(pickupNumberLabel(order))}</b><br>`:''}${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
   const englishCopy=customerCopy&&list.every(order=>order.customerRegion==='overseas');
   const printedAt=new Intl.DateTimeFormat(englishCopy?'en-GB':'ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'short'}).format(new Date());
-  const photosIncluded=includeAttachments&&!customerCopy&&!withCover&&list.some(order=>attachmentStore.list(order.localId).length);
+  const photosIncluded=includeAttachments&&!customerCopy&&list.some(order=>attachmentStore.list(order.localId).length);
   $('printArea').innerHTML=`${cover}${list.map(order=>printSheetHtml(order,{customerCopy})+(photosIncluded?attachmentPagesHtml(order):'')).join('')}<div class="printFoot">${englishCopy?'Printed (JST)':'出力日時'} ${esc(printedAt)}</div>`;
   const generation=++printGeneration,version=state.sheetVersion;
   const finish=()=>{
@@ -758,7 +765,23 @@ function showPrintDateOptions(mode='all',start=today(),end=today()){
   document.querySelectorAll('[data-date-mode]').forEach(button=>button.onclick=()=>showPrintDateOptions(button.dataset.dateMode,start,end));
   if($('printStart'))$('printStart').onchange=()=>showPrintDateOptions('range',$('printStart').value,$('printEnd').value);
   if($('printEnd'))$('printEnd').onchange=()=>showPrintDateOptions('range',$('printStart').value,$('printEnd').value);
-  $('printDateBack').textContent='閉じる';$('printDateBack').onclick=closeSheet;$('executeBatchPrint').onclick=()=>printOrders(list,'展示会 全注文データ',true,{targetLabel});
+  $('printDateBack').textContent='閉じる';$('printDateBack').onclick=closeSheet;
+  $('executeBatchPrint').onclick=async()=>{
+    const button=$('executeBatchPrint'),version=state.sheetVersion;
+    button.disabled=true;button.textContent='写真を準備中…';
+    try{
+      for(const order of list){
+        if(version!==state.sheetVersion)return;
+        if(supportsOfficePhotos(order)&&officePhotoPaths(order).length)await loadOfficePhotos(order);
+      }
+      if(version!==state.sheetVersion)return;
+      await printOrders(list,'展示会 全注文データ',true,{targetLabel,includeAttachments:true});
+    }catch(error){
+      if(version===state.sheetVersion)showError('写真を読み込めませんでした。通信状態を確認して、もう一度お試しください。');
+    }finally{
+      if(version===state.sheetVersion){button.disabled=false;button.textContent='PDF・印刷'}
+    }
+  };
 }
 
 async function bootOnline(){

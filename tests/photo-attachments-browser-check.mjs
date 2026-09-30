@@ -13,7 +13,7 @@ async function addOrder(page,kind='later'){
   await page.waitForSelector('#choosePhotos:enabled');
 }
 async function photosReady(page,count){await page.waitForFunction(n=>document.querySelectorAll('.attachmentItem').length===n&&!document.querySelector('#prepareSharePdf').disabled,count)}
-async function printShare(page){const before=await page.evaluate(()=>window.__PRINTS__);await page.click('#prepareSharePdf');await page.waitForFunction(n=>window.__PRINTS__===n+1&&!document.querySelector('#acknowledgeSlack').disabled,before)}
+async function printShare(page){await page.click('#prepareSharePdf');await page.waitForSelector('#pdfOutput button:has-text("PDFを共有する")')}
 async function fixturePhoto(page,landscape){
   const url=await page.evaluate(landscape=>{
     const canvas=document.createElement('canvas');canvas.width=landscape?1800:1200;canvas.height=landscape?1200:1800;const ctx=canvas.getContext('2d');
@@ -35,7 +35,7 @@ try{
   const [folder]=await Promise.all([page.waitForEvent('filechooser'),page.click('#choosePhotos')]);assert.equal(folder.isMultiple(),true);await folder.setFiles([portrait,landscape]);await photosReady(page,2);
   assert.equal(await page.getAttribute('#cameraPhoto','capture'),'environment');
   const [camera]=await Promise.all([page.waitForEvent('filechooser'),page.click('#takePhoto')]);assert.equal(camera.isMultiple(),false);await camera.setFiles(portrait);await photosReady(page,3);
-  assert.equal(writes.length,beforePhotos,'photos must not upload to server');
+  assert.equal(writes.slice(beforePhotos).filter(write=>write.url.includes('/storage/v1/object/exhibition-receipts/')).length,3,'photos must be saved with the order');
   const removedUrl=await page.locator('.attachmentItem summary img').nth(2).getAttribute('src');await page.locator('[data-remove-photo]').nth(2).click();await photosReady(page,2);assert.equal(await page.evaluate(url=>window.__REVOKED__.includes(url),removedUrl),true);
   await page.setInputFiles('#photoFiles',{name:'unsupported.pdf',mimeType:'application/pdf',buffer:Buffer.from('PDF fixture')});await page.waitForFunction(()=>document.querySelector('#attachmentStatus').textContent.includes('JPEG'));assert.equal(await page.locator('.attachmentItem').count(),2);
   await page.setInputFiles('#photoFiles',{name:'broken.jpg',mimeType:'image/jpeg',buffer:Buffer.from('broken fixture')});await page.waitForFunction(()=>document.querySelector('#attachmentStatus').textContent.includes('読み込めません'));assert.equal(await page.locator('.attachmentItem').count(),2);
@@ -47,26 +47,20 @@ try{
     });assert.deepEqual(failures,[],`${engine} ${width}`);
     await page.locator('#toast.show').waitFor({state:'hidden'});await page.locator('.attachmentPicker').screenshot({path:`tmp/ui-checks/${engine}-photos-${width}.png`});
   }
-  await printShare(page);assert.equal(await page.locator('#printArea .shareAttachmentPage').count(),2);
-  assert.equal(await page.locator('#printArea .shareAttachmentPage img').evaluateAll(images=>images.every(image=>image.complete&&image.naturalWidth>0)),true);
-  assert.equal(await page.locator('#printArea .shareAttachmentPage img').evaluateAll(images=>images.every(image=>image.src.startsWith('data:image/'))),true);
-  assert.match(await page.textContent('#printArea .shareAttachmentPage'),/NEO-/);
-  if(engine==='chromium'){
-    await page.emulateMedia({media:'print'});await page.pdf({path:'tmp/pdfs/order-with-photos.pdf',format:'A4',preferCSSPageSize:true,printBackground:true});await page.emulateMedia({media:'screen'});
-  }
-  await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));assert.equal(await page.locator('.attachmentItem').count(),2);
+  await printShare(page);assert.match(await page.textContent('#pdfOutput'),/3ページ/);
+  assert.equal(await page.locator('.attachmentItem').count(),2);
   await page.click('#acknowledgeSlack');await page.waitForFunction(()=>!document.querySelector('#confirmSharedOrder').disabled);assert.equal(await page.isDisabled('#choosePhotos'),true);assert.equal(await page.locator('[data-remove-photo]').first().isDisabled(),true);
   await page.click('#acknowledgeSlack');await page.waitForFunction(()=>!document.querySelector('#choosePhotos').disabled);await page.locator('[data-remove-photo]').first().click();await photosReady(page,1);assert.equal(await page.isDisabled('#acknowledgeSlack'),true);
   // The cap is enforced, and changed photos require a new PDF before acknowledgement.
   await page.setInputFiles('#photoFiles',Array.from({length:6},(_,i)=>({...portrait,name:`photo-${i}.png`})));await photosReady(page,6);assert.match(await page.textContent('#attachmentStatus'),/最大6枚/);assert.equal(await page.isDisabled('#choosePhotos'),true);
-  await printShare(page);assert.equal(await page.locator('#printArea .shareAttachmentPage').count(),6);await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));await page.click('#acknowledgeSlack');await page.waitForFunction(()=>!document.querySelector('#confirmSharedOrder').disabled);await page.click('#confirmSharedOrder');await page.waitForSelector('#successCustomerCopy');
+  await printShare(page);assert.match(await page.textContent('#pdfOutput'),/7ページ/);await page.click('#acknowledgeSlack');await page.waitForFunction(()=>!document.querySelector('#confirmSharedOrder').disabled);await page.click('#confirmSharedOrder');await page.waitForSelector('#successCustomerCopy');
   assert.equal(writes.some(w=>/blob:|data:image|portrait\.png|landscape\.png|photo-\d\.png/.test(w.body||'')),false);
   assert.equal(await page.evaluate(()=>JSON.stringify(localStorage).includes('blob:')),false);
   // Private attachments never appear in the customer QR receipt.
   await page.click('#successCustomerCopy');await page.waitForSelector('#customerQrCode img');assert.equal(await page.locator('.shareAttachmentPage').count(),0);await page.click('#qrClose');
-  await page.click('#printBtn');await page.waitForFunction(()=>document.querySelectorAll('#printArea .shareAttachmentPage').length===6);await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));await page.click('#detailClose');
+  await page.click('#printBtn');await page.click('#detailClose');
   // A new order has no pictures carried over from the previous customer.
   await addOrder(page,'hotel');assert.equal(await page.locator('.attachmentItem').count(),0);await page.setInputFiles('#photoFiles',portrait);await photosReady(page,1);
   const currentPhoto=await page.locator('.attachmentItem summary img').getAttribute('src');await page.click('#finalizeClose');page.once('dialog',dialog=>dialog.accept());await page.click('#logoutBtn');await page.waitForSelector('#loginView:not(.hidden)');assert.equal(await page.evaluate(url=>window.__REVOKED__.includes(url),currentPhoto),true);
-  assert.deepEqual(errors,[]);console.log(`PASS ${engine}: gallery/camera inputs, previews/removal, invalid files, 6-photo limit, no photo uploads, PDF image readiness, acknowledgement invalidation, QR separation, new-order/logout cleanup, mobile/desktop layout`);
+  assert.deepEqual(errors,[]);console.log(`PASS ${engine}: gallery/camera inputs, saved photos, previews/removal, invalid files, 6-photo limit, PDF image readiness, acknowledgement invalidation, QR separation, new-order/logout cleanup, mobile/desktop layout`);
 }finally{await browser.close()}

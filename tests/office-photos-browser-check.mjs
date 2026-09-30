@@ -25,9 +25,15 @@ try{
   await office.reload();await office.waitForSelector('#appView:not(.hidden)');await office.click('[data-tab="done"]');await office.click('[data-detail]');await office.click('#manageOfficePhotos');await office.waitForFunction(()=>document.querySelector('#officePhotoStatus')?.textContent?.includes('1枚保存済み'));
   assert.equal(await office.locator('.attachmentItem').count(),1);
   assert.equal(await office.getAttribute('#officeCameraPhoto','capture'),'environment');
+  await office.click('#officePhotoBack');await office.click('#detailClose');
+  await office.evaluate(()=>{window.__batchPhotoCheck={found:false,ready:false};new MutationObserver(()=>{const area=document.querySelector('#printArea'),images=[...area.querySelectorAll('.shareAttachmentPage img')];if(images.length&&area.querySelector('.printBatchCover')&&area.querySelector('.printSheet'))window.__batchPhotoCheck.found=true;if(images.length&&images.every(image=>image.complete&&image.naturalWidth>0&&image.src.startsWith('data:image/')))window.__batchPhotoCheck.ready=true}).observe(document.querySelector('#printArea'),{subtree:true,childList:true,attributes:true,attributeFilter:['src']})});
+  await office.click('#printMenuBtn');await office.click('#executeBatchPrint');
+  await office.waitForFunction(()=>window.__batchPhotoCheck.ready);
+  assert.equal((await office.evaluate(()=>window.__batchPhotoCheck)).found,true);
+  await office.click('#printDateBack');await office.click('[data-tab="done"]');await office.click('[data-detail]');await office.click('#manageOfficePhotos');
   office.once('dialog',dialog=>dialog.accept());await office.click('[data-remove-office-photo]');await office.waitForFunction(()=>document.querySelector('#officePhotoStatus')?.textContent?.includes('0枚保存済み'));
   await phone.click('#officePhotoBack');await phone.click('#detailClose');await phone.click('[data-tab="done"]');await phone.click('[data-detail]');await phone.click('#manageOfficePhotos');await phone.waitForFunction(()=>document.querySelector('#officePhotoStatus')?.textContent?.includes('0枚保存済み'));
   await phone.click('#officePhotoBack');await phone.click('#detailClose');await phone.click('#newOrderBtn');await phone.fill('#productQ','TEST-001');await phone.click('[data-product-id="product-1"]');await phone.click('#toType');await phone.click('[data-type="spot"]');await phone.click('[data-handoff="now"]');await phone.click('#toInfo');await phone.fill('#fStore','その場渡し店舗');await phone.fill('#fPhone','000-0000-0000');await phone.fill('#fCustomer','その場のお客様');await phone.click('#saveBtn');await phone.waitForSelector('#successOfficePhotos');
-  console.log('PASS: normal and immediate-sale photos, private cloud persistence across devices, office PDF, native print, reload, deletion');
+  console.log('PASS: normal and immediate-sale photos, private cloud persistence across devices, office PDF, native and batch print, reload, deletion');
 }finally{await browser.close()}
 
