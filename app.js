@@ -1,8 +1,8 @@
 import {createOrderPdf} from './order-pdf.js?v=20260924-pdf1';
-import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,SHIPPING_FEE,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,orderTaxSummary,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from './workflow.js?v=20260929-receipt1';
+import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,SHIPPING_FEE,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,orderTaxSummary,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow,validOfficePhotoPaths} from './workflow.js?v=20260930-officephotos1';
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
-import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20260917-photo1';
+import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20260930-officephotos1';
 
 const cfg=window.EXHIBITION_CONFIG||{};
 const $=id=>document.getElementById(id);
@@ -462,21 +462,99 @@ function attachmentPagesHtml(order){
   return attachmentStore.list(order.localId).map((photo,index)=>`<section class="shareAttachmentPage"><div class="receiptCopyLabel">会社控え・添付資料 ${index+1}</div><p>注文番号 ${esc(receiptOrderNumber(order))}${pickupNumberLabel(order)?` ／ お渡し番号 ${esc(pickupNumberLabel(order))}`:''}</p><img src="${esc(photo.url)}" alt="添付資料 ${index+1}"></section>`).join('');
 }
 
+const supportsOfficePhotos=order=>order?.type===ORDER_TYPE.NORMAL||(order?.type===ORDER_TYPE.SPOT&&order?.handoff===HANDOFF.NOW);
+const officePhotoPaths=order=>validOfficePhotoPaths(order?.officePhotoPaths,order?.localId);
+const officePhotoUrl=path=>`${sbBase()}/storage/v1/object/${RECEIPT_BUCKET}/${path}`;
+async function deleteOfficePhotoFile(path){
+  await ensureFreshSession();
+  return fetchJson(`${sbBase()}/storage/v1/object/${RECEIPT_BUCKET}`,{method:'DELETE',headers:sbHeaders(),body:JSON.stringify({prefixes:[path]})});
+}
+async function loadOfficePhotos(order){
+  attachmentStore.clearOrder(order.localId);
+  for(const [index,path] of officePhotoPaths(order).entries()){
+    await ensureFreshSession();
+    const response=await fetch(`${sbBase()}/storage/v1/object/authenticated/${RECEIPT_BUCKET}/${path}`,{headers:{apikey:String(cfg.publishableKey||''),Authorization:`Bearer ${state.session.access_token}`},cache:'no-store'});
+    if(!response.ok)throw new Error(`PHOTO_DOWNLOAD_${response.status}`);
+    const url=URL.createObjectURL(await response.blob());
+    attachmentStore.add(order.localId,{id:path,remotePath:path,name:`添付写真 ${index+1}`,url});
+  }
+}
+async function saveOfficePhoto(order,file){
+  if(!supportsOfficePhotos(order)||officePhotoPaths(order).length>=MAX_PHOTOS)throw new Error(`写真は最大${MAX_PHOTOS}枚です。`);
+  const photo=await preparePhoto(file,{mimeType:'image/png',maxDimension:1600});
+  const path=`${order.localId}/${newUuid().replaceAll('-','')}.png`;
+  let uploaded=false;
+  try{
+    const blob=await fetch(photo.url).then(response=>response.blob());
+    await ensureFreshSession();
+    await fetchJson(officePhotoUrl(path),{method:'POST',headers:{...sbHeaders(),'Content-Type':'image/png','Cache-Control':'max-age=0','x-upsert':'false'},body:blob});
+    uploaded=true;
+    return await updateOrder({...order,officePhotoPaths:[...officePhotoPaths(order),path]});
+  }catch(error){if(uploaded)deleteOfficePhotoFile(path).catch(()=>{});throw error}
+  finally{URL.revokeObjectURL(photo.url)}
+}
+async function removeOfficePhoto(order,path){
+  const updated=await updateOrder({...order,officePhotoPaths:officePhotoPaths(order).filter(item=>item!==path)});
+  await deleteOfficePhotoFile(path);
+  return updated;
+}
+async function showOfficePhotoManager(id){
+  const initial=state.orders.find(order=>order.localId===id);if(!initial||!supportsOfficePhotos(initial))return;
+  openSheet('会社控えの写真','保存済みの注文');const version=state.sheetVersion;
+  $('sheetBody').innerHTML='<div class="step"><div class="receiptImagePreparing">写真を読み込んでいます…</div></div>';
+  try{
+    await loadOrders();const order=state.orders.find(item=>item.localId===id);if(!order)throw new Error('ORDER_NOT_AVAILABLE');
+    await loadOfficePhotos(order);if(version!==state.sheetVersion)return;
+    renderOfficePhotoManager(order);
+  }catch(error){if(version===state.sheetVersion){$('sheetBody').innerHTML='<div class="step"><div class="receiptError">写真を読み込めませんでした。接続を確認して、もう一度お試しください。</div><button id="retryOfficePhotos" class="secondary fullButton">再試行</button></div>';$('retryOfficePhotos').onclick=()=>showOfficePhotoManager(id)}}
+}
+function renderOfficePhotoManager(order){
+  const photos=attachmentStore.list(order.localId);
+  $('sheetBody').innerHTML=`<div class="step"><div class="attachmentPicker"><h4>会社控えPDFに添付する写真</h4><p>写真は注文に保存され、別の端末でPDFを作るときにも読み込まれます。お客様控え画像には載りません。</p><div class="attachmentButtons"><button id="officeChoosePhotos" type="button" class="secondary" ${photos.length>=MAX_PHOTOS?'disabled':''}>写真フォルダから選ぶ</button><button id="officeTakePhoto" type="button" class="secondary" ${photos.length>=MAX_PHOTOS?'disabled':''}>カメラで撮影</button></div><input id="officePhotoFiles" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden><input id="officeCameraPhoto" type="file" accept="image/*" capture="environment" hidden><p class="attachmentPrivacy">最大${MAX_PHOTOS}枚・1枚20MBまで。元の撮影情報を除いて非公開保存します。</p><div class="attachmentList">${photos.map((photo,index)=>`<div class="attachmentItem"><details><summary><img src="${esc(photo.url)}" alt="添付写真 ${index+1}"><span>写真${index+1}を大きく確認</span></summary><img class="attachmentLarge" src="${esc(photo.url)}" alt="添付写真 ${index+1}"></details><button type="button" class="secondary" data-remove-office-photo="${esc(photo.remotePath)}">写真${index+1}を削除</button></div>`).join('')}</div><p id="officePhotoStatus" role="status">${photos.length}枚保存済み</p></div><button id="officePhotoPdf" class="primary fullButton">${photos.length?'写真付きPDFを作成':'会社控えPDFを作成'}</button><button id="officePhotoBack" class="secondary fullButton">注文詳細に戻る</button></div>`;
+  $('officeChoosePhotos').onclick=()=>$('officePhotoFiles').click();$('officeTakePhoto').onclick=()=>$('officeCameraPhoto').click();
+  for(const inputId of ['officePhotoFiles','officeCameraPhoto'])$(inputId).onchange=async event=>{
+    const files=[...event.target.files];event.target.value='';if(!files.length)return;
+    const version=state.sheetVersion;const controls=[...$('sheetBody').querySelectorAll('button,input')];controls.forEach(control=>control.disabled=true);
+    $('officePhotoStatus').textContent='写真を保存しています…';let current=order,added=0;const errors=[];
+    for(const file of files){
+      if(version!==state.sheetVersion)break;
+      try{current=await saveOfficePhoto(current,file);added++}catch(error){errors.push(`${file.name}: ${error.message}`);break}
+    }
+    if(version!==state.sheetVersion)return;
+    if(added){await showOfficePhotoManager(order.localId);if(errors.length)showError(errors.join(' '));else toast(`${added}枚の写真を保存しました`)}
+    else{controls.forEach(control=>control.disabled=false);showError(errors.join(' ')||'写真を保存できませんでした。')}
+  };
+  $('sheetBody').querySelectorAll('[data-remove-office-photo]').forEach(button=>button.onclick=async()=>{
+    if(!confirm('この写真を注文と保存先から削除しますか？'))return;
+    const controls=[...$('sheetBody').querySelectorAll('button,input')];controls.forEach(control=>control.disabled=true);
+    try{await removeOfficePhoto(order,button.dataset.removeOfficePhoto);await showOfficePhotoManager(order.localId);toast('写真を削除しました')}
+    catch(error){controls.forEach(control=>control.disabled=false);showError('写真を削除できませんでした。接続を確認してください。')}
+  });
+  $('officePhotoPdf').onclick=async()=>{
+    const button=$('officePhotoPdf');button.disabled=true;button.textContent='PDFを作成しています…';
+    try{const {blob}=await generateSharePdf(order),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=printFileBase([order])+'.pdf';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);button.textContent='PDFをもう一度作成';toast('写真付きPDFを保存しました')}
+    catch(error){button.textContent='PDFを再試行';showError('PDFを作成できませんでした。写真を確認して、もう一度お試しください。')}
+    finally{button.disabled=false}
+  };
+  $('officePhotoBack').onclick=()=>showDetail(order.localId);
+}
+
 function renderSuccess(d){
   $('stepLabel').textContent='確定済み';$('sheetTitle').textContent='注文を確定しました';
-  $('sheetBody').innerHTML=`<div class="success"><div class="successMark">✓</div><h3>保存・同期が完了しました</h3><p>画面を閉じても、印刷しても注文は残ります。別の端末からも確認できます。</p><div class="summary"><div class="summaryRow"><span>店舗</span><b>${esc(d.store)}</b></div><div class="summaryRow"><span>区分</span><b>${esc(labelOrder(d))}</b></div>${d.receiptNo?`<div class="summaryRow"><span>受付番号</span><b>${esc(d.receiptNo)}</b></div>`:''}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div></div><div class="stickyActions"><button id="successPrint" class="secondary">PDF・印刷</button><button id="continueOrder" class="primary">次の注文を作る</button></div><div class="underActions"><button id="backDash" class="secondary">注文一覧へ戻る</button></div>`;
+  $('sheetBody').innerHTML=`<div class="success"><div class="successMark">✓</div><h3>保存・同期が完了しました</h3><p>画面を閉じても、印刷しても注文は残ります。別の端末からも確認できます。</p><div class="summary"><div class="summaryRow"><span>店舗</span><b>${esc(d.store)}</b></div><div class="summaryRow"><span>区分</span><b>${esc(labelOrder(d))}</b></div>${d.receiptNo?`<div class="summaryRow"><span>受付番号</span><b>${esc(d.receiptNo)}</b></div>`:''}<div class="summaryRow"><span>合計</span><b>${yen(totalOf(d))}</b></div></div></div><div class="stickyActions"><button id="successPrint" class="secondary">PDF・印刷</button><button id="continueOrder" class="primary">次の注文を作る</button></div>${supportsOfficePhotos(d)?'<button id="successOfficePhotos" class="secondary fullButton">写真を撮影・追加</button>':''}<div class="underActions"><button id="backDash" class="secondary">注文一覧へ戻る</button></div>`;
   $('sheetBody').querySelector('.success h3').textContent='注文確定・同期が完了しました';
   $('sheetBody').querySelector('.success').insertAdjacentHTML('afterbegin',pickupNumberHtml(d));
   $('sheetBody').querySelector('.summary').insertAdjacentHTML('afterbegin',`<div class="summaryRow"><span>注文の状態</span><b>${ORDER_STATUS[groupOf(d)]}</b></div>`);
   $('backDash').insertAdjacentHTML('beforebegin','<button id="successCustomerCopy" class="secondary customerCopyAction">お客様控え（QR・画像）</button>');
   $('successCustomerCopy').onclick=()=>showCustomerReceipt(d);
+  if($('successOfficePhotos'))$('successOfficePhotos').onclick=()=>showOfficePhotoManager(d.localId);
   $('backDash').onclick=()=>{state.draft=null;closeSheet();revealOrder(d)};$('successPrint').onclick=()=>printOrder(d);$('continueOrder').onclick=()=>{state.draft=null;closeSheet();startOrder()};
 }
 
 function showDetail(id){
   const order=state.orders.find(item=>item.localId===id);if(!order)return;if(isUnconfirmed(order))return resumeFinalization(order);openSheet('注文詳細','保存済み');
   const rows=[['店舗',order.store],['区分',labelOrder(order)],['電話',order.phone],['お客様',order.customer],['卸屋・帳合先',order.account],['担当',order.staff],['受付番号',order.receiptNo],['受け渡し',handoffLabel(order)],['会計方法',order.type===ORDER_TYPE.SPOT?paymentMethodLabel(order):''],['ホテル',order.hotelName],['宿泊者',order.guestName],['部屋番号',order.roomNo],['チェックアウト',order.checkoutDate],['配送先',order.shipAddress],['作成日時',formatDateTime(order.createdAt)],['最終更新',formatDateTime(order.updatedAt)],['備考',order.notes]];
-  $('sheetBody').innerHTML=`<div class="step"><div class="section">${rows.filter(([,value])=>value).map(([label,value])=>`<div class="summaryRow"><span>${esc(label)}</span><b class="multiline">${esc(value)}</b></div>`).join('')}</div><div class="section"><div class="sectionTitle">商品</div>${order.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${esc(item.qty)}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow total"><span>合計</span><b>${yen(totalOf(order))}</b></div></div><button id="editOrderBtn" class="primary fullButton">注文を修正</button><div class="two"><button id="customerCopyBtn" class="secondary">お客様控え</button><button id="printBtn" class="secondary">注文書を印刷</button></div><button id="deleteBtn" class="linkBtn hideOrderButton">この注文を一覧から非表示</button></div><div class="stickyActions one"><button id="detailClose" class="secondary">閉じる</button></div>`;
+  $('sheetBody').innerHTML=`<div class="step"><div class="section">${rows.filter(([,value])=>value).map(([label,value])=>`<div class="summaryRow"><span>${esc(label)}</span><b class="multiline">${esc(value)}</b></div>`).join('')}</div><div class="section"><div class="sectionTitle">商品</div>${order.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${esc(item.qty)}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow total"><span>合計</span><b>${yen(totalOf(order))}</b></div></div><button id="editOrderBtn" class="primary fullButton">注文を修正</button>${supportsOfficePhotos(order)?'<button id="manageOfficePhotos" class="secondary fullButton">写真を撮影・確認</button>':''}<div class="two"><button id="customerCopyBtn" class="secondary">お客様控え</button><button id="printBtn" class="secondary">注文書を印刷</button></div><button id="deleteBtn" class="linkBtn hideOrderButton">この注文を一覧から非表示</button></div><div class="stickyActions one"><button id="detailClose" class="secondary">閉じる</button></div>`;
   $('sheetBody').querySelector('.step').insertAdjacentHTML('afterbegin',`<div class="orderStatusEditor"><div class="field"><label for="orderStatus">注文の状態</label><select id="orderStatus">${Object.entries(ORDER_STATUS).map(([key,label])=>`<option value="${key}" ${groupOf(order)===key?'selected':''}>${label}</option>`).join('')}</select></div><button id="saveStatus" class="secondary" disabled>変更</button></div>`);
   $('sheetBody').querySelector('.step').insertAdjacentHTML('afterbegin',pickupNumberHtml(order));
   $('sheetBody').querySelector('.orderStatusEditor').insertAdjacentHTML('afterend',slackSharedField(order,'detailSlackShared'));
@@ -516,11 +594,12 @@ function showDetail(id){
   if($('detailSlackSharedResume'))$('detailSlackSharedResume').onclick=()=>resumeFinalization(order);
   $('customerCopyBtn').textContent='お客様控え（QR・画像）';
   $('customerCopyBtn').classList.add('customerCopyAction');$('customerCopyBtn').parentElement.className='detailReceiptActions';
-  $('detailClose').onclick=closeSheet;$('editOrderBtn').onclick=()=>startEditOrder(order);$('customerCopyBtn').onclick=()=>showCustomerReceipt(order);$('printBtn').onclick=()=>printOrder(order);
+  $('detailClose').onclick=closeSheet;$('editOrderBtn').onclick=()=>startEditOrder(order);if($('manageOfficePhotos'))$('manageOfficePhotos').onclick=()=>showOfficePhotoManager(order.localId);$('customerCopyBtn').onclick=()=>showCustomerReceipt(order);$('printBtn').onclick=()=>printOrder(order);
   $('deleteBtn').textContent='この注文を削除（キャンセル）';
   $('deleteBtn').onclick=()=>deleteOrderWithConfirmation(order,{fromDetail:true});
 }
-function printOrder(order,{inputOnly=false}={}){
+async function printOrder(order,{inputOnly=false}={}){
+  if(supportsOfficePhotos(order)&&officePhotoPaths(order).length)await loadOfficePhotos(order);
   return printOrders([order],'展示会 注文書',false,{inputOnly,includeAttachments:true});
 }
 function printCustomerCopy(order){printOrders([order],'お客様控え',false,{customerCopy:true})}
@@ -702,7 +781,7 @@ function bindConnectivitySignals(){
   window.addEventListener('focus',()=>syncOrders().catch(()=>{}));
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncOrders().catch(()=>{})});
   window.addEventListener('storage',event=>{if(event.key===PERSISTENT_SESSION_KEY){if(!event.newValue)clearLocalApp();else state.session=storedSession()}});
-  window.addEventListener('beforeunload',event=>{state.rememberDraftInput?.();if(attachmentStore.hasPhotos()||(state.draft&&state.draft.stage!=='success'&&(state.draft.items?.length||state.draft.store))){event.preventDefault();event.returnValue=''}});
+  window.addEventListener('beforeunload',event=>{state.rememberDraftInput?.();if(attachmentStore.hasUnsavedPhotos()||(state.draft&&state.draft.stage!=='success'&&(state.draft.items?.length||state.draft.store))){event.preventDefault();event.returnValue=''}});
 }
 async function refreshPrivateData(){
   if(!state.online||!navigator.onLine)return toast('オンライン接続が必要です');

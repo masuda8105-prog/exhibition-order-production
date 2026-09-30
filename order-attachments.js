@@ -35,6 +35,7 @@ export function createAttachmentStore(revoke = url => URL.revokeObjectURL(url)) 
       generation++;
     },
     hasPhotos() { return [...byOrder.values()].some(photos => photos.length > 0); },
+    hasUnsavedPhotos() { return [...byOrder.values()].some(photos => photos.some(photo => !photo.remotePath)); },
     clear() {
       for (const photos of byOrder.values()) for (const photo of photos) revoke(photo.url);
       byOrder.clear();
@@ -44,7 +45,7 @@ export function createAttachmentStore(revoke = url => URL.revokeObjectURL(url)) 
 }
 
 // Decode and re-encode locally: no original photo or GPS/EXIF metadata is uploaded.
-export async function preparePhoto(file) {
+export async function preparePhoto(file,{mimeType='image/jpeg',maxDimension=2400}={}) {
   const error = validatePhoto(file);
   if (error) throw new Error(error);
   const source = URL.createObjectURL(file);
@@ -54,7 +55,7 @@ export async function preparePhoto(file) {
     image.src = source;
     await Promise.race([image.decode(), new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("画像読込みの時間制限です。")), 20000); })]);
     if (!image.naturalWidth || !image.naturalHeight) throw new Error("画像サイズを確認できませんでした。");
-    const scale = Math.min(1, 2400 / Math.max(image.naturalWidth, image.naturalHeight));
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -63,9 +64,9 @@ export async function preparePhoto(file) {
     context.fillStyle = "#fff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, mimeType, 0.92));
     canvas.width = canvas.height = 1;
-    if (!blob) throw new Error("写真を処理できませんでした。");
+    if (!blob || blob.size > 10 * 1024 * 1024) throw new Error("写真を処理できませんでした。画像を小さくして撮り直してください。");
     return { id: crypto.randomUUID(), name: file.name || "撮影した写真", url: URL.createObjectURL(blob) };
   } catch (error) {
     throw new Error(error.message.includes("処理") ? error.message : "この写真を読み込めません。JPEG・PNGで保存し直すか、カメラで撮り直してください。");

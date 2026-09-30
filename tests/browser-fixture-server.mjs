@@ -64,13 +64,22 @@ const server=http.createServer(async(request,response)=>{
   }
   if(url.pathname==='/auth/v1/logout')return sendJson(response,200,{});
   if(url.pathname.startsWith('/storage/v1/')){
-    const signedPrefix='/storage/v1/object/sign/exhibition-receipts/',objectPrefix='/storage/v1/object/exhibition-receipts/';
+    const signedPrefix='/storage/v1/object/sign/exhibition-receipts/',objectPrefix='/storage/v1/object/exhibition-receipts/',authenticatedPrefix='/storage/v1/object/authenticated/exhibition-receipts/';
     if(request.method==='GET'&&url.pathname.startsWith(signedPrefix)){
       const signed=signedImages.get(url.searchParams.get('token')),imagePath=url.pathname.slice(signedPrefix.length);
       if(!signed||signed.path!==imagePath||signed.expires<Date.now()||!receiptImages.has(imagePath))return sendJson(response,403,{error:'invalid_signature'});
       response.writeHead(200,{'content-type':'image/png','cache-control':'no-store'});return response.end(receiptImages.get(imagePath));
     }
     if(request.headers.authorization!=='Bearer fixture-access-token')return sendJson(response,401,{error:'login_required'});
+    if(request.method==='GET'&&url.pathname.startsWith(authenticatedPrefix)){
+      const imagePath=url.pathname.slice(authenticatedPrefix.length),order=orders.get(imagePath.split('/')[0]);
+      if(!order||order.deleted_at||!receiptImages.has(imagePath))return sendJson(response,404,{error:'not_found'});
+      response.writeHead(200,{'content-type':'image/png','cache-control':'no-store'});return response.end(receiptImages.get(imagePath));
+    }
+    if(request.method==='DELETE'&&url.pathname==='/storage/v1/object/exhibition-receipts'){
+      const body=await readJson(request);for(const imagePath of body.prefixes||[])receiptImages.delete(imagePath);
+      return sendJson(response,200,[]);
+    }
     if(request.method==='POST'&&url.pathname.startsWith(objectPrefix)){
       const imagePath=url.pathname.slice(objectPrefix.length),order=orders.get(imagePath.split('/')[0]);
       if(!order||order.deleted_at)return sendJson(response,403,{error:'order_access_denied'});

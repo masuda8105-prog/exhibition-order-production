@@ -272,6 +272,7 @@ const CLOUD_ORDER_FIELDS=Object.freeze([
 export function orderPayloadForCloud(order){
   const payload={};
   for(const field of CLOUD_ORDER_FIELDS)payload[field]=order?.[field]??'';
+  payload.officePhotoPaths=validOfficePhotoPaths(order?.officePhotoPaths,order?.localId);
   payload.confirmationState=order?.confirmationState||'confirmed';
   payload.paid=Boolean(order?.paid);
   payload.delivered=Boolean(order?.delivered);
@@ -299,6 +300,7 @@ export function orderFromCloudRow(row){
     confirmationState:row?.confirmation_state==='draft'?'draft':'confirmed',
     pickupNumber:/^[1-9][0-9]*$/.test(String(row?.pickup_number||''))?String(row.pickup_number):'',
     items:Array.isArray(payload.items)?payload.items.map(item=>({...item})):[],
+    officePhotoPaths:validOfficePhotoPaths(payload.officePhotoPaths,row?.id),
     localId:String(row?.id||''),
     clientSubmissionId:String(row?.id||''),
     createdAt:row?.created_at||'',
@@ -306,6 +308,12 @@ export function orderFromCloudRow(row){
     cloudUpdatedAt:row?.updated_at||'',
     syncState:'synced',
   };
+}
+
+export function validOfficePhotoPaths(paths,orderId){
+  const id=String(orderId||'');
+  if(!/^[0-9a-f-]{36}$/i.test(id)||!Array.isArray(paths))return [];
+  return [...new Set(paths.filter(path=>typeof path==='string'&&new RegExp(`^${id}/[0-9a-f]{32}\\.png$`,'i').test(path)))].slice(0,6);
 }
 
 export function normalizeForSave(draft){

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAttachmentStore,validatePhoto,MAX_PHOTOS,MAX_PHOTO_BYTES} from '../order-attachments.js';
+import {validOfficePhotoPaths,orderPayloadForCloud,orderFromCloudRow} from '../workflow.js';
 
 test('写真だけを受け付け、空ファイル・20MB超・SVGやPDFを拒否する',()=>{
   for(const type of ['image/jpeg','image/png','image/webp','image/heic','image/heif'])assert.equal(validatePhoto({type,size:MAX_PHOTO_BYTES,name:'image'}),'');
@@ -19,4 +20,12 @@ test('写真は注文ごとに分け、6枚制限と削除で不要な画像URL�
 test('ログアウトや新規注文後に遅い画像処理が終わっても写真を復活させない',()=>{
   const revoked=[],store=createAttachmentStore(url=>revoked.push(url)),generation=store.generation;
   store.clear();assert.equal(store.add('old',{id:'late',url:'blob:late'},generation),false);assert.equal(store.hasPhotos(),false);assert.deepEqual(revoked,['blob:late']);
+});
+
+test('会社控え写真の保存先は注文内の非公開パスだけを同期する',()=>{
+  const id='00000000-0000-4000-8000-000000000001',path=`${id}/${'a'.repeat(32)}.png`;
+  assert.deepEqual(validOfficePhotoPaths([path,path,'other.png',`${id}/../escape.png`],id),[path]);
+  const payload=orderPayloadForCloud({localId:id,items:[],officePhotoPaths:[path,'other.png']});
+  assert.deepEqual(payload.officePhotoPaths,[path]);
+  assert.deepEqual(orderFromCloudRow({id,payload}).officePhotoPaths,[path]);
 });
