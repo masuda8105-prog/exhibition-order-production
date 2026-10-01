@@ -31,7 +31,7 @@ test('海外のお客様控えだけを英語化し国内・社内注文書は�
 test('英語の送料と支払済み表示でも番号・合計・商品点数を維持する',()=>{
   const paid={...order,paid:true,paymentMethod:'cash',items:order.items.map(item=>({...item}))};flow.addShippingFee(paid,'fee');
   const html=ctx.subject.receiptDocumentHtml(paid,{customerCopy:true});
-  for(const value of ['Paid (Cash)','Shipping (flat rate)','¥800','¥80','¥880','2 items','NEO-12','Total (incl. tax)'])assert.ok(html.includes(value),value);
+  for(const value of ['Paid (Cash)','Shipping (flat rate)','¥700','¥900','¥90','¥990','2 items','NEO-12','Total (incl. tax)'])assert.ok(html.includes(value),value);
   assert.doesNotMatch(html,/配送料|受け取り時会計/);
   for(const [handoff,label] of [['now','Immediate purchase'],['hotel','Hotel delivery'],['ship','Delivery to specified address']]){
     const other=ctx.subject.receiptDocumentHtml({...paid,handoff},{customerCopy:true});assert.ok(other.includes(label));assert.doesNotMatch(other,/Pickup No.|NEO-12/);
