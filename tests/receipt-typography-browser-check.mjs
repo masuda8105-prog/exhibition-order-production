@@ -21,9 +21,9 @@ try{
   await page.emulateMedia({media:'print'});
   const printSizes=await page.locator('#printArea .receiptSheet').first().evaluate(element=>{
     const px=selector=>parseFloat(getComputedStyle(element.querySelector(selector)).fontSize);
-    return {label:px('.receiptInfoLabel'),value:px('.receiptInfoValue'),item:px('.receiptTable'),total:px('.receiptSummaryRow.total')};
+    return {label:px('.receiptInfoLabel'),value:px('.receiptInfoValue'),item:px('.receiptTable'),heading:px('.receiptTable th'),total:px('.receiptSummaryRow.total')};
   });
-  assert.ok(printSizes.label>=14&&printSizes.value>=17&&printSizes.item>=16&&printSizes.total>=19,JSON.stringify(printSizes));
+  assert.deepEqual(printSizes,{label:6.5,value:8.5,item:8.5,heading:10,total:13});
   const bytes=await page.pdf({format:'A4',preferCSSPageSize:true,printBackground:true});
   const document=await pdfjs.getDocument({data:new Uint8Array(bytes),useSystemFonts:true}).promise;
   const pages=[];
@@ -34,7 +34,7 @@ try{
   assert.equal(pages.length,2,`Unexpected pagination: ${JSON.stringify(pages)}`);
   assert.match(pages[0],/お客様控え/);assert.match(pages[0],/税込合計/);
   assert.match(pages[1],/会社控え/);assert.match(pages[1],/税込合計/);
-  console.log('PASS: readable image and print sizes; eight-item copies stay on separate pages');
+  console.log('PASS: enlarged receipt image, reference print sizes, and separate eight-item pages');
 }finally{
   await browser.close();
 }

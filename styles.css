@@ -100,7 +100,7 @@ html,body{max-width:100%;overflow-x:hidden}.app{padding-bottom:142px}.syncLine{f
 .orderQuickActions{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr);gap:7px;margin-top:9px}.orderQuickActions.draftActions{grid-template-columns:repeat(2,minmax(0,1fr))}.orderQuickActions button{min-width:0;min-height:44px;padding:0 7px;font-size:12px;white-space:nowrap}.orderQuickActions .deleteOrderButton{background:#fff;color:var(--danger);border:1px solid var(--danger)}
 .maintenanceTools{margin:10px 14px 0;color:var(--muted);font-size:11px;text-align:right}.maintenanceTools summary{width:max-content;max-width:100%;margin-left:auto;cursor:pointer;font-weight:750}.maintenanceTools button{display:block;margin:12px 0 0 auto;min-height:44px;padding:0 12px;border-color:#fecdca;color:var(--danger);font-size:12px}.maintenanceTools:not([open]) button{display:none}
 
-/* Legible type in printed copies and the downloadable customer image. */
+/* Larger type for on-screen copies and the downloadable customer image. */
 .receiptSheet .receiptBrandName{font-size:16px}
 .receiptSheet .receiptBrandSub,.receiptSheet .receiptDocSub,.receiptSheet .receiptMetaLine{font-size:13px;line-height:1.45}
 .receiptSheet .receiptDocTitle{font-size:25px}
@@ -117,33 +117,7 @@ html,body{max-width:100%;overflow-x:hidden}.app{padding-bottom:142px}.syncLine{f
 .receiptSheet .receiptPickupNumber span,.receiptSheet .receiptPickupNumber small{font-size:15px}
 
 @media print{
-  .receiptSheet .receiptCopyLabel{font-size:19px!important;padding:7px 9px!important;margin-bottom:10px!important}
-  .receiptSheet .receiptHeaderSimple{grid-template-columns:minmax(0,1fr) 230px!important;gap:12px!important;padding-bottom:10px!important}
-  .receiptSheet .receiptBrandLogo{width:175px!important}
-  .receiptSheet .receiptBrandName{font-size:14px!important}
-  .receiptSheet .receiptBrandSub,.receiptSheet .receiptDocSub,.receiptSheet .receiptMetaLine{font-size:14px!important;line-height:1.4!important}
-  .receiptSheet .receiptDocTitle{font-size:22px!important}
-  .receiptSheet .receiptInfoBand{gap:7px!important;margin-top:10px!important}
-  .receiptSheet .receiptInfoCard{padding:7px 8px!important}
-  .receiptSheet .receiptInfoLabel{font-size:14px!important}
-  .receiptSheet .receiptInfoValue{font-size:17px!important;line-height:1.35!important;margin-top:3px!important}
-  .receiptSheet .receiptSection{margin-top:12px!important}
-  .receiptSheet .receiptSectionHead{margin-bottom:6px!important}
-  .receiptSheet .receiptSectionTitle{font-size:17px!important}
-  .receiptSheet .receiptSectionHint{font-size:14px!important}
-  .receiptSheet .receiptTable{font-size:16px!important}
-  .receiptSheet .receiptTable th{font-size:15px!important}
-  .receiptSheet .receiptTable th,.receiptSheet .receiptTable td{padding:6px!important;line-height:1.35!important}
-  .receiptSheet .receiptTable col.code{width:80px!important}
-  .receiptSheet .receiptTable col.qty{width:40px!important}
-  .receiptSheet .receiptTable col.unit{width:94px!important}
-  .receiptSheet .receiptTable col.subtotal{width:100px!important}
-  .receiptSheet .receiptFooterGrid{grid-template-columns:minmax(0,1fr) 240px!important;gap:10px!important;margin-top:12px!important}
-  .receiptSheet .receiptNote{font-size:15px!important;line-height:1.45!important;padding:8px!important}
-  .receiptSheet .receiptSummaryBox{padding:8px 10px!important}
-  .receiptSheet .receiptSummaryRow{font-size:16px!important;padding:4px 0!important}
-  .receiptSheet .receiptSummaryRow.total{font-size:19px!important;padding-top:7px!important}
-  .receiptSheet .receiptCurrencyNote{font-size:13px!important;margin-top:5px!important}
-  .receiptSheet .receiptFooterMini{font-size:13px!important;margin-top:9px!important;padding-top:6px!important}
-  .receiptSheet .receiptPickupNumber span,.receiptSheet .receiptPickupNumber small{font-size:14px!important}
+  .receiptSheet .receiptTable th{font-size:10px!important}
+  .receiptSheet .receiptPickupNumber span{font-size:12px!important}
+  .receiptSheet .receiptPickupNumber small{font-size:11px!important}
 }

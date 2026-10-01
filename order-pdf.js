@@ -1,6 +1,7 @@
 // Pagination is part of the PDF, never delegated to Safari's webpage printer.
 export async function createOrderPdf(receiptCard, sharing) {
-  const css = await fetch(new URL('./styles.css', import.meta.url)).then(response => { if (!response.ok) throw new Error('PDF_STYLE_LOAD'); return response.text(); });
+  const cssUrl = document.querySelector('link[rel="stylesheet"][href*="styles.css"]')?.href || new URL('./styles.css', import.meta.url);
+  const css = await fetch(cssUrl, {cache:'no-store'}).then(response => { if (!response.ok) throw new Error('PDF_STYLE_LOAD'); return response.text(); });
   const { jsPDF } = window.jspdf;
   const html2canvas = window.html2canvas;
   const frame = document.createElement("iframe");
@@ -73,4 +74,3 @@ export async function createOrderPdf(receiptCard, sharing) {
     return { blob: pdf.output("blob"), pages };
   } finally { frame.remove(); }
 }
-
