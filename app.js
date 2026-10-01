@@ -666,10 +666,8 @@ function receiptPickupScheduleHtml(order,{english=false}={}){
   if(!match)return '';
   const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]),date=new Date(Date.UTC(year,month-1,day));
   if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day)return '';
-  const label=english
-    ?new Intl.DateTimeFormat('en-US',{timeZone:'UTC',year:'numeric',month:'short',day:'numeric',weekday:'short'}).format(date)
-    :`${year}年${month}月${day}日（${'日月火水木金土'[date.getUTCDay()]}）`;
-  return `<div class="receiptPickupSchedule">${english?`Pickup date: ${esc(label)} · From 1:00 PM`:`お渡し日：${esc(label)}　13時以降`}</div>`;
+  const label=`${match[1]}/${match[2]}/${match[3]}`;
+  return `<div class="receiptPickupSchedule">${english?`Pickup date ${esc(label)}　After 1:00 PM`:`お渡し日 ${esc(label)}　13時以降`}</div>`;
 }
 function receiptDocumentHtml(order,{customerCopy=false}={}){
   if(customerCopy&&order.customerRegion==='overseas')return englishCustomerReceiptHtml(order);

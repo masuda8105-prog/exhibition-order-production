@@ -15,12 +15,12 @@ const order={localId:'00000000-0000-4000-8000-000000000001',type:'spot',handoff:
 test('海外のお客様控えだけを英語化し国内・社内注文書は日本語を維持する',()=>{
   const en=ctx.subject.receiptDocumentHtml(order,{customerCopy:true});
   for(const text of ['Customer Copy','Order No.','Pickup No.','NEO-12','Customer','Order Details','Payment on pickup','Unit Price','Currency: JPY','Alex Tan','登録商品名','Wholesaler / Account','INTERNAL-ACCOUNT','Notes','INTERNAL-NOTE'])assert.ok(en.includes(text),text);
-  assert.match(en,/Pickup date: Fri, Jan 2, 2099 · From 1:00 PM/);
+  assert.match(en,/Pickup date 2099\/01\/02　After 1:00 PM/);
   assert.doesNotMatch(en,/class="receiptInfoLabel">Handoff/);
   assert.doesNotMatch(en,/お客様控え|お渡し番号|Alex Tan 様|INTERNAL-STAFF|ご案内/);
   for(const customerRegion of ['domestic','',undefined]){
     const ja=ctx.subject.receiptDocumentHtml({...order,customerRegion},{customerCopy:true});
-    for(const text of ['お客様控え','卸屋・帳合先','INTERNAL-ACCOUNT','備考','INTERNAL-NOTE','お渡し日：2099年1月2日（金）　13時以降','作成日時'])assert.ok(ja.includes(text),text);
+    for(const text of ['お客様控え','卸屋・帳合先','INTERNAL-ACCOUNT','備考','INTERNAL-NOTE','お渡し日 2099/01/02　13時以降','作成日時'])assert.ok(ja.includes(text),text);
     assert.doesNotMatch(ja,/class="receiptInfoLabel">受け渡し/);
     assert.doesNotMatch(ja,/INTERNAL-STAFF|ご案内/);
   }
