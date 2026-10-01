@@ -83,6 +83,8 @@ html,body{max-width:100%;overflow-x:hidden}.app{padding-bottom:142px}.syncLine{f
 .receiptPickupNumber{display:grid;gap:3px;margin:0 0 18px;padding:12px;border:3px solid #111827;text-align:center;break-inside:avoid}
 .receiptPickupNumber strong{font-size:38px;line-height:1.2;overflow-wrap:anywhere}
 .receiptPickupNumber small{font-size:11px}
+.receiptPickupSchedule{margin:6px auto;padding:7px 10px;border:2px solid #b42318;border-radius:8px;background:#fff5f4;color:#b42318;font-size:20px;font-weight:950;line-height:1.35;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+@media print{.receiptPickupSchedule{font-size:17px!important;color:#b42318!important;background:#fff5f4!important;border-color:#b42318!important}}
 @media print{.receiptCopyLabel{margin-bottom:7px!important;padding:5px 8px!important;font-size:13px!important;break-after:avoid!important}.receiptSheet{padding:8mm!important}.receiptPickupNumber{break-inside:avoid!important;page-break-inside:avoid!important}}
 @media print{
 .shareAttachmentPage{display:block!important;position:relative!important;width:calc(100% - 16mm)!important;height:200mm!important;min-height:0!important;max-height:200mm!important;overflow:hidden!important;margin:8mm!important;padding:0!important;border:0!important;box-sizing:border-box;break-before:page!important;page-break-before:always!important;break-inside:avoid!important;page-break-inside:avoid!important;break-after:page!important;page-break-after:always!important}

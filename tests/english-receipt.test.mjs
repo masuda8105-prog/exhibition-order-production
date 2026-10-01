@@ -10,15 +10,18 @@ const source=(await readFile(new URL('../app.js',import.meta.url),'utf8')).repla
 const elements=new Map();
 const ctx=vm.createContext({...attachments,...flow,window:{EXHIBITION_CONFIG:{},print(){}},document:{title:'展示会 注文管理',getElementById(id){if(!elements.has(id))elements.set(id,{innerHTML:'',classList:{add(){},remove(){}}});return elements.get(id)}},URL,setTimeout(){},clearTimeout(){}});
 vm.runInContext(source+'\nglobalThis.subject={receiptDocumentHtml,printOrders};',ctx);
-const order={localId:'00000000-0000-4000-8000-000000000001',type:'spot',handoff:'later',pickupNumber:'12',receiptNo:'RECEIPT-001',customerRegion:'overseas',customer:'Alex Tan',store:'Example Optical',phone:'+81 000',paymentMethod:'on_pickup',notes:'INTERNAL-NOTE',staff:'INTERNAL-STAFF',account:'INTERNAL-ACCOUNT',items:[{code:'TEST-001',name:'登録商品名',qty:2,price:100}]};
+const order={localId:'00000000-0000-4000-8000-000000000001',type:'spot',handoff:'later',pickupNumber:'12',pickupDate:'2099-01-02',receiptNo:'RECEIPT-001',customerRegion:'overseas',customer:'Alex Tan',store:'Example Optical',phone:'+81 000',paymentMethod:'on_pickup',notes:'INTERNAL-NOTE',staff:'INTERNAL-STAFF',account:'INTERNAL-ACCOUNT',items:[{code:'TEST-001',name:'登録商品名',qty:2,price:100}]};
 
 test('海外のお客様控えだけを英語化し国内・社内注文書は日本語を維持する',()=>{
   const en=ctx.subject.receiptDocumentHtml(order,{customerCopy:true});
   for(const text of ['Customer Copy','Order No.','Pickup No.','NEO-12','Customer','Order Details','Payment on pickup','Unit Price','Currency: JPY','Alex Tan','登録商品名','Wholesaler / Account','INTERNAL-ACCOUNT','Notes','INTERNAL-NOTE'])assert.ok(en.includes(text),text);
+  assert.match(en,/Pickup date: Fri, Jan 2, 2099 · From 1:00 PM/);
+  assert.doesNotMatch(en,/class="receiptInfoLabel">Handoff/);
   assert.doesNotMatch(en,/お客様控え|お渡し番号|Alex Tan 様|INTERNAL-STAFF|ご案内/);
   for(const customerRegion of ['domestic','',undefined]){
     const ja=ctx.subject.receiptDocumentHtml({...order,customerRegion},{customerCopy:true});
-    for(const text of ['お客様控え','卸屋・帳合先','INTERNAL-ACCOUNT','備考','INTERNAL-NOTE','受け渡し','作成日時'])assert.ok(ja.includes(text),text);
+    for(const text of ['お客様控え','卸屋・帳合先','INTERNAL-ACCOUNT','備考','INTERNAL-NOTE','お渡し日：2099年1月2日（金）　13時以降','作成日時'])assert.ok(ja.includes(text),text);
+    assert.doesNotMatch(ja,/class="receiptInfoLabel">受け渡し/);
     assert.doesNotMatch(ja,/INTERNAL-STAFF|ご案内/);
   }
   assert.match(ctx.subject.receiptDocumentHtml(order),/展示会 注文書/);
@@ -50,9 +53,9 @@ test('お客様控えには社内の受け渡し作業を表示しない',()=>{
   const normal={...order,type:'normal',handoff:'',customerRegion:'domestic'};
   const customer=ctx.subject.receiptDocumentHtml(normal,{customerCopy:true});
   assert.doesNotMatch(customer,/帰社後にまとめて印刷|受け渡し/);
-  assert.match(ctx.subject.receiptDocumentHtml(normal),/帰社後にまとめて印刷/);
+  assert.doesNotMatch(ctx.subject.receiptDocumentHtml(normal),/class="receiptInfoLabel">受け渡し|帰社後にまとめて印刷/);
   const hotel=ctx.subject.receiptDocumentHtml({...order,handoff:'hotel',customerRegion:'domestic'},{customerCopy:true});
-  assert.match(hotel,/ホテルへ配送/);assert.doesNotMatch(hotel,/本社対応/);
+  assert.match(hotel,/ホテル配送/);assert.doesNotMatch(hotel,/本社対応|receiptPickupSchedule|class="receiptInfoLabel">受け渡し/);
   const english=ctx.subject.receiptDocumentHtml({...normal,customerRegion:'overseas'},{customerCopy:true});
   assert.doesNotMatch(english,/Handoff|帰社後/);
 });

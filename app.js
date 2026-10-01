@@ -660,13 +660,16 @@ async function showCustomerReceipt(order){
   }
 }
 function receiptOrderNumber(order){return order.receiptNo||order.orderNo||order.localId||'登録前'}
-function customerHandoffLabel(order){
-  if(order.type===ORDER_TYPE.NORMAL)return '';
-  if(order.handoff===HANDOFF.NOW)return 'その場でお渡し';
-  if(order.handoff===HANDOFF.LATER)return order.pickupDate?`${order.pickupDate} 会場で受け取り`:'会場で受け取り';
-  if(order.handoff===HANDOFF.HOTEL)return 'ホテルへ配送';
-  if(order.handoff===HANDOFF.SHIP)return '指定住所へ配送';
-  return '';
+function receiptPickupScheduleHtml(order,{english=false}={}){
+  if(!pickupNumberLabel(order)||!order.pickupDate)return '';
+  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(order.pickupDate));
+  if(!match)return '';
+  const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]),date=new Date(Date.UTC(year,month-1,day));
+  if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day)return '';
+  const label=english
+    ?new Intl.DateTimeFormat('en-US',{timeZone:'UTC',year:'numeric',month:'short',day:'numeric',weekday:'short'}).format(date)
+    :`${year}年${month}月${day}日（${'日月火水木金土'[date.getUTCDay()]}）`;
+  return `<div class="receiptPickupSchedule">${english?`Pickup date: ${esc(label)} · From 1:00 PM`:`お渡し日：${esc(label)}　13時以降`}</div>`;
 }
 function receiptDocumentHtml(order,{customerCopy=false}={}){
   if(customerCopy&&order.customerRegion==='overseas')return englishCustomerReceiptHtml(order);
@@ -675,10 +678,10 @@ function receiptDocumentHtml(order,{customerCopy=false}={}){
   const tax=orderTaxSummary(order);
   const customerName=customerCopy?customerNameWithHonorific(order.customer):order.customer||'-';
   const internalInfo=receiptInternalInfo();
-  const info=[['店舗名',order.store],['電話番号',order.phone],['お客様名',customerName],['注文区分',labelOrder(order)]];info.push(['卸屋・帳合先',order.account||'-']);if(!customerCopy)info.push(['担当',order.staff||state.staff?.display_name||'-']);const handoff=customerCopy?customerHandoffLabel(order):handoffLabel(order);if(internalInfo.showHandoff&&handoff)info.push(['受け渡し',handoff]);
+  const info=[['店舗名',order.store],['電話番号',order.phone],['お客様名',customerName],['注文区分',labelOrder(order)]];info.push(['卸屋・帳合先',order.account||'-']);if(!customerCopy)info.push(['担当',order.staff||state.staff?.display_name||'-']);
   if(isPickupOrder(order))info.push(['会計',isPickupPaymentRecorded(order)?`会計済（${paymentMethodLabel(order)}）`:order.paid?'会計済':order.paymentMethod===PAYMENT.ON_PICKUP?'受け取り時会計':`未会計（${paymentMethodLabel(order)}予定）`]);
   const createdAtHtml=internalInfo.showCreatedAt?`<br><b>作成日時</b> ${new Date(order.createdAt||Date.now()).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})}`:'';
-  const pickupHtml=pickupNumberLabel(order)?`<div class="receiptPickupNumber"><span>お渡し番号</span><strong>${esc(pickupNumberLabel(order))}</strong><small>お受け取り時に、この番号をご提示ください。</small></div>`:'';
+  const pickupHtml=pickupNumberLabel(order)?`<div class="receiptPickupNumber"><span>お渡し番号</span><strong>${esc(pickupNumberLabel(order))}</strong>${receiptPickupScheduleHtml(order)}<small>お受け取り時に、この番号をご提示ください。</small></div>`:'';
   const infoHtml=info.map(([label,value])=>`<div class="receiptInfoCard"><div class="receiptInfoLabel">${esc(label)}</div><div class="receiptInfoValue">${esc(value||'-')}</div></div>`).join('');
   const itemsHtml=(order.items||[]).map(item=>`<tr><td><b>${esc(item.code)}</b></td><td>${esc(item.name)}</td><td class="num">${esc(item.qty)}</td><td class="num">${yen(item.price)}</td><td class="num"><b>${yen(item.price*item.qty)}</b></td></tr>`).join('');
   const notesHtml=order.notes?`<div class="receiptNote"><b>備考</b>${esc(order.notes).replace(/\n/g,'<br>')}</div>`:'';
@@ -690,7 +693,6 @@ function englishCustomerReceiptHtml(order){
   const orderNumber=receiptOrderNumber(order),count=itemCountOf(order),pickup=pickupNumberLabel(order),tax=orderTaxSummary(order);
   const orderType=order.type===ORDER_TYPE.NORMAL?'Wholesale order':({now:'Immediate purchase',later:'Pickup at the venue',hotel:'Hotel delivery',ship:'Delivery to specified address'}[order.handoff]||'On-site purchase');
   const info=[['Store',order.store],['Phone',order.phone],['Customer',order.customer],['Order type',orderType],['Wholesaler / Account',order.account||'-']];
-  if(order.type!==ORDER_TYPE.NORMAL)info.push(['Handoff',({now:'Immediate handoff',later:order.pickupDate?`Venue pickup on ${order.pickupDate}`:'Venue pickup',hotel:'Hotel delivery',ship:'Address delivery'}[order.handoff]||'-')]);
   if(isPickupOrder(order)){
     const method={credit:'Credit card',cash:'Cash',on_pickup:'Payment on pickup'}[order.paymentMethod]||'Not specified';
     info.push(['Payment',isPickupPaymentRecorded(order)?`Paid (${method})`:order.paid?'Paid':order.paymentMethod===PAYMENT.ON_PICKUP?'Payment on pickup':`Unpaid (${method})`]);
@@ -699,7 +701,7 @@ function englishCustomerReceiptHtml(order){
   const itemsHtml=(order.items||[]).map(item=>`<tr><td><b>${esc(isShippingItem(item)?'-':item.code)}</b></td><td>${esc(isShippingItem(item)?'Shipping (flat rate)':item.name)}</td><td class="num">${esc(item.qty)}</td><td class="num">${yen(item.price)}</td><td class="num"><b>${yen(item.price*item.qty)}</b></td></tr>`).join('');
   const notesHtml=order.notes?`<div class="receiptNote"><b>Notes</b>${esc(order.notes).replace(/\n/g,'<br>')}</div>`:'';
   const createdAt=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'short'}).format(new Date(order.createdAt||Date.now()));
-  return `<div lang="en"><div class="receiptCopyLabel">Customer Copy</div><div class="receiptHeaderSimple"><div class="receiptBrandBlock"><img class="receiptBrandLogo" src="assets/sun_nishimura_logo.jpg" alt="SAN NISHIMURA CO., LTD."><div><div class="receiptBrandName">SAN NISHIMURA CO., LTD.</div></div></div><div class="receiptDocMeta"><div class="receiptDocTitle">Customer Copy</div><div class="receiptDocSub">Exhibition Order Receipt</div><div class="receiptMetaLine"><b>Order No.</b> ${esc(orderNumber)}<br><b>Created (JST)</b> ${esc(createdAt)}</div></div></div><div class="receiptInfoBand">${infoHtml}</div>${pickup?`<div class="receiptPickupNumber"><span>Pickup No.</span><strong>${esc(pickup)}</strong><small>Please show this number when collecting your order.</small></div>`:''}<div class="receiptSection"><div class="receiptSectionHead"><div class="receiptSectionTitle">Order Details</div><div class="receiptSectionHint">${count} ${count===1?'item':'items'}</div></div><table class="receiptTable"><colgroup><col class="code"><col><col class="qty"><col class="unit"><col class="subtotal"></colgroup><thead><tr><th>Item No.</th><th>Product</th><th class="num">Qty</th><th class="num">Unit Price (excl. tax)</th><th class="num">Amount (excl. tax)</th></tr></thead><tbody>${itemsHtml}</tbody></table></div><div class="receiptFooterGrid"><div class="receiptMemoStack">${notesHtml}</div><div><div class="receiptSummaryBox"><div class="receiptSummaryRow"><span>Items</span><span>${count}</span></div><div class="receiptSummaryRow"><span>Subtotal (excl. tax)</span><span>${yen(tax.subtotal)}</span></div><div class="receiptSummaryRow"><span>Tax (10%)</span><span>${yen(tax.tax)}</span></div><div class="receiptSummaryRow total"><span>Total (incl. tax)</span><span>${yen(tax.total)}</span></div></div><div class="receiptCurrencyNote">Currency: JPY</div></div></div><div class="receiptFooterMini"><span>SAN NISHIMURA CO., LTD.</span><span>Order No. ${esc(orderNumber)}</span></div></div>`;
+  return `<div lang="en"><div class="receiptCopyLabel">Customer Copy</div><div class="receiptHeaderSimple"><div class="receiptBrandBlock"><img class="receiptBrandLogo" src="assets/sun_nishimura_logo.jpg" alt="SAN NISHIMURA CO., LTD."><div><div class="receiptBrandName">SAN NISHIMURA CO., LTD.</div></div></div><div class="receiptDocMeta"><div class="receiptDocTitle">Customer Copy</div><div class="receiptDocSub">Exhibition Order Receipt</div><div class="receiptMetaLine"><b>Order No.</b> ${esc(orderNumber)}<br><b>Created (JST)</b> ${esc(createdAt)}</div></div></div><div class="receiptInfoBand">${infoHtml}</div>${pickup?`<div class="receiptPickupNumber"><span>Pickup No.</span><strong>${esc(pickup)}</strong>${receiptPickupScheduleHtml(order,{english:true})}<small>Please show this number when collecting your order.</small></div>`:''}<div class="receiptSection"><div class="receiptSectionHead"><div class="receiptSectionTitle">Order Details</div><div class="receiptSectionHint">${count} ${count===1?'item':'items'}</div></div><table class="receiptTable"><colgroup><col class="code"><col><col class="qty"><col class="unit"><col class="subtotal"></colgroup><thead><tr><th>Item No.</th><th>Product</th><th class="num">Qty</th><th class="num">Unit Price (excl. tax)</th><th class="num">Amount (excl. tax)</th></tr></thead><tbody>${itemsHtml}</tbody></table></div><div class="receiptFooterGrid"><div class="receiptMemoStack">${notesHtml}</div><div><div class="receiptSummaryBox"><div class="receiptSummaryRow"><span>Items</span><span>${count}</span></div><div class="receiptSummaryRow"><span>Subtotal (excl. tax)</span><span>${yen(tax.subtotal)}</span></div><div class="receiptSummaryRow"><span>Tax (10%)</span><span>${yen(tax.tax)}</span></div><div class="receiptSummaryRow total"><span>Total (incl. tax)</span><span>${yen(tax.total)}</span></div></div><div class="receiptCurrencyNote">Currency: JPY</div></div></div><div class="receiptFooterMini"><span>SAN NISHIMURA CO., LTD.</span><span>Order No. ${esc(orderNumber)}</span></div></div>`;
 }
 
 function printOrders(orders,title,withCover=true,{targetLabel='全期間',customerCopy=false,inputOnly=false,includeAttachments=false}={}){

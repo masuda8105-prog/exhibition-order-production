@@ -12,18 +12,23 @@ const receipt=label=>`<article class="printSheet printPage receiptSheet"><div cl
 const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
 try{
   const page=await browser.newPage();
-  await page.setContent(`<style>${css}</style><div id="printArea" class="printArea">${receipt('お客様控え')}${receipt('会社控え')}</div><div class="receiptCaptureStage"><article class="receiptSheet captureMode"><div class="receiptInfoLabel">店舗名</div><div class="receiptInfoValue">検証用店舗</div><table class="receiptTable"><tr><td>商品</td></tr></table></article></div>`);
+  await page.setContent(`<style>${css}</style><div id="printArea" class="printArea">${receipt('お客様控え')}${receipt('会社控え')}</div><div class="receiptCaptureStage"><article class="receiptSheet captureMode"><div class="receiptInfoLabel">店舗名</div><div class="receiptInfoValue">検証用店舗</div><div class="receiptPickupSchedule">お渡し日：2099年1月2日（金）　13時以降</div><table class="receiptTable"><tr><td>商品</td></tr></table></article></div>`);
+  await page.locator('#printArea .receiptInfoBand').evaluateAll(elements=>elements.forEach(element=>element.insertAdjacentHTML('afterend','<div class="receiptPickupNumber"><strong>NEO-12</strong><div class="receiptPickupSchedule">お渡し日：2099年1月2日（金）　13時以降</div></div>')));
   const captureSizes=await page.locator('.receiptCaptureStage').evaluate(element=>{
     const px=selector=>parseFloat(getComputedStyle(element.querySelector(selector)).fontSize);
-    return {label:px('.receiptInfoLabel'),value:px('.receiptInfoValue'),item:px('.receiptTable')};
+    return {label:px('.receiptInfoLabel'),value:px('.receiptInfoValue'),item:px('.receiptTable'),scheduleColor:getComputedStyle(element.querySelector('.receiptPickupSchedule')).color};
   });
   assert.ok(captureSizes.label>=13&&captureSizes.value>=17&&captureSizes.item>=16,JSON.stringify(captureSizes));
+  assert.equal(captureSizes.scheduleColor,'rgb(180, 35, 24)');
   await page.emulateMedia({media:'print'});
   const printSizes=await page.locator('#printArea .receiptSheet').first().evaluate(element=>{
     const px=selector=>parseFloat(getComputedStyle(element.querySelector(selector)).fontSize);
     return {label:px('.receiptInfoLabel'),value:px('.receiptInfoValue'),item:px('.receiptTable'),heading:px('.receiptTable th'),total:px('.receiptSummaryRow.total')};
   });
   assert.deepEqual(printSizes,{label:6.5,value:8.5,item:8.5,heading:10,total:13});
+  const schedule=await page.locator('#printArea .receiptPickupSchedule').first().evaluate(element=>({color:getComputedStyle(element).color,size:parseFloat(getComputedStyle(element).fontSize)}));
+  assert.equal(schedule.color,'rgb(180, 35, 24)');
+  assert.ok(schedule.size>=17);
   const bytes=await page.pdf({format:'A4',preferCSSPageSize:true,printBackground:true});
   const document=await pdfjs.getDocument({data:new Uint8Array(bytes),useSystemFonts:true}).promise;
   const pages=[];
