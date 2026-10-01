@@ -639,7 +639,7 @@ async function showCustomerReceipt(order){
   try{
     await loadOrders();
     const current=state.orders.find(item=>item.localId===order.localId);if(!current)throw new Error('ORDER_NOT_AVAILABLE');
-    const html=receiptDocumentHtml(current,{customerCopy:true}),path=await receiptImagePath(current.localId,html),blob=await customerReceiptPng(html);
+    const html=receiptDocumentHtml(current,{customerCopy:true}),path=await receiptImagePath(current.localId,`readable-copy-20261001:\n${html}`),blob=await customerReceiptPng(html);
     if(!isCurrent())return;
     await ensureFreshSession();
     const storageBase=`${sbBase()}/storage/v1`;
