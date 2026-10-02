@@ -6,7 +6,7 @@ import {browserConfigSource,loadConfigEnvironment} from './config.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const destination=path.join(root,'_site');
 const files=[
-  'index.html','styles.css','app.js','workflow.js','security.js','receipt-share.js','order-attachments.js','order-pdf.js','manifest.webmanifest','assets/sun_nishimura_logo.jpg',
+  'index.html','styles.css','app.js','workflow.js','security.js','receipt-share.js','order-attachments.js','order-pdf.js','exhibition-reports.js','report-model.js','manifest.webmanifest','assets/sun_nishimura_logo.jpg',
   'assets/neo-icon.svg','assets/neo-icon-192.png','assets/neo-icon-512.png','assets/apple-touch-icon.png',
   'vendor/jspdf.umd.min.js','vendor/jspdf.LICENSE','vendor/qrcode.min.js','vendor/html2canvas.min.js',
 ];

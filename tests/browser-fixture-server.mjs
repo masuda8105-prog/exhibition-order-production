@@ -3,11 +3,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomBytes} from 'node:crypto';
+import {createReportDemo} from './report-demo-fixture.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..','_site');
 const portArgument=process.argv.find(value=>value.startsWith('--port='));
 const port=Number(portArgument?.slice('--port='.length)||process.env.BROWSER_FIXTURE_PORT||8766);
 const keepPrint=process.argv.includes('--keep-print')||process.env.BROWSER_FIXTURE_KEEP_PRINT==='1';
+const demo=process.argv.includes('--report-demo')?createReportDemo():null;
 const publicFiles=new Map([
   ['/','index.html'],
   ['/index.html','index.html'],
@@ -18,6 +20,8 @@ const publicFiles=new Map([
   ['/assets/apple-touch-icon.png','assets/apple-touch-icon.png'],
   ['/styles.css','styles.css'],
   ['/app.js','app.js'],
+  ['/exhibition-reports.js','exhibition-reports.js'],
+  ['/report-model.js','report-model.js'],
   ['/order-pdf.js','order-pdf.js'],
   ['/vendor/jspdf.umd.min.js','vendor/jspdf.umd.min.js'],
   ['/workflow.js','workflow.js'],
@@ -30,6 +34,7 @@ const publicFiles=new Map([
 ]);
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.jpg':'image/jpeg','.png':'image/png','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
 const orders=new Map();
+if(demo)for(const order of demo.orders)orders.set(order.id,order);
 let pickupNumberSequence=0,pickupGeneration=1;
 const resetRequests=new Map();
 const allocatePickup=row=>{if(!row.pickup_number&&row.payload?.type==='spot'&&row.payload?.handoff==='later'&&!row.deleted_at){row.pickup_number=++pickupNumberSequence;row.pickup_generation=pickupGeneration}return row};
@@ -54,7 +59,7 @@ const server=http.createServer(async(request,response)=>{
   }
   if(url.pathname==='/online-config.js'){
     response.writeHead(200,{'content-type':mime['.js'],'cache-control':'no-store'});
-    return response.end(`window.EXHIBITION_CONFIG=Object.freeze({supabaseUrl:'http://127.0.0.1:${port}',publishableKey:'sb_publishable_browser_fixture',eventName:'検証用展示会',currency:'JPY'});`);
+    return response.end(`window.EXHIBITION_CONFIG=Object.freeze({supabaseUrl:'http://127.0.0.1:${port}',publishableKey:'sb_publishable_browser_fixture',eventName:${JSON.stringify(demo?.eventName||'検証用展示会')},currency:'JPY'});`);
   }
   if(url.pathname==='/auth/v1/token'&&request.method==='POST'){
     const credentials=await readJson(request);
@@ -97,6 +102,7 @@ const server=http.createServer(async(request,response)=>{
     return sendJson(response,403,{error:'private_bucket'});
   }
   if(url.pathname.startsWith('/rest/v1/')&&request.headers.authorization!=='Bearer fixture-access-token')return sendJson(response,401,{error:'login_required'});
+  if(demo&&url.pathname.startsWith('/rest/v1/')){const result=await demo.handle(url,request,readJson);if(result)return sendJson(response,result.status||200,result.body);}
   if(url.pathname==='/rest/v1/rpc/reset_exhibition_pickup_counter'&&request.method==='POST'){
     const body=await readJson(request);
     if(body.p_confirmation!=='リセット'||!body.p_request_id)return sendJson(response,400,{error:'confirmation_required'});
@@ -137,6 +143,7 @@ const server=http.createServer(async(request,response)=>{
   if(!relative)return sendJson(response,404,{error:'not_found'});
   try{
     let body=await fs.readFile(path.join(root,relative));
+    if(demo&&relative==='index.html')body=Buffer.from(body.toString('utf8').replace('</body>',`<script>window.addEventListener('load',()=>{const banner=document.createElement('div');banner.textContent='試用デモ・架空データ ／ 入力はこのデモ内だけに保存されます';banner.style.cssText='position:sticky;top:0;z-index:100;background:#fef3c7;color:#78350f;text-align:center;padding:10px;font-size:13px;font-weight:bold';document.body.prepend(banner);if(!document.getElementById('loginView').classList.contains('hidden')){document.getElementById('loginEmail').value='fixture@example.invalid';document.getElementById('loginPassword').value='fixture-password';document.getElementById('loginBtn').click();}});</script></body>`));
     if(relative==='app.js'&&!keepPrint)body=Buffer.from(body.toString('utf8').replace('window.print();',"window.__FIXTURE_PRINT_CALLED__=true;window.dispatchEvent(new Event('afterprint'));"));
     response.writeHead(200,{'content-type':mime[path.extname(relative)]||'application/octet-stream','cache-control':'no-store'});
     response.end(body);

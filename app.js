@@ -3,6 +3,7 @@ import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmShared
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
 import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20260930-officephotos1';
+import {createExhibitionReports} from './exhibition-reports.js?v=20261002-reports1';
 
 const cfg=window.EXHIBITION_CONFIG||{};
 const $=id=>document.getElementById(id);
@@ -13,6 +14,12 @@ const attachmentStore=createAttachmentStore();
 let attachmentOperation=null,attachmentPrintBusy=false,printGeneration=0;
 let printOriginalTitle='';
 const state={online:false,session:null,staff:null,orders:[],products:[],accounts:[],draft:null,rememberDraftInput:null,signalsBound:false,syncTimer:null,syncInFlight:null,refreshPromise:null,lastSyncedAt:null,dataEpoch:0,tab:'active',sheetVersion:0,receiptBlobUrl:null};
+let exhibitionReports=null;
+function initializeExhibitionReports(){if(exhibitionReports)return;exhibitionReports=createExhibitionReports({state,cfg,toast,request:async(path,options={})=>{
+  if(!state.online||!state.session)throw new Error('LOGIN_REQUIRED');
+  await ensureFreshSession();
+  return fetchJson(`${sbBase()}/rest/v1/${path}`,{method:options.method||'GET',headers:{...sbHeaders(),Prefer:'return=representation'},...(options.body?{body:JSON.stringify(options.body)}:{})});
+}});}
 const yen=n=>Number.isFinite(Number(n))?`¥${Math.round(Number(n)).toLocaleString('ja-JP')}`:'価格未定';
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const isoDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo'}).format(d);
@@ -139,7 +146,7 @@ async function syncOrders(){
   return state.syncInFlight;
 }
 
-function render(){renderMetrics();renderTabs();renderOrders()}
+function render(){renderMetrics();renderTabs();renderOrders();exhibitionReports?.refresh()}
 function currentSearch(){return $('orderSearch').value.trim()}
 function filteredOrders(){const q=currentSearch();return state.orders.filter(order=>!order.deleted).filter(order=>q?orderMatchesSearch(order,q):groupOf(order)===state.tab)}
 function clearListModes(){$('orderSearch').value=''}
@@ -810,7 +817,7 @@ async function bootOnline(){
   }
 }
 function showLogin(){$('loginView').classList.remove('hidden');$('appView').classList.add('hidden');$('loginNetworkGuide').classList.toggle('hidden',navigator.onLine);$('loginBtn').disabled=!navigator.onLine}
-function showApp(){$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('eventName').textContent=cfg.eventName||'EXHIBITION';$('logoutBtn').classList.remove('hidden');markSynced();render();updateNewOrderButton();if(!state.syncTimer)state.syncTimer=setInterval(()=>{if(document.visibilityState==='visible')syncOrders().catch(()=>{})},12000)}
+function showApp(){initializeExhibitionReports();$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('eventName').textContent=cfg.eventName||'EXHIBITION';$('logoutBtn').classList.remove('hidden');markSynced();render();updateNewOrderButton();if(!state.syncTimer)state.syncTimer=setInterval(()=>{if(document.visibilityState==='visible')syncOrders().catch(()=>{})},12000)}
 function bindConnectivitySignals(){
   if(state.signalsBound)return;state.signalsBound=true;
   window.addEventListener('online',()=>{if(state.online)syncOrders().catch(()=>{});else if(storedSession())bootOnline();else showLogin()});
@@ -837,6 +844,7 @@ async function login(){
   finally{$('loginPassword').value='';$('loginBtn').disabled=!navigator.onLine}
 }
 function clearLocalApp(){
+  exhibitionReports?.clear();
   attachmentStore.clear();attachmentOperation=null;attachmentPrintBusy=false;printGeneration++;
   state.dataEpoch++;
   for(const order of state.orders)wipeOrderData(order);state.orders=[];
@@ -845,7 +853,7 @@ function clearLocalApp(){
   $('loginPassword').value='';closeSheet();$('sheetBody').innerHTML='';$('orders').innerHTML='';$('printArea').innerHTML='';showLogin();
 }
 async function logout(){
-  if(state.draft&&state.draft.stage!=='success'&&!confirm('未保存の入力内容は失われます。ログアウトしますか？'))return;
+  if((exhibitionReports?.hasDraft()||(state.draft&&state.draft.stage!=='success'))&&!confirm('未保存の入力内容は失われます。ログアウトしますか？'))return;
   try{if(state.session?.access_token)await fetchJson(`${sbBase()}/auth/v1/logout?scope=local`,{method:'POST',headers:sbHeaders()})}catch{}
   clearLocalApp();
 }
