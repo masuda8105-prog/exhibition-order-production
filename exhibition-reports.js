@@ -216,7 +216,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
     const frame=document.createElement('iframe');frame.style.cssText='position:fixed;left:-10000px;width:794px;height:1123px';frame.setAttribute('aria-hidden','true');document.body.append(frame);
     try{
       const doc=frame.contentDocument;doc.open();doc.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"></head><body></body></html>');doc.close();
-      const style=doc.createElement('style');style.textContent='*{box-sizing:border-box}body{margin:0;font:16px/1.6 sans-serif;color:#172033}.page{width:794px;height:1123px;padding:56px;background:white;overflow:hidden}h1{font-size:26px}h2{font-size:22px;border-bottom:1px solid #bbb}h3{font-size:19px}h4{font-size:17px}p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.reportTotal strong{display:block;font-size:30px}.reportMetrics{display:flex;flex-wrap:wrap;gap:20px}.reportMetrics small,.reportMetrics b,td small{display:block}.reportTable{border-collapse:collapse;width:100%;font-size:14px}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}.reportComment{border-left:3px solid #ddd;padding-left:12px;margin:12px 0}.reportPhotoFigure{margin:12px 0}.reportPhotoFigure img{width:100%;height:420px;object-fit:contain}.reportPhotoFigure figcaption{font-size:12px}';doc.head.append(style);
+      const style=doc.createElement('style');style.textContent='*{box-sizing:border-box}body{margin:0;font:16px/1.6 sans-serif;color:#172033}.page{width:794px;height:1123px;padding:56px;background:white;overflow:hidden}h1{font-size:26px}h2{font-size:22px;border-bottom:1px solid #bbb}h3{font-size:19px}h4{font-size:17px}p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.reportTotal strong{display:block;font-size:30px}.reportMetrics{display:flex;flex-wrap:wrap;gap:20px}.reportMetrics small,.reportMetrics b,td small{display:block}.reportTable{border-collapse:collapse;table-layout:fixed;width:100%;font-size:14px}.reportTable th:first-child{width:60%}.reportTable th:nth-child(2){width:12%}.reportTable th:nth-child(3){width:28%}.reportTable th,.reportTable td{vertical-align:top;overflow-wrap:anywhere}.reportTable th:not(:first-child),.reportTable td:not(:first-child){text-align:right}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}.reportComment{border-left:3px solid #ddd;padding-left:12px;margin:12px 0}.reportPhotoFigure{margin:12px 0}.reportPhotoFigure img{width:100%;height:420px;object-fit:contain}.reportPhotoFigure figcaption{font-size:12px}';doc.head.append(style);
       await signPhotos(reports);
       const source=doc.createElement('div');source.innerHTML=reportHtml();source.querySelectorAll('.reportRecordActions').forEach(node=>node.remove());
       await Promise.all([...source.querySelectorAll('img')].map(img=>img.decode()));
@@ -234,6 +234,13 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
       function pageFits(){return !page.lastElementChild||page.lastElementChild.getBoundingClientRect().bottom<=page.getBoundingClientRect().top+1067;}
       newPage();
       for(const block of blocks){
+        // Keep one table per page, with stable columns and one header.
+        if(block.tagName==='TABLE'&&page.lastElementChild?.tagName==='TABLE'){
+          const row=block.querySelector('tbody tr').cloneNode(true);
+          page.lastElementChild.querySelector('tbody').append(row);
+          if(pageFits())continue;
+          row.remove();
+        }
         page.append(block);
         if(!pageFits()){block.remove();
           const headings=[];while(page.lastElementChild?.matches('h1,h2,h3,h4')){const heading=page.lastElementChild;heading.remove();headings.unshift(heading);}
