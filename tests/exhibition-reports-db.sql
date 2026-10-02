@@ -36,10 +36,8 @@ begin
     insert into public.reports(exhibition_id,category,comment) values('codex_report_verification','positive','   ');
     raise exception 'EMPTY_COMMENT_ACCEPTED';
   exception when check_violation then null; end;
-  begin
-    update public.reports set comment='変更' where id=report_id;
-    raise exception 'REPORT_UPDATE_ACCEPTED';
-  exception when insufficient_privilege then null; end;
+  update public.reports set comment='変更' where id=report_id;
+  if not exists(select 1 from public.reports where id=report_id and comment='変更' and author_name=expected_name and user_id=auth.uid()) then raise exception 'OWN_REPORT_EDIT_FAILED'; end if;
   begin
     delete from public.reports where id=report_id;
     raise exception 'REPORT_DELETE_ACCEPTED';
@@ -82,5 +80,5 @@ begin
 end;
 $$;
 reset role;
-select 'PASS: staff save/read, server author/time, product validation, categories, empty text, duplicates, immutable reports, focus settings, non-staff denial, anonymous denial; test data rolled back' as verification;
+select 'PASS: staff save/read/edit, server author/time, product validation, categories, empty text, duplicates, physical-delete denial, focus settings, non-staff denial, anonymous denial; test data rolled back' as verification;
 rollback;

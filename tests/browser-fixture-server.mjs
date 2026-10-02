@@ -39,6 +39,7 @@ let pickupNumberSequence=0,pickupGeneration=1;
 const resetRequests=new Map();
 const allocatePickup=row=>{if(!row.pickup_number&&row.payload?.type==='spot'&&row.payload?.handoff==='later'&&!row.deleted_at){row.pickup_number=++pickupNumberSequence;row.pickup_generation=pickupGeneration}return row};
 const receiptImages=new Map(),signedImages=new Map();
+const reportPhotos=new Map(),reportPhotoTokens=new Map();
 
 function sendJson(response,status,value){
   response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});
@@ -69,6 +70,26 @@ const server=http.createServer(async(request,response)=>{
   }
   if(url.pathname==='/auth/v1/logout')return sendJson(response,200,{});
   if(url.pathname.startsWith('/storage/v1/')){
+    const reportSign='/storage/v1/object/sign/exhibition-report-photos/',reportUpload='/storage/v1/object/exhibition-report-photos/';
+    if(url.pathname.startsWith(reportSign)&&request.method==='GET'){
+      const path=url.pathname.slice(reportSign.length),token=reportPhotoTokens.get(url.searchParams.get('token'));
+      if(!token||token.path!==path||token.expires<Date.now()||!reportPhotos.has(path))return sendJson(response,403,{error:'invalid_signature'});
+      response.writeHead(200,{'content-type':'image/jpeg','cache-control':'no-store'});return response.end(reportPhotos.get(path));
+    }
+    if(url.pathname.startsWith(reportSign)||url.pathname.startsWith(reportUpload)){
+      if(request.headers.authorization!=='Bearer fixture-access-token')return sendJson(response,401,{error:'login_required'});
+      if(url.pathname.startsWith(reportUpload)&&request.method==='POST'){
+        const path=url.pathname.slice(reportUpload.length);if(reportPhotos.has(path))return sendJson(response,409,{error:'duplicate'});
+        const chunks=[];for await(const chunk of request)chunks.push(chunk);const bytes=Buffer.concat(chunks);
+        if(bytes[0]!==255||bytes[1]!==216)return sendJson(response,400,{error:'not_jpeg'});
+        reportPhotos.set(path,bytes);return sendJson(response,201,{Key:path});
+      }
+      if(url.pathname.startsWith(reportSign)&&request.method==='POST'){
+        const path=url.pathname.slice(reportSign.length);if(!reportPhotos.has(path))return sendJson(response,404,{error:'not_found'});
+        const token=randomBytes(20).toString('hex');reportPhotoTokens.set(token,{path,expires:Date.now()+3600000});
+        return sendJson(response,200,{signedURL:`/object/sign/exhibition-report-photos/${path}?token=${token}`});
+      }
+    }
     const signedPrefix='/storage/v1/object/sign/exhibition-receipts/',objectPrefix='/storage/v1/object/exhibition-receipts/',authenticatedPrefix='/storage/v1/object/authenticated/exhibition-receipts/';
     if(request.method==='GET'&&url.pathname.startsWith(signedPrefix)){
       const signed=signedImages.get(url.searchParams.get('token')),imagePath=url.pathname.slice(signedPrefix.length);

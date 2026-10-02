@@ -3,7 +3,7 @@ import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmShared
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
 import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20260930-officephotos1';
-import {createExhibitionReports} from './exhibition-reports.js?v=20261002-reports1';
+import {createExhibitionReports} from './exhibition-reports.js?v=20261002-reportphotos1';
 
 const cfg=window.EXHIBITION_CONFIG||{};
 const $=id=>document.getElementById(id);
@@ -15,7 +15,10 @@ let attachmentOperation=null,attachmentPrintBusy=false,printGeneration=0;
 let printOriginalTitle='';
 const state={online:false,session:null,staff:null,orders:[],products:[],accounts:[],draft:null,rememberDraftInput:null,signalsBound:false,syncTimer:null,syncInFlight:null,refreshPromise:null,lastSyncedAt:null,dataEpoch:0,tab:'active',sheetVersion:0,receiptBlobUrl:null};
 let exhibitionReports=null;
-function initializeExhibitionReports(){if(exhibitionReports)return;exhibitionReports=createExhibitionReports({state,cfg,toast,request:async(path,options={})=>{
+function initializeExhibitionReports(){if(exhibitionReports)return;exhibitionReports=createExhibitionReports({state,cfg,toast,photoApi:{
+  async upload(path,blob){await ensureFreshSession();try{return await fetchJson(`${sbBase()}/storage/v1/object/exhibition-report-photos/${path}`,{method:'POST',headers:{...sbHeaders(),'Content-Type':'image/jpeg'},body:blob});}catch(error){if(error.status===409||error.storageCode==='409'||error.storageCode===409)return;throw error;}},
+  async sign(path){await ensureFreshSession();const result=await fetchJson(`${sbBase()}/storage/v1/object/sign/exhibition-report-photos/${path}`,{method:'POST',headers:sbHeaders(),body:JSON.stringify({expiresIn:3600})});const signed=result.signedURL;if(typeof signed!=='string')throw new Error('INVALID_PHOTO_URL');const url=new URL(signed.startsWith('/object/')?`${sbBase()}/storage/v1${signed}`:signed,`${sbBase()}/storage/v1/`);if(url.origin!==new URL(sbBase()).origin)throw new Error('INVALID_PHOTO_URL');return url.href;},
+},request:async(path,options={})=>{
   if(!state.online||!state.session)throw new Error('LOGIN_REQUIRED');
   await ensureFreshSession();
   return fetchJson(`${sbBase()}/rest/v1/${path}`,{method:options.method||'GET',headers:{...sbHeaders(),Prefer:'return=representation'},...(options.body?{body:JSON.stringify(options.body)}:{})});

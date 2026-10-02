@@ -39,10 +39,15 @@ export function createReportDemo(){
         const body=await readJson(request);
         if(notes.some(note=>note.id===body.id))return {status:409,body:{message:'duplicate'}};
         if(!events.some(event=>event.id===body.exhibition_id)||!['positive','negative','venue','other'].includes(body.category)||!body.comment?.trim())return {status:400,body:{message:'invalid_report'}};
-        const note={...body,user_id:'fixture-user',author_name:'増田（デモ）',created_at:new Date().toISOString()};notes.push(note);return {status:201,body:[note]};
+        const now=new Date().toISOString();const note={...body,user_id:'fixture-user',author_name:'増田（デモ）',created_at:now,updated_at:now,photo_paths:[],deleted_at:null};notes.push(note);return {status:201,body:[note]};
       }
       const id=url.searchParams.get('id')?.replace(/^eq\./,''),event=url.searchParams.get('exhibition_id')?.replace(/^eq\./,'');
-      return {body:page(notes.filter(note=>(!id||note.id===id)&&(!event||note.exhibition_id===event)))};
+      if(request.method==='PATCH'){
+        const note=notes.find(value=>value.id===id),revision=url.searchParams.get('updated_at')?.replace(/^eq\./,'');
+        if(!note||note.deleted_at||(revision&&revision!==note.updated_at))return {body:[]};
+        const changes=await readJson(request);Object.assign(note,changes,{updated_at:new Date(Date.now()+1).toISOString()});return {body:[note]};
+      }
+      return {body:page(notes.filter(note=>(!id||note.id===id)&&(!event||note.exhibition_id===event)&&(url.searchParams.get('deleted_at')!=='is.null'||!note.deleted_at)))};
     }
     if(table==='save_exhibition_report_settings'){
       const {p_event,p_codes}=await readJson(request);
