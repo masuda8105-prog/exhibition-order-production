@@ -1,4 +1,4 @@
-import {REPORT_CATEGORIES,summarizeExhibition,groupReports,groupReportsByAuthor} from './report-model.js?v=20261002-compact1';
+import {REPORT_CATEGORIES,summarizeExhibition,groupReports,groupReportsByAuthor} from './report-model.js?v=20261002-layout1';
 import {orderFromCloudRow} from './workflow.js';
 import {preparePhoto,MAX_PHOTOS} from './order-attachments.js';
 
@@ -71,11 +71,11 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   function feedbackHtml(list){return REPORT_CATEGORIES.map(category=>{
     const entries=list.filter(entry=>entry.category===category.id);
     if(!entries.length)return '';
-    return `<section class="reportFeedback"><h4>${category.title}</h4>${groupReportsByAuthor(entries).map(author=>`<section class="reportAuthorGroup"><h5>${esc(author.name)}</h5>${author.reports.map(entry=>`<div class="reportComment"><p>${esc(entry.comment)}</p>${entry.user_id===state.session?.user?.id?`<div class="reportRecordActions"><button type="button" data-edit-report="${esc(entry.id)}">書き直す</button><button type="button" data-delete-report="${esc(entry.id)}">削除</button></div>`:''}</div><div class="reportPhotoGallery">${(entry.photo_paths||[]).map(path=>{const url=photoUrls.get(path)?.url;return url?`<figure class="reportPhotoFigure"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" crossorigin="anonymous" alt="${esc(entry.product_code?`No.${entry.product_code}の写真`:'会場の写真')}"></a></figure>`:'<p class="reportPhotoMissing">写真を読み込めませんでした。「同期」で再試行してください。</p>';}).join('')}</div>`).join('')}</section>`).join('')}</section>`;
+    return `<section class="reportFeedback reportFeedback-${category.id}"><h4 class="reportCategoryHeading reportCategory-${category.id}">${category.title}</h4>${groupReportsByAuthor(entries).map(author=>`<section class="reportAuthorGroup"><h5 class="reportAuthorHeading"><span>記入者</span> ${esc(author.name)}</h5>${author.reports.map(entry=>`<div class="reportComment"><p>${esc(entry.comment)}</p>${entry.user_id===state.session?.user?.id?`<div class="reportRecordActions"><button type="button" data-edit-report="${esc(entry.id)}">書き直す</button><button type="button" data-delete-report="${esc(entry.id)}">削除</button></div>`:''}</div><div class="reportPhotoGallery">${(entry.photo_paths||[]).map(path=>{const url=photoUrls.get(path)?.url;return url?`<figure class="reportPhotoFigure"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" crossorigin="anonymous" alt="${esc(entry.product_code?`No.${entry.product_code}の写真`:'会場の写真')}"></a></figure>`:'<p class="reportPhotoMissing">写真を読み込めませんでした。「同期」で再試行してください。</p>';}).join('')}</div>`).join('')}</section>`).join('')}</section>`;
   }).join('');}
   function reportHtml(){
-    const event=currentEvent(),grouped=groupReports(reports);
-    return `<article id="exhibitionReport"><div class="reportSummary"><h1>${esc(event.name)} 展示会レポート</h1><h2>1. 基本情報</h2><p>開催日：${esc(event.start_date||'未登録')} ～ ${esc(event.end_date||'未登録')}</p><p>会場：${esc(event.venue||'未登録')}</p><p>参加者：${esc((event.participants||[]).join('、')||'未登録')}</p><h2>2. 売上</h2>${salesHtml(true)}</div><div class="reportDetails"><h2>4. 商品別フィードバック</h2>${grouped.products.map(([code,list])=>`<section><h3>${productLabel(code)}</h3>${feedbackHtml(list)}</section>`).join('')||'<p>まだ気づきの登録はありません</p>'}<h2 data-report-section-start="true">5. 会場・運営</h2>${feedbackHtml(grouped.general.filter(item=>item.category==='venue'))||'<p>まだ気づきの登録はありません</p>'}<h2 data-report-section-start="true">6. その他気づき・次回課題</h2>${feedbackHtml(grouped.general.filter(item=>item.category!=='venue'))||'<p>まだ気づきの登録はありません</p>'}</div></article>`;
+    const event=currentEvent(),grouped=groupReports(reports),soldProducts=new Map(summarizeExhibition(currentOrders()).products.map(product=>[product.code,product.name]));
+    return `<article id="exhibitionReport"><div class="reportSummary"><h1>${esc(event.name)} 展示会レポート</h1><h2>1. 基本情報</h2><p>開催日：${esc(event.start_date||'未登録')} ～ ${esc(event.end_date||'未登録')}</p><p>会場：${esc(event.venue||'未登録')}</p><p>参加者：${esc((event.participants||[]).join('、')||'未登録')}</p><h2>2. 売上</h2>${salesHtml(true)}</div><div class="reportDetails"><h2>4. 商品別フィードバック</h2>${grouped.products.map(([code,list])=>`<section class="reportProduct"><h3 class="reportProductHeading"><span class="reportProductCode">No.${esc(code)}</span><span class="reportProductName">${esc(state.products.find(item=>String(item.code)===code)?.name||soldProducts.get(code)||'商品名未登録')}</span></h3>${feedbackHtml(list)}</section>`).join('')||'<p>まだ気づきの登録はありません</p>'}<h2 data-report-section-start="true">5. 会場・運営</h2>${feedbackHtml(grouped.general.filter(item=>item.category==='venue'))||'<p>まだ気づきの登録はありません</p>'}<h2 data-report-section-start="true">6. その他気づき・次回課題</h2>${feedbackHtml(grouped.general.filter(item=>item.category!=='venue'))||'<p>まだ気づきの登録はありません</p>'}</div></article>`;
   }
   function adminHtml(){
     return `<details class="reportAdmin"><summary>展示会の管理</summary><form id="eventForm"><label>展示会ID<input name="id" pattern="[a-z0-9_]+" required value="${esc(selected)}" ${events.some(event=>event.id===selected)?'readonly':''}></label><label>展示会名<input name="name" required value="${esc(currentEvent().name)}"></label><label>注文の展示会名<input name="order_event_name" required value="${esc(currentEvent().order_event_name)}"></label><label>開始日<input name="start_date" type="date" value="${esc(currentEvent().start_date||'')}"></label><label>終了日<input name="end_date" type="date" value="${esc(currentEvent().end_date||'')}"></label><label>会場<input name="venue" value="${esc(currentEvent().venue||'')}"></label><label>参加者（カンマ区切り）<input name="participants" value="${esc((currentEvent().participants||[]).join(','))}"></label><p id="eventError" class="errorText"></p><button class="primary" ${busy?'disabled':''}>管理内容を保存</button><button type="button" id="newReportEvent" class="secondary">別の展示会を追加</button></form></details>`;
@@ -216,7 +216,20 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
     const frame=document.createElement('iframe');frame.style.cssText='position:fixed;left:-10000px;width:794px;height:1123px';frame.setAttribute('aria-hidden','true');document.body.append(frame);
     try{
       const doc=frame.contentDocument;doc.open();doc.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"></head><body></body></html>');doc.close();
-      const style=doc.createElement('style');style.textContent='*{box-sizing:border-box}body{margin:0;font:14px/1.5 sans-serif;color:#172033}.page{width:794px;height:1123px;padding:56px;background:white;overflow:hidden}h1{font-size:26px}h2{font-size:19px;border-bottom:1px solid #bbb}h3{font-size:17px}h4{font-size:15px}h5{font-size:14px;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #e5e7eb}p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.reportTotal strong{display:block;font-size:30px}.reportMetrics{display:flex;flex-wrap:wrap;gap:20px}.reportMetrics small,.reportMetrics b,td small{display:block}.reportTable{border-collapse:collapse;table-layout:fixed;width:100%;font-size:14px}.reportTable th:first-child{width:60%}.reportTable th:nth-child(2){width:12%}.reportTable th:nth-child(3){width:28%}.reportTable th,.reportTable td{vertical-align:top;overflow-wrap:anywhere}.reportTable th:not(:first-child),.reportTable td:not(:first-child){text-align:right}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}.reportComment{border-left:3px solid #ddd;padding-left:10px;margin:8px 0}.reportPhotoRow{display:flex;gap:12px;align-items:flex-start;margin:12px 0}.reportPhotoFigure{margin:0;width:219px;flex:0 0 219px}.reportPhotoFigure img{display:block;max-width:219px;max-height:180px}.reportPhotoFigure figcaption{font-size:12px}.reportSummary{font-size:12px;line-height:1.4}.reportSummary h1{font-size:22px;margin:0 0 14px}.reportSummary h2{font-size:16px;margin:14px 0 7px}.reportSummary p{margin:4px 0}.reportSummary .reportTotal strong{font-size:26px}.reportSummary .reportTable{font-size:12px}.reportSummary td,.reportSummary th{padding:4px 6px}.reportSummary td small{font-size:11px}.reportSummary .reportMetrics{gap:12px 16px}.reportSummary .reportHandoffs h3{font-size:13px;margin:12px 0 6px}';doc.head.append(style);
+      const style=doc.createElement('style');style.textContent='*{box-sizing:border-box}body{margin:0;font:14px/1.5 sans-serif;color:#172033}.page{width:794px;height:1123px;padding:56px;background:white;overflow:hidden}h1{font-size:26px}h2{font-size:19px;border-bottom:1px solid #bbb}h3{font-size:17px}h4{font-size:15px}h5{font-size:14px;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #e5e7eb}p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.reportTotal strong{display:block;font-size:30px}.reportMetrics{display:flex;flex-wrap:wrap;gap:20px}.reportMetrics small,.reportMetrics b,td small{display:block}.reportTable{border-collapse:collapse;table-layout:fixed;width:100%;font-size:14px}.reportTable th:first-child{width:60%}.reportTable th:nth-child(2){width:12%}.reportTable th:nth-child(3){width:28%}.reportTable th,.reportTable td{vertical-align:top;overflow-wrap:anywhere}.reportTable th:not(:first-child),.reportTable td:not(:first-child){text-align:right}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}.reportComment{border-left:3px solid #ddd;padding-left:10px;margin:8px 0}.reportPhotoRow{display:flex;gap:12px;align-items:flex-start;margin:12px 0}.reportPhotoFigure{margin:0;width:219px;flex:0 0 219px}.reportPhotoFigure img{display:block;max-width:219px;max-height:180px}.reportPhotoFigure figcaption{font-size:12px}.reportSummary{font-size:12px;line-height:1.4}.reportSummary h1{font-size:22px;margin:0 0 14px}.reportSummary h2{font-size:16px;margin:14px 0 7px}.reportSummary p{margin:4px 0}.reportSummary .reportTotal strong{font-size:26px}.reportSummary .reportTable{font-size:12px}.reportSummary td,.reportSummary th{padding:4px 6px}.reportSummary td small{font-size:11px}.reportSummary .reportMetrics{gap:12px 16px}.reportSummary .reportHandoffs h3{font-size:13px;margin:12px 0 6px}'+`
+.reportProductHeading{background:#172f46;color:#fff;border-radius:6px;padding:10px 14px;margin:22px 0 12px;line-height:1.4}
+.reportProductCode{display:block;font-size:11px;font-weight:500;color:#e2ebf2;margin-bottom:3px}
+.reportProductName{display:block;font-size:19px;font-weight:700;overflow-wrap:anywhere}
+.reportCategoryHeading{font-size:14px;border-left:4px solid #59748d;background:#eef2f6;padding:6px 10px;margin:12px 0 8px 14px;color:#263e54}
+.reportCategory-positive{border-color:#35816b;background:#edf6f1;color:#205b49}
+.reportCategory-negative{border-color:#b07935;background:#fbf3e8;color:#795019}
+.reportAuthorHeading{font-size:13px;border:0;margin:10px 0 4px 28px;padding:0;color:#344054}
+.reportAuthorHeading span{font-size:10px;font-weight:400;color:#667085;margin-right:5px}
+.reportComment{margin:5px 0 8px 28px;border-left:0;padding-left:12px;position:relative}
+.reportComment:before{content:'•';position:absolute;left:0;top:0;color:#8492a3}
+.reportComment p{margin:0;line-height:1.55}
+.reportPhotoRow{margin-left:0}
+`;doc.head.append(style);
       await signPhotos(reports);
       const source=doc.createElement('div');source.innerHTML=reportHtml();source.querySelectorAll('.reportRecordActions').forEach(node=>node.remove());
       await Promise.all([...source.querySelectorAll('img')].map(img=>img.decode()));
@@ -251,12 +264,17 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
       }
       flatten(source.firstElementChild);
       await doc.fonts.ready;
-      const pages=[];let page;
+      const pages=[];let page;let contextHeadings=[];
       function newPage(){page=doc.createElement('div');page.className='page';doc.body.append(page);pages.push(page);}
       function pageFits(){return !page.lastElementChild||page.lastElementChild.getBoundingClientRect().bottom<=page.getBoundingClientRect().top+1067;}
       newPage();
       for(const block of blocks){
-        if(block.dataset.reportPageStart){newPage();continue;}
+        if(block.dataset.reportPageStart){contextHeadings=[];newPage();continue;}
+        if(block.tagName==='H2')contextHeadings=[];
+        if(block.matches('.reportProductHeading,.reportCategoryHeading,.reportAuthorHeading')){
+          const level=Number(block.tagName.slice(1));
+          contextHeadings=contextHeadings.filter(heading=>Number(heading.tagName.slice(1))<level);contextHeadings.push(block);
+        }
         if(block.classList.contains('reportSummary')){
           page.append(block);
           const height=block.getBoundingClientRect().height;
@@ -276,14 +294,18 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
         page.append(block);
         if(!pageFits()){block.remove();
           const headings=[];while(page.lastElementChild?.matches('h1,h2,h3,h4,h5')){const heading=page.lastElementChild;heading.remove();headings.unshift(heading);}
-          if(page.children.length)newPage();for(const heading of headings)page.append(heading);page.append(block);
+          if(page.children.length){
+            newPage();
+            const firstLevel=Math.min(...[...headings,block].filter(node=>node.matches('h1,h2,h3,h4,h5')).map(node=>Number(node.tagName.slice(1))));
+            for(const heading of contextHeadings.filter(node=>Number(node.tagName.slice(1))<firstLevel))page.append(heading.cloneNode(true));
+          }for(const heading of headings)page.append(heading);page.append(block);
           if(!pageFits()){
             // Split long comments by text, never crop a recorded observation.
             const paragraph=block.querySelector('p');if(!paragraph)throw new Error('PDF_BLOCK_TOO_LONG');
             const text=paragraph.textContent;block.remove();let cursor=0;
             while(cursor<text.length){let low=1,high=text.length-cursor,best=0;const part=block.cloneNode(true);page.append(part);
               while(low<=high){const mid=Math.floor((low+high)/2);part.querySelector('p').textContent=text.slice(cursor,cursor+mid);if(pageFits()){best=mid;low=mid+1;}else high=mid-1;}
-              if(!best)throw new Error('PDF_BLOCK_TOO_LONG');part.querySelector('p').textContent=text.slice(cursor,cursor+best);cursor+=best;if(cursor<text.length)newPage();
+              if(!best)throw new Error('PDF_BLOCK_TOO_LONG');part.querySelector('p').textContent=text.slice(cursor,cursor+best);cursor+=best;if(cursor<text.length){newPage();for(const heading of contextHeadings)page.append(heading.cloneNode(true));}
             }
           }
         }

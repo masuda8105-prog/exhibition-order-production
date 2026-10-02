@@ -127,3 +127,22 @@ html,body{max-width:100%;overflow-x:hidden}.app{padding-bottom:142px}.syncLine{f
 .reportPhotoActions{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}.reportPhotoActions button{padding:10px;min-height:46px}.reportPhotoGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.reportPhotoGrid img{width:100%;height:140px;object-fit:cover;border-radius:8px}.reportPhotoGrid button{width:100%;min-height:42px;margin:5px 0 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff}.reportPhotoFigure{margin:12px 0 22px}.reportPhotoFigure img{display:block;width:auto;height:auto;max-width:min(100%,480px);max-height:280px;border-radius:10px}.reportPhotoFigure figcaption{font-size:12px;color:#667085}.reportRecordActions{display:flex;gap:10px;margin-top:10px}.reportRecordActions button{min-height:42px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff}.reportRecordActions [data-delete-report]{color:#b42318}.reportPanel input[hidden]{display:none}
 .reportPhotoGallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:12px 0 22px}.reportPhotoGallery .reportPhotoFigure{margin:0;min-width:0}.reportPhotoGallery .reportPhotoFigure img{max-width:100%;max-height:180px}
 .reportAuthorGroup h5{font-size:16px;margin:20px 0 10px;padding-bottom:6px;border-bottom:1px solid #e5e7eb}.reportAuthorGroup .reportComment{margin:12px 0}
+
+/* Product → feedback category → author → comments. */
+#exhibitionReport .reportDetails>h2{font-size:22px;margin:32px 0 18px;padding-bottom:10px;border-bottom:2px solid #172f46;color:#172f46}
+.reportProduct{border:1px solid #dce3ea;border-radius:12px;margin:20px 0 28px;overflow:hidden;background:#fff}
+#exhibitionReport .reportProductHeading{margin:0;padding:16px 18px;background:#172f46;color:#fff;line-height:1.4}
+.reportProductCode{display:block;font-size:12px;font-weight:500;color:#e2ebf2;margin-bottom:4px}
+.reportProductName{display:block;font-size:21px;font-weight:750;overflow-wrap:anywhere}
+.reportFeedback{margin:16px 18px 20px}
+#exhibitionReport .reportCategoryHeading{font-size:15px;margin:0 0 12px;padding:8px 12px;border-left:4px solid #59748d;background:#eef2f6;color:#263e54;border-radius:0 6px 6px 0}
+#exhibitionReport .reportCategory-positive{border-color:#35816b;background:#edf6f1;color:#205b49}
+#exhibitionReport .reportCategory-negative{border-color:#b07935;background:#fbf3e8;color:#795019}
+#exhibitionReport .reportAuthorHeading{font-size:14px;border:0;margin:16px 0 6px;padding:0;color:#344054}
+.reportAuthorHeading span{font-size:11px;font-weight:400;color:#667085;margin-right:5px}
+.reportAuthorGroup{margin-left:14px}
+#exhibitionReport .reportComment{border:0;padding-left:14px;margin:6px 0 10px;position:relative}
+#exhibitionReport .reportComment:before{content:'•';position:absolute;left:0;top:0;color:#8492a3}
+#exhibitionReport .reportComment p{margin:0;line-height:1.65}
+#exhibitionReport .reportRecordActions{margin-top:6px}
+@media(max-width:480px){.reportFeedback{margin:14px 12px 18px}.reportAuthorGroup{margin-left:8px}.reportProductName{font-size:19px}#exhibitionReport .reportProductHeading{padding:14px 12px}}
