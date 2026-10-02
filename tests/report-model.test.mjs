@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {summarizeExhibition,groupReports} from '../report-model.js';
+import {summarizeExhibition,groupReports,groupReportsByAuthor} from '../report-model.js';
+test('記入者ごとに同じ商品の複数コメントをまとめ、各記入者の中では古い順に追加する',()=>{
+  const groups=groupReportsByAuthor([{id:'3',user_id:'masuda',author_name:'増田',created_at:'2026-10-08',comment:'追加コメント'},{id:'2',user_id:'miyagawa',author_name:'宮川',created_at:'2026-10-07',comment:'別の人のコメント'},{id:'1',user_id:'masuda',author_name:'増田',created_at:'2026-10-07',comment:'最初のコメント'}]);
+  assert.equal(groups.length,2);const masuda=groups.find(group=>group.name==='増田');assert.deepEqual(masuda.reports.map(report=>report.comment),['最初のコメント','追加コメント']);
+});
 test('商品は売上額より数量を優先して並べ、合計には全商品を含める',()=>{
   const result=summarizeExhibition([{items:[{code:'A',qty:1,price:100000},{code:'B',qty:20,price:100},...Array.from({length:10},(_,i)=>({code:`C${i}`,qty:2+i,price:100}))]}]);
   assert.equal(result.products[0].code,'B');assert.equal(result.products.at(-1).code,'A');

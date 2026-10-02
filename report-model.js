@@ -31,3 +31,13 @@ export function groupReports(reports){
   }
   return {products:[...products.entries()].sort(([a],[b])=>a.localeCompare(b,'ja',{numeric:true})),general};
 }
+export function groupReportsByAuthor(reports){
+  const groups=new Map();
+  const sorted=[...reports].sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id).localeCompare(String(b.id)));
+  for(const report of sorted){
+    const key=report.user_id||report.author_name||'unknown';
+    if(!groups.has(key))groups.set(key,{id:key,name:report.author_name||'記入者不明',reports:[]});
+    const group=groups.get(key);group.name=report.author_name||group.name;group.reports.push(report);
+  }
+  return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name,'ja')||a.id.localeCompare(b.id));
+}
