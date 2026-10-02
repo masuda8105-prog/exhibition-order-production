@@ -29,10 +29,12 @@ try{
   assert.equal(await page.locator('.reportPhotoFigure img').count(),5);assert.ok((await page.locator('#exhibitionReport').innerText()).includes('ブース写真を更新しました'));
   await page.reload();await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-screen="reports"]');await page.waitForSelector('.reportPhotoFigure img');assert.equal(await page.locator('.reportPhotoFigure img').count(),5);
   await fs.mkdir('tmp/report-photos',{recursive:true});await page.screenshot({path:'tmp/report-photos/report.png',fullPage:true});
-  await page.evaluate(()=>{window.__photoSizes=[];const render=window.html2canvas;window.html2canvas=async(node,options)=>{for(const img of node.querySelectorAll('.reportPhotoFigure img')){const r=img.getBoundingClientRect();window.__photoSizes.push({width:r.width,height:r.height,ratio:img.naturalWidth/img.naturalHeight});}return render(node,options);};});
+  await page.evaluate(()=>{window.__photoSizes=[];window.__photoRows=[];const render=window.html2canvas;window.html2canvas=async(node,options)=>{for(const row of node.querySelectorAll('.reportPhotoRow'))window.__photoRows.push([...row.querySelectorAll('figure')].map(figure=>({x:figure.getBoundingClientRect().x,y:figure.getBoundingClientRect().y})));for(const img of node.querySelectorAll('.reportPhotoFigure img')){const r=img.getBoundingClientRect();window.__photoSizes.push({width:r.width,height:r.height,ratio:img.naturalWidth/img.naturalHeight});}return render(node,options);};});
   const downloadPromise=page.waitForEvent('download');await page.click('#reportPdf');const download=await downloadPromise;await download.saveAs('tmp/report-photos/report-with-photos.pdf');assert.ok((await fs.stat('tmp/report-photos/report-with-photos.pdf')).size>100000);
   const sizes=await page.evaluate(()=>window.__photoSizes);assert.equal(sizes.length,5);
-  for(const size of sizes){assert.ok(Math.abs(size.width/size.height-size.ratio)<0.01);assert.ok(size.width<=480&&size.height<=280);}
+  for(const size of sizes){assert.ok(Math.abs(size.width/size.height-size.ratio)<0.01);assert.ok(size.width<=219&&size.height<=180);}
+  const rows=await page.evaluate(()=>window.__photoRows);assert.deepEqual(rows.map(row=>row.length),[3,2]);
+  for(const row of rows){assert.ok(row.every(figure=>Math.abs(figure.y-row[0].y)<1));for(let i=1;i<row.length;i++)assert.ok(row[i].x>row[i-1].x);}
   page.once('dialog',dialog=>dialog.dismiss());await page.click(`[data-delete-report="${id}"]`);assert.equal(await page.locator(`[data-delete-report="${id}"]`).count(),1);
   page.once('dialog',dialog=>dialog.accept());await page.click(`[data-delete-report="${id}"]`);await page.waitForFunction(id=>!document.querySelector(`[data-delete-report="${id}"]`),id);
   assert.equal(await page.locator('.reportPhotoFigure img').count(),0);

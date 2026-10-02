@@ -71,7 +71,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   function feedbackHtml(list){return REPORT_CATEGORIES.map(category=>{
     const entries=list.filter(entry=>entry.category===category.id);
     if(!entries.length)return '';
-    return `<section class="reportFeedback"><h4>${category.title}</h4>${entries.map(entry=>`<div class="reportComment"><p>${esc(entry.comment)}</p><small>${esc(entry.author_name)}</small>${entry.user_id===state.session?.user?.id?`<div class="reportRecordActions"><button type="button" data-edit-report="${esc(entry.id)}">書き直す</button><button type="button" data-delete-report="${esc(entry.id)}">削除</button></div>`:''}</div>${(entry.photo_paths||[]).map(path=>{const url=photoUrls.get(path)?.url;return url?`<figure class="reportPhotoFigure"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" crossorigin="anonymous" alt="${esc(entry.product_code?`No.${entry.product_code}の写真`:'会場の写真')}"></a><figcaption>${esc(entry.author_name)}</figcaption></figure>`:'<p class="reportPhotoMissing">写真を読み込めませんでした。「同期」で再試行してください。</p>';}).join('')}`).join('')}</section>`;
+    return `<section class="reportFeedback"><h4>${category.title}</h4>${entries.map(entry=>`<div class="reportComment"><p>${esc(entry.comment)}</p><small>${esc(entry.author_name)}</small>${entry.user_id===state.session?.user?.id?`<div class="reportRecordActions"><button type="button" data-edit-report="${esc(entry.id)}">書き直す</button><button type="button" data-delete-report="${esc(entry.id)}">削除</button></div>`:''}</div><div class="reportPhotoGallery">${(entry.photo_paths||[]).map(path=>{const url=photoUrls.get(path)?.url;return url?`<figure class="reportPhotoFigure"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" crossorigin="anonymous" alt="${esc(entry.product_code?`No.${entry.product_code}の写真`:'会場の写真')}"></a><figcaption>${esc(entry.author_name)}</figcaption></figure>`:'<p class="reportPhotoMissing">写真を読み込めませんでした。「同期」で再試行してください。</p>';}).join('')}</div>`).join('')}</section>`;
   }).join('');}
   function reportHtml(){
     const event=currentEvent(),grouped=groupReports(reports);
@@ -216,18 +216,26 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
     const frame=document.createElement('iframe');frame.style.cssText='position:fixed;left:-10000px;width:794px;height:1123px';frame.setAttribute('aria-hidden','true');document.body.append(frame);
     try{
       const doc=frame.contentDocument;doc.open();doc.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"></head><body></body></html>');doc.close();
-      const style=doc.createElement('style');style.textContent='*{box-sizing:border-box}body{margin:0;font:16px/1.6 sans-serif;color:#172033}.page{width:794px;height:1123px;padding:56px;background:white;overflow:hidden}h1{font-size:26px}h2{font-size:22px;border-bottom:1px solid #bbb}h3{font-size:19px}h4{font-size:17px}p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.reportTotal strong{display:block;font-size:30px}.reportMetrics{display:flex;flex-wrap:wrap;gap:20px}.reportMetrics small,.reportMetrics b,td small{display:block}.reportTable{border-collapse:collapse;table-layout:fixed;width:100%;font-size:14px}.reportTable th:first-child{width:60%}.reportTable th:nth-child(2){width:12%}.reportTable th:nth-child(3){width:28%}.reportTable th,.reportTable td{vertical-align:top;overflow-wrap:anywhere}.reportTable th:not(:first-child),.reportTable td:not(:first-child){text-align:right}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}.reportComment{border-left:3px solid #ddd;padding-left:12px;margin:12px 0}.reportPhotoFigure{margin:12px 0}.reportPhotoFigure img{display:block;max-width:480px;max-height:280px}.reportPhotoFigure figcaption{font-size:12px}';doc.head.append(style);
+      const style=doc.createElement('style');style.textContent='*{box-sizing:border-box}body{margin:0;font:16px/1.6 sans-serif;color:#172033}.page{width:794px;height:1123px;padding:56px;background:white;overflow:hidden}h1{font-size:26px}h2{font-size:22px;border-bottom:1px solid #bbb}h3{font-size:19px}h4{font-size:17px}p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.reportTotal strong{display:block;font-size:30px}.reportMetrics{display:flex;flex-wrap:wrap;gap:20px}.reportMetrics small,.reportMetrics b,td small{display:block}.reportTable{border-collapse:collapse;table-layout:fixed;width:100%;font-size:14px}.reportTable th:first-child{width:60%}.reportTable th:nth-child(2){width:12%}.reportTable th:nth-child(3){width:28%}.reportTable th,.reportTable td{vertical-align:top;overflow-wrap:anywhere}.reportTable th:not(:first-child),.reportTable td:not(:first-child){text-align:right}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}.reportComment{border-left:3px solid #ddd;padding-left:12px;margin:12px 0}.reportPhotoRow{display:flex;gap:12px;align-items:flex-start;margin:12px 0}.reportPhotoFigure{margin:0;width:219px;flex:0 0 219px}.reportPhotoFigure img{display:block;max-width:219px;max-height:180px}.reportPhotoFigure figcaption{font-size:12px}';doc.head.append(style);
       await signPhotos(reports);
       const source=doc.createElement('div');source.innerHTML=reportHtml();source.querySelectorAll('.reportRecordActions').forEach(node=>node.remove());
       await Promise.all([...source.querySelectorAll('img')].map(img=>img.decode()));
       // Explicit proportional dimensions: html2canvas does not reliably honor object-fit.
       for(const img of source.querySelectorAll('.reportPhotoFigure img')){
-        const scale=Math.min(1,480/img.naturalWidth,280/img.naturalHeight);
+        const scale=Math.min(1,219/img.naturalWidth,180/img.naturalHeight);
         img.style.width=`${img.naturalWidth*scale}px`;
         img.style.height=`${img.naturalHeight*scale}px`;
       }
       const blocks=[];
       function flatten(node){
+        if(node.classList.contains('reportPhotoGallery')){
+          for(let i=0;i<node.children.length;i+=3){
+            const row=doc.createElement('div');row.className='reportPhotoRow';
+            for(const child of [...node.children].slice(i,i+3))row.append(child.cloneNode(true));
+            blocks.push(row);
+          }
+          return;
+        }
         if(node.tagName==='TABLE'){
           const head=node.querySelector('thead');for(const row of node.querySelectorAll('tbody tr')){const table=doc.createElement('table');table.className=node.className;if(head)table.append(head.cloneNode(true));const body=doc.createElement('tbody');body.append(row.cloneNode(true));table.append(body);blocks.push(table);}return;
         }
