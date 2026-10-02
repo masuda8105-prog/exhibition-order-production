@@ -20,6 +20,7 @@ try{
   await page.click('#noteSave');await page.waitForFunction(()=>document.querySelectorAll('.reportPhotoGrid img').length===0&&!document.querySelector('#noteSave').disabled);
   await page.click('[data-screen="reports"]');await page.waitForSelector('.reportPhotoFigure img');
   assert.equal(await page.locator('.reportPhotoFigure img').count(),6);
+  assert.equal(await page.locator('.reportPhotoFigure figcaption').count(),0,'写真の下には名前を表示しない');
   await page.waitForFunction(()=>[...document.querySelectorAll('.reportPhotoFigure img')].every(img=>img.complete&&img.naturalWidth>0));
   const edit=page.locator('.reportComment').filter({hasText:'写真記録'}).locator('[data-edit-report]');const id=await edit.getAttribute('data-edit-report');
   await edit.click();await page.waitForSelector('#noteEditCancel');assert.equal(await page.locator('.reportPhotoGrid img').count(),6);
