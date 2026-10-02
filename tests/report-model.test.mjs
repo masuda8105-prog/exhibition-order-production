@@ -30,3 +30,13 @@ test('商品情報と会場全体を分けて時間順に整理し同じ時刻�
   assert.deepEqual(result.products.map(([code])=>code),['858','1065']);
   assert.deepEqual(result.products[1][1].map(item=>item.id),['a','b']);assert.equal(result.general[0].id,'c');
 });
+
+test('受け渡し方法は商品行数でなく確定注文の件数を集計する',()=>{
+  const result=summarizeExhibition([
+    ...['now','later','hotel','ship'].map(handoff=>({type:'spot',handoff,items:[{code:'A',qty:3,price:100},{code:'B',qty:2,price:100}]})),
+    {type:'spot',handoff:'now'},{type:'normal',handoff:'hotel'},{type:'spot'},
+    {type:'spot',handoff:'hotel',deleted:true},{type:'spot',handoff:'later',confirmationState:'draft'},
+  ]);
+  assert.deepEqual(result.handoffs,{now:2,later:1,hotel:1,ship:1,normal:1,unknown:1});
+  assert.equal(Object.values(result.handoffs).reduce((a,b)=>a+b,0),result.count);
+});

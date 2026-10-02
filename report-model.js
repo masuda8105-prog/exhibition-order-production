@@ -7,11 +7,13 @@ export const REPORT_CATEGORIES=[
   {id:'other',short:'その他',title:'その他気づき・次回課題'},
 ];
 export function summarizeExhibition(orders){
-  const result={total:0,domestic:0,overseas:0,count:0,quantity:0,products:[]};
+  const result={total:0,domestic:0,overseas:0,count:0,quantity:0,handoffs:{now:0,later:0,hotel:0,ship:0,normal:0,unknown:0},products:[]};
   const products=new Map();
   for(const order of orders){
     if(order.deleted||isUnconfirmed(order))continue;
     const amount=totalOf(order);result.total+=amount;result.count++;
+    const handoff=order.type==='normal'?'normal':Object.hasOwn(result.handoffs,order.handoff)?order.handoff:'unknown';
+    result.handoffs[handoff]++;
     result[order.customerRegion==='overseas'?'overseas':'domestic']+=amount;
     for(const item of order.items||[]){
       if(isShippingItem(item))continue;
