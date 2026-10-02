@@ -20,7 +20,7 @@ export function summarizeExhibition(orders){
       result.quantity+=Number(item.qty||0);products.set(code,entry);
     }
   }
-  result.products=[...products.values()].sort((a,b)=>b.amount-a.amount||a.code.localeCompare(b.code,'ja',{numeric:true}));
+  result.products=[...products.values()].sort((a,b)=>b.quantity-a.quantity||b.amount-a.amount||a.code.localeCompare(b.code,'ja',{numeric:true}));
   return result;
 }
 export function groupReports(reports){

@@ -15,8 +15,8 @@ try{
   const download=page.waitForEvent('download');await page.click('#reportPdf');await download;
   const tables=await page.evaluate(()=>window.__reportTableMeasurements);
   assert.ok(tables.length>1,'明細が複数ページに分かれる');
-  assert.equal(tables.reduce((sum,table)=>sum+table.rows.length,0),45,'全商品が1回ずつ掲載される');
+  assert.equal(tables.reduce((sum,table)=>sum+table.rows.length,0),10,'数量上位10商品だけが1回ずつ掲載される');
   for(const table of tables){assert.equal(table.headers,1);for(const row of table.rows){assert.equal(row.length,3);for(let i=0;i<3;i++)assert.ok(Math.abs(row[i]-table.head[i])<1,'先頭行を含めて列が見出しと一致する');}}
   for(const table of tables)assert.deepEqual(table.head,tables[0].head,'改ページ後も同じ列位置');
-  console.log('PASS: 45 varied-length product rows, first-row/header alignment, stable columns across pages, one header per page, no missing or duplicated rows');
+  console.log('PASS: top 10 of 45 varied-length products, first-row/header alignment, stable columns across pages, one header per page, no missing or duplicated rows');
 }finally{await browser.close();}

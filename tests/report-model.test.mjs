@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {summarizeExhibition,groupReports} from '../report-model.js';
+test('商品は売上額より数量を優先して並べ、合計には全商品を含める',()=>{
+  const result=summarizeExhibition([{items:[{code:'A',qty:1,price:100000},{code:'B',qty:20,price:100},...Array.from({length:10},(_,i)=>({code:`C${i}`,qty:2+i,price:100}))]}]);
+  assert.equal(result.products[0].code,'B');assert.equal(result.products.at(-1).code,'A');
+  assert.equal(result.products.length,12);assert.equal(result.quantity,86);assert.equal(result.total,108500);
+});
 test('売上は確定注文のみ・商品点数に送料を含めない・注文別国内海外を保つ',()=>{
   const result=summarizeExhibition([
     {customerRegion:'domestic',items:[{code:'1065',name:'商品A',qty:2,price:1000},{productId:'service-shipping-700',qty:1,price:700}]},
