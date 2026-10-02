@@ -9,9 +9,11 @@ try{
   await page.goto('http://127.0.0.1:8794/');await page.waitForSelector('#appView:not(.hidden)');
   const base64=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=600;canvas.height=400;const ctx=canvas.getContext('2d');ctx.fillStyle='#cee8ff';ctx.fillRect(0,0,600,400);ctx.fillStyle='#123456';ctx.font='48px sans-serif';ctx.fillText('BOOTH PHOTO',40,220);return canvas.toDataURL('image/png').split(',')[1];});
   const file={name:'booth.png',mimeType:'image/png',buffer:Buffer.from(base64,'base64')};
+  const portrait=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=400;c.height=600;const x=c.getContext('2d');x.fillStyle='#ffeacc';x.fillRect(0,0,400,600);x.fillStyle='#123456';x.font='36px sans-serif';x.fillText('PRODUCT PHOTO',20,300);return c.toDataURL('image/png').split(',')[1];});
+  const portraitFile={name:'product.png',mimeType:'image/png',buffer:Buffer.from(portrait,'base64')};
   await page.click('[data-screen="notes"]');await page.waitForSelector('#noteForm');
   await page.click('[data-note-product=""]');await page.click('[data-note-category="venue"]');
-  await page.setInputFiles('#notePhotoFiles',Array(7).fill(file));await page.waitForFunction(()=>document.querySelectorAll('.reportPhotoGrid img').length===6&&!document.querySelector('#noteSave').disabled);
+  await page.setInputFiles('#notePhotoFiles',[file,portraitFile,file,portraitFile,file,portraitFile,file]);await page.waitForFunction(()=>document.querySelectorAll('.reportPhotoGrid img').length===6&&!document.querySelector('#noteSave').disabled);
   let uploadFail=true;await page.route('**/storage/v1/object/exhibition-report-photos/**',async route=>{if(uploadFail){uploadFail=false;return route.abort('failed');}return route.continue();});
   await page.click('#noteSave');await page.waitForSelector('#noteError:text-is("前回の保存結果を確認します。「登録する」で同じ内容を再送してください。")');
   assert.equal(await page.locator('.reportPhotoGrid img').count(),6);
@@ -27,7 +29,10 @@ try{
   assert.equal(await page.locator('.reportPhotoFigure img').count(),5);assert.ok((await page.locator('#exhibitionReport').innerText()).includes('ブース写真を更新しました'));
   await page.reload();await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-screen="reports"]');await page.waitForSelector('.reportPhotoFigure img');assert.equal(await page.locator('.reportPhotoFigure img').count(),5);
   await fs.mkdir('tmp/report-photos',{recursive:true});await page.screenshot({path:'tmp/report-photos/report.png',fullPage:true});
-  const downloadPromise=page.waitForEvent('download');await page.click('#reportPdf');const download=await downloadPromise;await download.saveAs('tmp/report-photos/report-with-photos.pdf');assert.ok((await fs.stat('tmp/report-photos/report-with-photos.pdf')).size>200000);
+  await page.evaluate(()=>{window.__photoSizes=[];const render=window.html2canvas;window.html2canvas=async(node,options)=>{for(const img of node.querySelectorAll('.reportPhotoFigure img')){const r=img.getBoundingClientRect();window.__photoSizes.push({width:r.width,height:r.height,ratio:img.naturalWidth/img.naturalHeight});}return render(node,options);};});
+  const downloadPromise=page.waitForEvent('download');await page.click('#reportPdf');const download=await downloadPromise;await download.saveAs('tmp/report-photos/report-with-photos.pdf');assert.ok((await fs.stat('tmp/report-photos/report-with-photos.pdf')).size>100000);
+  const sizes=await page.evaluate(()=>window.__photoSizes);assert.equal(sizes.length,5);
+  for(const size of sizes){assert.ok(Math.abs(size.width/size.height-size.ratio)<0.01);assert.ok(size.width<=480&&size.height<=280);}
   page.once('dialog',dialog=>dialog.dismiss());await page.click(`[data-delete-report="${id}"]`);assert.equal(await page.locator(`[data-delete-report="${id}"]`).count(),1);
   page.once('dialog',dialog=>dialog.accept());await page.click(`[data-delete-report="${id}"]`);await page.waitForFunction(id=>!document.querySelector(`[data-delete-report="${id}"]`),id);
   assert.equal(await page.locator('.reportPhotoFigure img').count(),0);
