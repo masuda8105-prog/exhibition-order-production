@@ -53,14 +53,14 @@ test('一覧・注文書・お客様控えは同じNEO番号を表示し、送�
   }
 });
 
-test('商品ごとに丸めた税込合計を会社控えとお客様控えに表示する',async()=>{
+test('注文全体で丸めた税込合計を会社控えとお客様控えに表示する',async()=>{
   const source=(await readFile(new URL('../app.js',import.meta.url),'utf8')).replace(/^import .*;\r?\n/gm,'').split("$('loginBtn').onclick=login;")[0];
   const ctx=vm.createContext({...attachments,...flow,window:{EXHIBITION_CONFIG:{}},document:{},URL,setTimeout(){},clearTimeout(){}});
   vm.runInContext(source+'\nglobalThis.subject={receiptDocumentHtml};',ctx);
   const order={...pickup,items:[{code:'ROUND',name:'端数計算の検証商品',price:105,qty:2}]};
   for(const html of [ctx.subject.receiptDocumentHtml(order),ctx.subject.receiptDocumentHtml(order,{customerCopy:true})]){
     assert.match(html,/税抜合計<\/span><span>¥210/);
-    assert.match(html,/消費税（10%）<\/span><span>¥22/);
-    assert.match(html,/税込合計<\/span><span>¥232/);
+    assert.match(html,/消費税（10%）<\/span><span>¥21/);
+    assert.match(html,/税込合計<\/span><span>¥231/);
   }
 });

@@ -12,17 +12,17 @@ try{
   await page.fill('#fStore',store);await page.fill('#fPhone','000-0000-0000');await page.fill('#fCustomer','架空のお客様');
   await page.click('[data-day="1"]');
   const confirmation=page.locator('#sheetBody .section').filter({has:page.locator('.sectionTitle:has-text("注文確認")')});
-  assert.match(await confirmation.textContent(),/税抜合計\s*¥210/);assert.match(await confirmation.textContent(),/税込合計（お会計金額）\s*¥232/);
+  assert.match(await confirmation.textContent(),/税抜合計\s*¥210/);assert.match(await confirmation.textContent(),/税込合計（お会計金額）\s*¥231/);
   await page.click('#saveBtn');await page.waitForSelector('#prepareSharePdf:enabled');await page.click('#prepareSharePdf');await page.waitForSelector('#acknowledgeSlack:enabled');
-  assert.match(await page.evaluate(()=>window.__roundingPdfSummary),/税抜合計\s*¥210.*消費税（10%）\s*¥22.*税込合計\s*¥232/s);
+  assert.match(await page.evaluate(()=>window.__roundingPdfSummary),/税抜合計\s*¥210.*消費税（10%）\s*¥21.*税込合計\s*¥231/s);
   await page.click('#acknowledgeSlack');await page.waitForSelector('#confirmSharedOrder:enabled');await page.click('#confirmSharedOrder');await page.waitForSelector('#successCustomerCopy');
   await page.click('#backDash');await page.click('[data-tab="waiting"]');
   const card=page.locator('.orderCard').filter({hasText:store});
-  assert.match(await card.textContent(),/税抜\s*¥210/);assert.match(await card.textContent(),/税込\s*¥232/);
+  assert.match(await card.textContent(),/税抜\s*¥210/);assert.match(await card.textContent(),/税込\s*¥231/);
   await page.setViewportSize({width:320,height:568});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await card.locator('[data-payment]').click();
   assert.match(await page.locator('#sheetBody').textContent(),/税抜合計\s*¥210/);
-  assert.match(await page.locator('#sheetBody').textContent(),/税込合計（お会計金額）\s*¥232/);
-  console.log('PASS: per-unit rounding agrees across order confirmation, waiting card, and payment screen');
+  assert.match(await page.locator('#sheetBody').textContent(),/税込合計（お会計金額）\s*¥231/);
+  console.log('PASS: whole-order rounding agrees across order confirmation, waiting card, PDF, and payment screen');
 }finally{await browser.close()}

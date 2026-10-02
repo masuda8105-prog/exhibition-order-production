@@ -75,8 +75,8 @@ export function totalOf(order){
 
 export function orderTaxSummary(order){
   const subtotal=totalOf(order);
-  const total=(order?.items||[]).reduce((sum,item)=>sum+Math.round(Number(item.price||0)*1.1)*Number(item.qty||0),0);
-  return {subtotal,tax:total-subtotal,total};
+  const tax=Math.round(subtotal*0.1);
+  return {subtotal,tax,total:subtotal+tax};
 }
 
 export function itemCountOf(order){

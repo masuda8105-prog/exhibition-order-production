@@ -3,10 +3,11 @@ import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,totalOf,ord
 
 const item={code:'TEST-001',name:'テスト商品',price:100,qty:1};
 
-test('税込単価を商品ごとに四捨五入してから数量を掛け、過去の注文にも適用する',()=>{
-  assert.deepEqual(orderTaxSummary({items:[{price:105,qty:2}]}),{subtotal:210,tax:22,total:232});
-  assert.deepEqual(orderTaxSummary({items:[{price:104,qty:2}]}),{subtotal:208,tax:20,total:228});
-  assert.deepEqual(orderTaxSummary({items:[{price:105,qty:2},{productId:'service-shipping-700',price:700,qty:1}]}),{subtotal:910,tax:92,total:1002});
+test('注文全体の税抜合計から税額を1回だけ四捨五入し、過去の注文にも適用する',()=>{
+  assert.deepEqual(orderTaxSummary({items:[{price:3428,qty:1}]}),{subtotal:3428,tax:343,total:3771});
+  assert.deepEqual(orderTaxSummary({items:[{price:105,qty:2}]}),{subtotal:210,tax:21,total:231});
+  assert.deepEqual(orderTaxSummary({items:[{price:104,qty:2}]}),{subtotal:208,tax:21,total:229});
+  assert.deepEqual(orderTaxSummary({items:[{price:105,qty:2},{productId:'service-shipping-700',price:700,qty:1}]}),{subtotal:910,tax:91,total:1001});
 });
 
 test('控えのお客様名へ敬称を重複なく付ける',()=>{
