@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {ORDER_TYPE,HANDOFF,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,markPickupDelivered,needsHeadOfficeShare,normalizeForSave,orderPayloadForCloud,orderFromCloudRow} from '../workflow.js';
 
+test('旧担当者名は注文表示と再保存時に上阪へ修正し、他の名前は維持する',()=>{
+  for(const [before,after] of [['上坂','上阪'],['上坂（政）','上阪（政）'],['上阪','上阪'],['堂前','堂前']]){
+    const original={staff:before};
+    assert.equal(orderFromCloudRow({id:'fixture-id',payload:original}).staff,after);
+    assert.equal(orderPayloadForCloud(original).staff,after);
+    assert.equal(normalizeForSave(original).staff,after);
+    assert.equal(original.staff,before);
+  }
+});
+
 test('Slack共有チェックは後日受取と配送だけに適用し、解除で要対応に戻す',()=>{
   const stamp='2099-01-01T12:34:56Z';
   for(const order of [{type:ORDER_TYPE.NORMAL},...Object.values(HANDOFF).map(handoff=>({type:ORDER_TYPE.SPOT,handoff}))]){

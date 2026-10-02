@@ -270,9 +270,16 @@ const CLOUD_ORDER_FIELDS=Object.freeze([
   'pickupDate','notes','hotelName','guestName','roomNo','checkoutDate','shipAddress',
 ]);
 
+export function correctedStaffName(name){
+  if(name==='上坂')return '上阪';
+  if(name==='上坂（政）')return '上阪（政）';
+  return name;
+}
+
 export function orderPayloadForCloud(order){
   const payload={};
   for(const field of CLOUD_ORDER_FIELDS)payload[field]=order?.[field]??'';
+  payload.staff=correctedStaffName(payload.staff);
   payload.officePhotoPaths=validOfficePhotoPaths(order?.officePhotoPaths,order?.localId);
   payload.confirmationState=order?.confirmationState||'confirmed';
   payload.paid=Boolean(order?.paid);
@@ -298,6 +305,7 @@ export function orderFromCloudRow(row){
   const payload=row?.payload&&typeof row.payload==='object'&&!Array.isArray(row.payload)?row.payload:{};
   return {
     ...payload,
+    staff:correctedStaffName(payload.staff),
     confirmationState:row?.confirmation_state==='draft'?'draft':'confirmed',
     pickupNumber:/^[1-9][0-9]*$/.test(String(row?.pickup_number||''))?String(row.pickup_number):'',
     items:Array.isArray(payload.items)?payload.items.map(item=>({...item})):[],
@@ -321,6 +329,7 @@ export function normalizeForSave(draft){
   const now=new Date().toISOString();
   return {
     ...draft,
+    staff:correctedStaffName(draft.staff),
     localId:draft.localId||`L-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`,
     createdAt:draft.createdAt||now,
     updatedAt:now,
