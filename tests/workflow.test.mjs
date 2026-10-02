@@ -1,7 +1,13 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,totalOf,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesOperationalFilter,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,compareOrdersForPrint,applyAction} from '../workflow.js';
+import {ORDER_TYPE,HANDOFF,PAYMENT,needsHeadOfficeShare,needsReceipt,totalOf,orderTaxSummary,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesOperationalFilter,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,isDone,groupOf,nextAction,compareOrdersForPrint,applyAction} from '../workflow.js';
 
 const item={code:'TEST-001',name:'テスト商品',price:100,qty:1};
+
+test('税込単価を商品ごとに四捨五入してから数量を掛け、過去の注文にも適用する',()=>{
+  assert.deepEqual(orderTaxSummary({items:[{price:105,qty:2}]}),{subtotal:210,tax:22,total:232});
+  assert.deepEqual(orderTaxSummary({items:[{price:104,qty:2}]}),{subtotal:208,tax:20,total:228});
+  assert.deepEqual(orderTaxSummary({items:[{price:105,qty:2},{productId:'service-shipping-700',price:700,qty:1}]}),{subtotal:910,tax:92,total:1002});
+});
 
 test('控えのお客様名へ敬称を重複なく付ける',()=>{
   assert.equal(customerNameWithHonorific('山田 太郎'),'山田 太郎 様');

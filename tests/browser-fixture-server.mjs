@@ -127,6 +127,7 @@ const server=http.createServer(async(request,response)=>{
     {id:1,product_no:'TEST-001',product_name:'検証商品A',wholesale_price:100,image_url:null,is_active:true},
     {id:2,product_no:'TEST-002',product_name:'検証商品B',wholesale_price:250,image_url:null,is_active:true},
     {id:3,product_no:'TEST-PENDING',product_name:'価格未定の検証商品',wholesale_price:null,image_url:null,is_active:false},
+    {id:4,product_no:'TEST-ROUND',product_name:'端数計算の検証商品',wholesale_price:105,image_url:null,is_active:true},
   ]);
   if(url.pathname==='/rest/v1/exhibition_accounts')return sendJson(response,200,[
     {id:1,account_name:'検証帳合A',display_order:1,is_active:true},
