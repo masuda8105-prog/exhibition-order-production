@@ -141,6 +141,34 @@ html,body{max-width:100%;overflow-x:hidden}.app{padding-bottom:142px}.syncLine{f
 #exhibitionReport .reportAuthorHeading{font-size:14px;border:0;margin:16px 0 6px;padding:0;color:#344054}
 .reportAuthorHeading span{font-size:11px;font-weight:400;color:#667085;margin-right:5px}
 .reportAuthorGroup{margin-left:14px}
+.reportPanel{overflow-anchor:none}
+@media screen and (min-width:1024px){
+  .app.reportWorkspace{max-width:1280px;padding-bottom:32px}
+  .reportWorkspace .topbar{padding:18px 28px 12px}
+  .reportWorkspace .reportNav{padding:12px 28px;gap:12px}
+  .reportWorkspace .reportNav button{min-height:44px;font-size:16px;cursor:pointer}
+  .reportWorkspace .reportPanel{max-width:none;padding:24px 28px 48px}
+  .reportEvent{max-width:720px;margin-bottom:24px}
+  .reportPanel[data-screen="notes"]>h2{margin:0 0 8px}
+  #noteForm{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:24px;align-items:start}
+  .reportNoteSelection{display:grid;gap:20px;min-width:0}
+  #noteForm fieldset{margin:0;padding:18px;background:#fff}
+  .reportNoteEditor{min-width:0;background:#fff;padding:24px;border:1px solid #d1d5db;border-radius:12px}
+  .reportNoteEditor>label{display:block;font-weight:750;margin-bottom:10px}
+  #noteComment{min-height:240px;line-height:1.7}
+  .reportNoteEditor>fieldset{margin-top:20px!important}
+  #noteResults{display:grid;grid-template-columns:minmax(0,1fr);max-height:260px;overflow:auto;overscroll-behavior:contain}
+  #noteSelected{padding:12px;background:#eef2f6;border-radius:8px;line-height:1.6;margin-bottom:0}
+  .reportNoteSelection .reportChoices button{flex:1 1 44%;min-width:0}
+  .reportNoteEditor .reportSave{width:auto;min-width:200px;min-height:48px;margin-right:10px;cursor:pointer}
+  .reportPanel .reportMetrics{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .reportPanel .reportHandoffs .reportMetrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .reportPanel .reportTable{font-size:15px}
+  .reportPanel .reportTable td,.reportPanel .reportTable th{padding:12px 16px}
+  #exhibitionReport{padding:28px 36px}
+  .reportWorkspace button:hover:not(:disabled){filter:brightness(.96)}
+  .reportWorkspace input:focus-visible,.reportWorkspace textarea:focus-visible,.reportWorkspace select:focus-visible,.reportWorkspace button:focus-visible{outline:3px solid #8cb8ed;outline-offset:2px}
+}
 #exhibitionReport .reportComment{border:0;padding-left:14px;margin:6px 0 10px;position:relative}
 #exhibitionReport .reportComment:before{content:'•';position:absolute;left:0;top:0;color:#8492a3}
 #exhibitionReport .reportComment p{margin:0;line-height:1.65}

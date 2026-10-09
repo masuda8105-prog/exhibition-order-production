@@ -9,6 +9,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   let draft={product:undefined,category:'',comment:'',id:crypto.randomUUID()};
   const exhibitionDrafts=new Map();
   const photoUrls=new Map();let suspendedDraft=null;
+  let renderedMarkup='';
   const photos=()=>draft.photos||[];
   function releasePhotos(value){for(const photo of value?.photos||[])if(photo.url?.startsWith('blob:'))URL.revokeObjectURL(photo.url);}
   async function signPhotos(entries){
@@ -16,7 +17,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
     const paths=[...new Set(entries.flatMap(entry=>entry.photo_paths||[]))];
     await Promise.all(paths.map(async path=>{if(photoUrls.get(path)?.expires>Date.now()+60000)return;const url=await photoApi.sign(path);if(version===generation)photoUrls.set(path,{url,expires:Date.now()+3500000});}));
   }
-  function selectEvent(id){if(id===selected)return;exhibitionDrafts.set(selected,draft);selected=id;draft=exhibitionDrafts.get(id)||{product:undefined,category:'',comment:'',id:crypto.randomUUID()};}
+  function selectEvent(id){if(id===selected)return;ready=false;exhibitionDrafts.set(selected,draft);selected=id;draft=exhibitionDrafts.get(id)||{product:undefined,category:'',comment:'',id:crypto.randomUUID()};}
   const app=document.getElementById('appView'),main=app.querySelector('main'),actions=app.querySelector('.newOrderActions');
   const nav=document.createElement('nav');nav.className='reportNav';nav.setAttribute('aria-label','アプリの画面');
   nav.innerHTML=['orders','sales','notes','reports'].map((id,i)=>`<button type="button" data-screen="${id}" aria-pressed="${i===0}">${['注文','売上','気づき','レポート'][i]}</button>`).join('');
@@ -35,7 +36,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   async function reload(){
     if(busy)return;
     const version=++generation,user=state.session?.user?.id;
-    ready=false;error='';draw();
+    error='';if(!ready)draw();
     try{
       const loadedEvents=await all('exhibitions','','start_date.desc.nullslast,id.asc');
       if(version!==generation||state.session?.user?.id!==user)return;
@@ -48,13 +49,22 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
         event.order_event_name===(cfg.eventName||'展示会')?Promise.resolve([]):all('exhibition_app_orders',`event_name=eq.${encodeURIComponent(event.order_event_name)}&deleted_at=is.null`),
       ]);
       if(version!==generation||state.session?.user?.id!==user)return;
-      try{await signPhotos(loadedReports);}catch(e){toast('写真を読み込めませんでした。「同期」で再試行できます');}
+      try{
+        await signPhotos(loadedReports);
+        // Decode before replacing the report so images do not change its height afterwards.
+        await Promise.allSettled([...new Set(loadedReports.flatMap(entry=>entry.photo_paths||[]))].map(async path=>{
+          const url=photoUrls.get(path)?.url;if(!url)return;
+          const img=new Image();img.src=url;await img.decode();
+        }));
+      }catch(e){toast('写真を読み込めませんでした。「同期」で再試行できます');}
       if(version!==generation||state.session?.user?.id!==user)return;
       reports=loadedReports;focus=loadedFocus;orders=loadedOrders.map(orderFromCloudRow);ready=true;
-    }catch(e){if(version===generation)error=e.message==='NO_EVENTS'?'展示会が未登録です。管理者に登録を依頼してください。':'レポートを読み込めませんでした。接続とレポート機能の導入状況を確認してください。';}
+    }catch(e){if(version===generation){if(ready){toast('同期できませんでした。表示中の内容を保持しています');return;}error=e.message==='NO_EVENTS'?'展示会が未登録です。管理者に登録を依頼してください。':'レポートを読み込めませんでした。接続とレポート機能の導入状況を確認してください。';}}
     if(version===generation)draw();
   }
   function show(){
+    app.classList.toggle('reportWorkspace',tab!=='orders');
+    panel.dataset.screen=tab;
     main.classList.toggle('hidden',tab!=='orders');actions.classList.toggle('hidden',tab!=='orders');panel.classList.toggle('hidden',tab==='orders');
     nav.querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.screen===tab)));
     app.querySelector('.orderOverview').classList.toggle('hidden',tab!=='orders');
@@ -67,7 +77,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   }
   function productLabel(code){const product=state.products.find(item=>item.code===code);return `No.${esc(code)}${product?` ${esc(product.name)}`:''}`;}
   function photoInputHtml(){return `<fieldset><legend>写真（任意・${MAX_PHOTOS}枚まで）</legend><div class="reportPhotoActions"><button type="button" id="notePhotoPick" class="secondary">写真を選ぶ</button><button type="button" id="notePhotoCamera" class="secondary">カメラで撮影</button></div><input id="notePhotoFiles" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden><input id="notePhotoCapture" type="file" accept="image/*" capture="environment" hidden><div class="reportPhotoGrid">${photos().map(photo=>`<div><img src="${esc(photo.url)}" alt="添付写真"><button type="button" data-remove-note-photo="${esc(photo.id)}">取り外す</button></div>`).join('')}</div><small>ブース全体・商品・展示方法など。写真だけでも登録できます。</small></fieldset>`;}
-  function notesHtml(){return `<h2>${draft.editingId?'気づきを書き直す':'気づき入力'}</h2><p class="reportMuted">記入者：${esc(state.staff?.display_name)} ／ ${esc(currentEvent().name)}</p><form id="noteForm"><fieldset><legend>商品を選ぶ</legend><label class="reportSearchLabel" for="noteSearch">商品番号・商品名で検索</label><input id="noteSearch" type="search" placeholder="商品番号・商品名で検索" autocomplete="off"><div id="noteResults" class="reportChoices"></div><button type="button" data-note-product="" aria-pressed="${draft.product===null}">商品なし・会場全体</button><p id="noteSelected">${draft.product===undefined?'未選択':draft.product===null?'商品なし・会場全体':productLabel(draft.product)}</p></fieldset><fieldset><legend>カテゴリー</legend><div class="reportChoices">${REPORT_CATEGORIES.map(category=>`<button type="button" data-note-category="${category.id}" aria-pressed="${draft.category===category.id}">${category.short}</button>`).join('')}</div></fieldset><label for="noteComment">コメント</label><textarea id="noteComment" rows="4" maxlength="5000" placeholder="お客様の声・気づいたこと">${esc(draft.comment)}</textarea>${photoInputHtml()}<p id="noteError" class="errorText" role="alert"></p><button id="noteSave" type="submit" class="primary reportSave" ${busy?'disabled':''}>${busy?'保存中…':draft.editingId?'変更を保存する':'登録する'}</button>${draft.editingId?'<button id="noteEditCancel" type="button" class="secondary reportSave">編集をやめる</button>':''}</form>`;}
+  function notesHtml(){return `<h2>${draft.editingId?'気づきを書き直す':'気づき入力'}</h2><p class="reportMuted">記入者：${esc(state.staff?.display_name)} ／ ${esc(currentEvent().name)}</p><form id="noteForm"><div class="reportNoteSelection"><fieldset><legend>商品を選ぶ</legend><label class="reportSearchLabel" for="noteSearch">商品番号・商品名で検索</label><input id="noteSearch" type="search" placeholder="商品番号・商品名で検索" autocomplete="off"><div id="noteResults" class="reportChoices"></div><button type="button" data-note-product="" aria-pressed="${draft.product===null}">商品なし・会場全体</button><p id="noteSelected">${draft.product===undefined?'未選択':draft.product===null?'商品なし・会場全体':productLabel(draft.product)}</p></fieldset><fieldset><legend>カテゴリー</legend><div class="reportChoices">${REPORT_CATEGORIES.map(category=>`<button type="button" data-note-category="${category.id}" aria-pressed="${draft.category===category.id}">${category.short}</button>`).join('')}</div></fieldset></div><div class="reportNoteEditor"><label for="noteComment">コメント</label><textarea id="noteComment" rows="4" maxlength="5000" placeholder="お客様の声・気づいたこと">${esc(draft.comment)}</textarea>${photoInputHtml()}<p id="noteError" class="errorText" role="alert"></p><button id="noteSave" type="submit" class="primary reportSave" ${busy?'disabled':''}>${busy?'保存中…':draft.editingId?'変更を保存する':'登録する'}</button>${draft.editingId?'<button id="noteEditCancel" type="button" class="secondary reportSave">編集をやめる</button>':''}</div></form>`;}
   function feedbackHtml(list){return REPORT_CATEGORIES.map(category=>{
     const entries=list.filter(entry=>entry.category===category.id);
     if(!entries.length)return '';
@@ -82,7 +92,19 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   }
   function draw(){
     if(tab==='orders')return;
-    panel.innerHTML=selector()+(error?`<p class="errorText" role="alert">${esc(error)}</p>`:!ready?'<p>読み込み中…</p>':tab==='sales'?salesHtml():tab==='notes'?notesHtml():`<div class="reportExport"><button id="reportPdf" class="primary" ${busy?'disabled':''}>PDFを保存</button><p class="reportMuted">日本語のA4 PDFを作成します</p></div>${reportHtml()}${adminHtml()}`);
+    const markup=selector()+(error?`<p class="errorText" role="alert">${esc(error)}</p>`:!ready?'<p>読み込み中…</p>':tab==='sales'?salesHtml():tab==='notes'?notesHtml():`<div class="reportExport"><button id="reportPdf" class="primary" ${busy?'disabled':''}>PDFを保存</button><p class="reportMuted">日本語のA4 PDFを作成します</p></div>${reportHtml()}${adminHtml()}`);
+    if(ready&&tab!=='notes'&&markup===renderedMarkup)return;
+    const position={x:window.scrollX,y:window.scrollY};
+    const containers=[];
+    for(let node=panel.parentElement;node&&node!==document.scrollingElement;node=node.parentElement){containers.push({node,x:node.scrollLeft,y:node.scrollTop});}
+    const active=panel.contains(document.activeElement)?document.activeElement:null;
+    const inputScroll=active?{x:active.scrollLeft,y:active.scrollTop}:null;
+    const resultScroll=panel.querySelector('#noteResults')?.scrollTop;
+    const selection=active&&(['text','search'].includes(active.type)||active.tagName==='TEXTAREA')?{start:active.selectionStart,end:active.selectionEnd}:null;
+    const search=panel.querySelector('#noteSearch')?.value;
+    const admin=panel.querySelector('.reportAdmin');
+    const adminValues=admin?.open?[...admin.querySelectorAll('input')].map(input=>({name:input.name,value:input.value,readOnly:input.readOnly})):null;
+    panel.innerHTML=markup;renderedMarkup=markup;
     panel.querySelector('#reportEvent').onchange=async event=>{selectEvent(event.target.value);await reload();};
     panel.querySelector('#reportReload').onclick=reload;
     if(!ready||error)return;
@@ -94,6 +116,17 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
       panel.querySelector('#eventForm').onsubmit=saveEvent;
       panel.querySelector('#newReportEvent').onclick=()=>{const form=panel.querySelector('#eventForm');form.reset();for(const input of form.querySelectorAll('input')){input.value='';input.readOnly=false;}form.elements.id.focus();};
     }
+    if(search!==undefined&&tab==='notes'){
+      const input=panel.querySelector('#noteSearch');input.value=search;input.dispatchEvent(new Event('input'));
+      if(resultScroll!==undefined)panel.querySelector('#noteResults').scrollTop=resultScroll;
+    }
+    if(adminValues&&tab==='reports'){
+      panel.querySelector('.reportAdmin').open=true;
+      for(const value of adminValues){const input=panel.querySelector('#eventForm').elements[value.name];input.value=value.value;input.readOnly=value.readOnly;}
+    }
+    if(active?.id){const replacement=panel.querySelector(`#${active.id}`);replacement?.focus({preventScroll:true});if(selection&&replacement)replacement.setSelectionRange(selection.start,selection.end);if(replacement&&inputScroll){replacement.scrollLeft=inputScroll.x;replacement.scrollTop=inputScroll.y;}}
+    for(const item of containers)item.node.scrollTo({left:item.x,top:item.y,behavior:'instant'});
+    window.scrollTo({left:position.x,top:position.y,behavior:'instant'});
   }
   function bindProducts(root){root.querySelectorAll('[data-note-product]').forEach(button=>button.onclick=()=>{
     draft.product=button.dataset.noteProduct||null;
@@ -216,8 +249,8 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
     const frame=document.createElement('iframe');frame.style.cssText='position:fixed;left:-10000px;width:794px;height:1123px';frame.setAttribute('aria-hidden','true');document.body.append(frame);
     try{
       const doc=frame.contentDocument;doc.open();doc.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"></head><body></body></html>');doc.close();
-      const style=doc.createElement('style');style.textContent='*{box-sizing:border-box}body{margin:0;font:14px/1.5 sans-serif;color:#172033}.page{width:794px;height:1123px;padding:56px;background:white;overflow:hidden}h1{font-size:26px}h2{font-size:19px;border-bottom:1px solid #bbb}h3{font-size:17px}h4{font-size:15px}h5{font-size:14px;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #e5e7eb}p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.reportTotal strong{display:block;font-size:30px}.reportMetrics{display:flex;flex-wrap:wrap;gap:20px}.reportMetrics small,.reportMetrics b,td small{display:block}.reportTable{border-collapse:collapse;table-layout:fixed;width:100%;font-size:14px}.reportTable th:first-child{width:60%}.reportTable th:nth-child(2){width:12%}.reportTable th:nth-child(3){width:28%}.reportTable th,.reportTable td{vertical-align:top;overflow-wrap:anywhere}.reportTable th:not(:first-child),.reportTable td:not(:first-child){text-align:right}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}.reportComment{border-left:3px solid #ddd;padding-left:10px;margin:8px 0}.reportPhotoRow{display:flex;gap:12px;align-items:flex-start;margin:12px 0}.reportPhotoFigure{margin:0;width:219px;flex:0 0 219px}.reportPhotoFigure img{display:block;max-width:219px;max-height:180px}.reportPhotoFigure figcaption{font-size:12px}.reportSummary{font-size:12px;line-height:1.4}.reportSummary h1{font-size:22px;margin:0 0 14px}.reportSummary h2{font-size:16px;margin:14px 0 7px}.reportSummary p{margin:4px 0}.reportSummary .reportTotal strong{font-size:26px}.reportSummary .reportTable{font-size:12px}.reportSummary td,.reportSummary th{padding:4px 6px}.reportSummary td small{font-size:11px}.reportSummary .reportMetrics{gap:12px 16px}.reportSummary .reportHandoffs h3{font-size:13px;margin:12px 0 6px}'+`
-.reportProductHeading{background:#172f46;color:#fff;border-radius:6px;padding:10px 14px;margin:22px 0 12px;line-height:1.4}
+      const style=doc.createElement('style');style.textContent='*{box-sizing:border-box}body{margin:0;font:14px/1.5 sans-serif;color:#172033}.page{width:794px;height:1123px;padding:40px;background:white;overflow:hidden}h1{font-size:26px}h2{font-size:19px;border-bottom:1px solid #bbb}h3{font-size:17px}h4{font-size:15px}h5{font-size:14px;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #e5e7eb}p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.reportTotal strong{display:block;font-size:30px}.reportMetrics{display:flex;flex-wrap:wrap;gap:20px}.reportMetrics small,.reportMetrics b,td small{display:block}.reportTable{border-collapse:collapse;table-layout:fixed;width:100%;font-size:14px}.reportTable th:first-child{width:60%}.reportTable th:nth-child(2){width:12%}.reportTable th:nth-child(3){width:28%}.reportTable th,.reportTable td{vertical-align:top;overflow-wrap:anywhere}.reportTable th:not(:first-child),.reportTable td:not(:first-child){text-align:right}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}.reportComment{border-left:3px solid #ddd;padding-left:10px;margin:8px 0}.reportPhotoRow{display:flex;gap:12px;align-items:flex-start;margin:12px 0}.reportPhotoFigure{margin:0;width:219px;flex:0 0 219px}.reportPhotoFigure img{display:block;max-width:219px;max-height:180px}.reportPhotoFigure figcaption{font-size:12px}.reportSummary{font-size:12px;line-height:1.4}.reportSummary h1{font-size:22px;margin:0 0 14px}.reportSummary h2{font-size:16px;margin:14px 0 7px}.reportSummary p{margin:4px 0}.reportSummary .reportTotal strong{font-size:26px}.reportSummary .reportTable{font-size:12px}.reportSummary td,.reportSummary th{padding:4px 6px}.reportSummary td small{font-size:11px}.reportSummary .reportMetrics{gap:12px 16px}.reportSummary .reportHandoffs h3{font-size:13px;margin:12px 0 6px}'+`
+.reportProductHeading{background:#172f46;color:#fff;border-radius:6px;padding:10px 14px;margin:14px 0 8px;line-height:1.4}
 .reportProductCode{display:block;font-size:11px;font-weight:500;color:#e2ebf2;margin-bottom:3px}
 .reportProductName{display:block;font-size:19px;font-weight:700;overflow-wrap:anywhere}
 .reportCategoryHeading{font-size:14px;border-left:4px solid #59748d;background:#eef2f6;padding:6px 10px;margin:12px 0 8px 14px;color:#263e54}
@@ -241,9 +274,6 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
       }
       const blocks=[];
       function flatten(node){
-        if(node.hasAttribute('data-report-section-start')){
-          const boundary=doc.createElement('div');boundary.dataset.reportPageStart='true';blocks.push(boundary);
-        }
         if(node.classList.contains('reportDetails')){
           const boundary=doc.createElement('div');boundary.dataset.reportPageStart='true';blocks.push(boundary);
           for(const child of node.children)flatten(child);
@@ -266,10 +296,10 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
       await doc.fonts.ready;
       const pages=[];let page;let contextHeadings=[];
       function newPage(){page=doc.createElement('div');page.className='page';doc.body.append(page);pages.push(page);}
-      function pageFits(){return !page.lastElementChild||page.lastElementChild.getBoundingClientRect().bottom<=page.getBoundingClientRect().top+1067;}
+      function pageFits(){return !page.lastElementChild||page.lastElementChild.getBoundingClientRect().bottom<=page.getBoundingClientRect().top+1083;}
       newPage();
       for(const block of blocks){
-        if(block.dataset.reportPageStart){contextHeadings=[];newPage();continue;}
+        if(block.dataset.reportPageStart){contextHeadings=[];if(page.children.length)newPage();continue;}
         if(block.tagName==='H2')contextHeadings=[];
         if(block.matches('.reportProductHeading,.reportCategoryHeading,.reportAuthorHeading')){
           const level=Number(block.tagName.slice(1));
@@ -278,8 +308,8 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
         if(block.classList.contains('reportSummary')){
           page.append(block);
           const height=block.getBoundingClientRect().height;
-          if(height>1011){
-            const scale=1011/height;
+          if(height>1043){
+            const scale=1043/height;
             block.style.transformOrigin='top left';block.style.transform=`scale(${scale})`;
           }
           continue;

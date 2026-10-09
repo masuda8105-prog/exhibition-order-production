@@ -16,7 +16,7 @@ try{
   const tables=await page.evaluate(()=>window.__reportTableMeasurements);
   assert.equal(tables.length,1,'TOP10を1ページに収める');assert.ok(tables[0].bottom<=1068);
   const pages=await page.evaluate(()=>window.__reportPdfPages);assert.equal(pages[0].summary,true);assert.equal(pages[0].feedback,false);assert.equal(pages[1].feedback,true);
-  assert.equal(pages[2].heading,'5. 会場・運営');assert.equal(pages[3].heading,'6. その他気づき・次回課題');
+  assert.equal(pages.length,2,'短い会場・運営と次回課題はフィードバックと同じページに収める');
   assert.equal(tables.reduce((sum,table)=>sum+table.rows.length,0),10,'数量上位10商品だけが1回ずつ掲載される');
   for(const table of tables){assert.equal(table.headers,1);for(const row of table.rows){assert.equal(row.length,3);for(let i=0;i<3;i++)assert.ok(Math.abs(row[i]-table.head[i])<1,'先頭行を含めて列が見出しと一致する');}}
   for(const table of tables)assert.deepEqual(table.head,tables[0].head,'改ページ後も同じ列位置');
