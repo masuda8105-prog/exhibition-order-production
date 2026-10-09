@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const {chromium,webkit}=require('C:/Users/AONUSR02/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const browser=process.env.LAYOUT_BROWSER==='webkit'?await webkit.launch({headless:true}):await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+const line=(code,qty,price)=>({code,name:`商品${code}`,qty,price});
+const row=(id,store,account,staff,region,items,date='2026-10-08T01:00:00Z',draft=false)=>({id,event_name:'JEX 2026（デモ）',created_at:date,updated_at:date,confirmation_state:draft?'draft':'confirmed',payload:{store,account,staff,customer:'検証のお客様',customerRegion:region,items,type:'normal',workflowStatus:'done'}});
+const rows=[row('a','眼鏡店A','卸A','増田','domestic',[line('1',5,100),line('2',2,200),{code:'送料',productId:'service-shipping-700',qty:1,price:700}]),row('b','眼鏡店A','卸A','宮川','domestic',[line('1',4,120)],'2026-10-08T02:00:00Z'),row('c','海外店','卸B','宮川','overseas',[line('1',10,150)],'2026-10-07T02:00:00Z'),row('d','未確定店','卸A','増田','domestic',[line('1',30,100)],'2026-10-08T03:00:00Z',true)];
+try{
+  const page=await browser.newPage({viewport:{width:390,height:700}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(()=>{const interval=window.setInterval,callbacks=[];window.salesTick=()=>callbacks.forEach(fn=>fn());window.setInterval=(fn,ms,...args)=>ms===12000?(callbacks.push(fn),0):interval(fn,ms,...args);});
+  let failed=false,calls=0;
+  await page.route('**/rest/v1/exhibition_app_orders?**',route=>{calls++;return route.fulfill({status:failed?503:200,contentType:'application/json',body:JSON.stringify(failed?{}:rows)});});
+  await page.goto('http://127.0.0.1:8794/');await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-screen="sales"]');await page.waitForSelector('#salesAmount');
+  assert.equal(await page.locator('#salesAmount').innerText(),'¥3,580');assert.equal(await page.locator('.salesProductTable tbody tr').count(),2);
+  await page.click('[data-sales-region="overseas"]');assert.equal(await page.locator('#salesAmount').innerText(),'¥1,500');
+  await page.click('[data-sales-region="domestic"]');await page.click('#salesFilters summary');await page.selectOption('#salesAccount','卸A');await page.selectOption('#salesStaff','宮川');await page.selectOption('#salesProduct','1');
+  assert.equal(await page.locator('#salesAmount').innerText(),'¥480');assert.equal(await page.locator('.salesRow').count(),1);assert.match(await page.locator('.salesRow').innerText(),/眼鏡店A.*¥480.*4点/s);
+  await page.fill('#salesFrom','2026-10-08');await page.fill('#salesTo','2026-10-08');
+  await page.click('[data-sales-view="orders"]');await page.click('.salesOrder summary');assert.match(await page.locator('.salesOrderBody').innerText(),/商品1/);
+  await page.evaluate(()=>scrollTo(0,600));const position=await page.evaluate(()=>scrollY),beforeCalls=calls;
+  rows[1].payload.items[0].qty=6;await page.evaluate(()=>window.salesTick());await page.waitForTimeout(800);
+  assert.ok(calls>beforeCalls);assert.equal(await page.locator('#salesAmount').innerText(),'¥720');assert.equal(await page.inputValue('#salesStaff'),'宮川');assert.equal(await page.inputValue('#salesProduct'),'1');assert.equal(await page.locator('.salesOrder').evaluate(el=>el.open),true);assert.equal(await page.evaluate(()=>scrollY),position);
+  failed=true;await page.click('#reportReload');await page.waitForTimeout(300);assert.equal(await page.locator('#salesAmount').innerText(),'¥720');assert.match(await page.locator('#salesSyncStatus').innerText(),/前回の内容/);
+  failed=false;await page.click('#reportReload');await page.waitForTimeout(300);assert.match(await page.locator('#salesSyncStatus').innerText(),/12秒/);
+  await page.click('#salesReset');await page.click('[data-sales-view="staff"]');await page.click('[data-sales-group="staff"][data-sales-name="増田"]');assert.equal(await page.locator('.salesOrder').count(),1);
+  await page.click('#salesPending');assert.equal(await page.locator('.salesOrder').count(),1);assert.match(await page.locator('.salesOrder').innerText(),/未確定店/);assert.equal(await page.locator('#salesAmount').innerText(),'¥1,600');
+  await page.click('#salesReset');await page.click('[data-sales-view="accounts"]');await page.click('[data-sales-group="account"][data-sales-name="卸B"]');assert.equal(await page.locator('.salesOrder').count(),1);assert.match(await page.locator('.salesOrder').innerText(),/海外店/);
+  await page.click('#salesReset');await page.click('[data-sales-view="products"]');await page.click('[data-sales-product="1"]');assert.equal(await page.locator('.salesRow').count(),2);assert.equal(await page.locator('#salesAmount').innerText(),'¥2,720');
+  if(!await page.locator('#salesFilters').evaluate(el=>el.open))await page.click('#salesFilters summary');await page.fill('#salesSearch','検証のお客様');assert.equal(await page.inputValue('#salesSearch'),'検証のお客様');await page.evaluate(()=>document.querySelector('#salesSearch').setSelectionRange(1,3));
+  await page.evaluate(()=>window.salesTick());await page.waitForTimeout(800);assert.equal(await page.evaluate(()=>document.activeElement.id),'salesSearch');assert.deepEqual(await page.locator('#salesSearch').evaluate(el=>[el.selectionStart,el.selectionEnd]),[1,3]);
+  await fs.mkdir('tmp/sales-ui',{recursive:true});
+  for(const width of [320,390,768,1440]){await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width}px does not overflow`);await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:`tmp/sales-ui/${process.env.LAYOUT_BROWSER||'chrome'}-${width}.png`,fullPage:true});}
+  // Analytics filters must never leak into the formal whole-exhibition report.
+  await page.click('[data-screen="reports"]');await page.waitForSelector('#exhibitionReport');assert.match(await page.locator('#exhibitionReport .reportTotal').innerText(),/¥3,820/);
+  await page.click('[data-screen="notes"]');await page.waitForSelector('#noteComment');await page.fill('#noteComment','入力中のレポートを保護');await page.click('[data-screen="sales"]');await page.waitForSelector('#salesAmount');await page.evaluate(()=>window.salesTick());await page.waitForTimeout(800);await page.click('[data-screen="notes"]');await page.waitForSelector('#noteComment');assert.equal(await page.inputValue('#noteComment'),'入力中のレポートを保護');
+  rows.push(...Array.from({length:25},(_,i)=>row(`history-${i}`,i===0?'<img src=x onerror="throw 1">':'履歴店舗','卸A','増田','domestic',[line('1',1,100)])));
+  await page.click('[data-screen="sales"]');await page.waitForSelector('#salesAmount');await page.evaluate(()=>window.salesTick());await page.waitForTimeout(800);await page.click('#salesReset');await page.click('[data-sales-view="orders"]');await page.click('[data-sales-history="confirmed"]');
+  assert.equal(await page.locator('.salesOrder').count(),20);await page.click('#salesMore');assert.equal(await page.locator('.salesOrder').count(),28);assert.equal(await page.locator('#salesMore').count(),0);assert.equal(await page.locator('#salesDetail img').count(),0);assert.match(await page.locator('#salesDetail').innerText(),/<img src=x/);
+  assert.deepEqual(errors,[]);console.log('PASS: combined filters, store/product/wholesaler/staff/history, live updates, scroll/focus/expansion, offline recovery, mobile widths, full report and draft preservation');
+}finally{await browser.close();}

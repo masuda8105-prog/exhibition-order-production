@@ -3,8 +3,8 @@ import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmShared
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
 import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20261009-events1';
-import {createExhibitionReports} from './exhibition-reports.js?v=20261009-events2';
-import {createExhibitionSelection} from './exhibition-selection.js?v=20261009-events1';
+import {createExhibitionReports} from './exhibition-reports.js?v=20261009-sales1';
+import {createExhibitionSelection} from './exhibition-selection.js?v=20261009-sales1';
 
 const cfg={...(window.EXHIBITION_CONFIG||{})};
 const $=id=>document.getElementById(id);
@@ -39,7 +39,7 @@ function changeExhibition(){
   if(hasResumableDraft()||exhibitionReports?.hasDraft()||exhibitionReports?.busy||attachmentStore.hasUnsavedPhotos()||attachmentOperation||attachmentPrintBusy||pendingFinalizations.size||pendingHandovers.size||pendingPayments.size||pendingDeletes.size){toast('入力や処理の途中です。保存・破棄・処理完了の後に展示会を変更してください');return;}
   initializeEventPicker().show();
 }
-function initializeExhibitionReports(){if(exhibitionReports)return;exhibitionReports=createExhibitionReports({state,cfg,toast,photoApi:{
+function initializeExhibitionReports(){if(exhibitionReports)return;exhibitionReports=createExhibitionReports({state,cfg,toast,syncSales:syncOrders,photoApi:{
   async upload(path,blob){await ensureFreshSession();try{return await fetchJson(`${sbBase()}/storage/v1/object/exhibition-report-photos/${path}`,{method:'POST',headers:{...sbHeaders(),'Content-Type':'image/jpeg'},body:blob});}catch(error){if(error.status===409||error.storageCode==='409'||error.storageCode===409)return;throw error;}},
   async sign(path){await ensureFreshSession();const result=await fetchJson(`${sbBase()}/storage/v1/object/sign/exhibition-report-photos/${path}`,{method:'POST',headers:sbHeaders(),body:JSON.stringify({expiresIn:3600})});const signed=result.signedURL;if(typeof signed!=='string')throw new Error('INVALID_PHOTO_URL');const url=new URL(signed.startsWith('/object/')?`${sbBase()}/storage/v1${signed}`:signed,`${sbBase()}/storage/v1/`);if(url.origin!==new URL(sbBase()).origin)throw new Error('INVALID_PHOTO_URL');return url.href;},
 },request:async(path,options={})=>{
@@ -157,7 +157,7 @@ async function patchCloudOrder(order,changes){
 }
 async function updateOrder(order){const result=orderFromCloudRow(await patchCloudOrder(order,{payload:orderPayloadForCloud(order)}));state.dataEpoch++;state.orders=state.orders.map(item=>item.localId===result.localId?result:item);markSynced();render();return result}
 async function hideOrder(order){await patchCloudOrder(order,{deleted_at:new Date().toISOString()});state.dataEpoch++;state.orders=state.orders.filter(item=>item.localId!==order.localId);markSynced();render()}
-function markSynced(){state.lastSyncedAt=new Date();setSync('online',`保存済み・自動同期 ${formatDateTime(state.lastSyncedAt,true)}`)}
+function markSynced(){state.syncError=false;state.lastSyncedAt=new Date();setSync('online',`保存済み・自動同期 ${formatDateTime(state.lastSyncedAt,true)}`)}
 async function loadOrders(){
   if(!state.exhibition)return;
   const rows=[],pageSize=500,epoch=state.dataEpoch,userId=state.session?.user?.id;
@@ -171,7 +171,7 @@ async function loadOrders(){
 }
 async function syncOrders(){
   if(!state.online||!state.exhibition||!navigator.onLine||state.syncInFlight||!$('eventChooser').classList.contains('hidden'))return state.syncInFlight;
-  state.syncInFlight=loadOrders().catch(error=>{setSync('error','同期できません。接続後に再試行します');throw error}).finally(()=>{state.syncInFlight=null});
+  state.syncInFlight=loadOrders().catch(error=>{state.syncError=true;setSync('error','同期できません。接続後に再試行します');exhibitionReports?.refresh();throw error}).finally(()=>{state.syncInFlight=null});
   return state.syncInFlight;
 }
 
@@ -675,7 +675,7 @@ async function showCustomerReceipt(order){
   try{
     await loadOrders();
     const current=state.orders.find(item=>item.localId===order.localId);if(!current)throw new Error('ORDER_NOT_AVAILABLE');
-    const html=receiptDocumentHtml(current,{customerCopy:true}),path=await receiptImagePath(current.localId,`readable-copy-20261001:\n${html}`),blob=await customerReceiptPng(html);
+    const html=receiptDocumentHtml(current,{customerCopy:true}),path=await receiptImagePath(current.localId,`readable-copy-20261009:\n${html}`),blob=await customerReceiptPng(html);
     if(!isCurrent())return;
     await ensureFreshSession();
     const storageBase=`${sbBase()}/storage/v1`;
@@ -838,7 +838,7 @@ async function bootOnline(){
   const saved=storedSession();bindConnectivitySignals();
   if(!saved?.access_token){showLogin();return}
   state.session=saved;
-  try{saveSession(saved);await ensureFreshSession();await loadStaff();await loadPrivateReferenceData();state.online=true;await initializeEventPicker().show()}
+  try{saveSession(saved);await ensureFreshSession();await loadStaff();await loadPrivateReferenceData();state.online=true;await initializeEventPicker().show({resume:true})}
   catch(error){
     state.online=false;
     if(error.status===400||error.status===401||error.message==='SESSION_EXPIRED'){clearStoredSession();state.session=null}
@@ -850,7 +850,7 @@ function showApp(){initializeExhibitionReports();$('loginView').classList.add('h
 function bindConnectivitySignals(){
   if(state.signalsBound)return;state.signalsBound=true;
   window.addEventListener('online',()=>{if(state.online)syncOrders().catch(()=>{});else if(storedSession())bootOnline();else showLogin()});
-  window.addEventListener('offline',()=>{if(state.online)setSync('error','オフライン・保存は接続後に行ってください');else showLogin()});
+  window.addEventListener('offline',()=>{if(state.online){setSync('error','オフライン・保存は接続後に行ってください');exhibitionReports?.refresh();}else showLogin()});
   window.addEventListener('focus',()=>syncOrders().catch(()=>{}));
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncOrders().catch(()=>{})});
   window.addEventListener('storage',event=>{if(event.key===PERSISTENT_SESSION_KEY){if(!event.newValue)clearLocalApp();else state.session=storedSession()}});
@@ -868,7 +868,7 @@ async function login(){
   if(!navigator.onLine)return $('loginMsg').textContent='接続してからログインしてください。';
   if(!email||!password)return $('loginMsg').textContent='メールとパスワードを入力してください。';
   $('loginMsg').textContent='';$('loginBtn').disabled=true;
-  try{await signIn(email,password);await loadStaff();await loadPrivateReferenceData();state.online=true;await initializeEventPicker().show();bindConnectivitySignals()}
+  try{await signIn(email,password);await loadStaff();await loadPrivateReferenceData();state.online=true;await initializeEventPicker().show({resume:true});bindConnectivitySignals()}
   catch(error){clearStoredSession();state.session=null;state.online=false;$('loginMsg').textContent='ログインできませんでした。アカウントまたは通信を確認してください。'}
   finally{$('loginPassword').value='';$('loginBtn').disabled=!navigator.onLine}
 }

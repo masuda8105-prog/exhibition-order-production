@@ -2,15 +2,17 @@ import {REPORT_CATEGORIES,summarizeExhibition,groupReports,groupReportsByAuthor}
 import {orderFromCloudRow} from './workflow.js?v=20261009-events1';
 import {preparePhoto,MAX_PHOTOS} from './order-attachments.js?v=20261009-events1';
 import {createReportDraftStorage} from './report-drafts.js?v=20261009-events1';
+import {createSalesUi,salesDashboardHtml,bindSalesDashboard} from './sales-view.js?v=20261009-sales1';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const yen=value=>`¥${Math.round(value).toLocaleString('ja-JP')}`;
-export function createExhibitionReports({state,cfg,request,toast,photoApi}){
+export function createExhibitionReports({state,cfg,request,toast,photoApi,syncSales}){
   let tab='orders',events=[],selected='',reports=[],focus=[],orders=[],ready=false,error='',generation=0,busy=false;
   let draft={product:undefined,category:'',comment:'',id:crypto.randomUUID()};
   const exhibitionDrafts=new Map();
   const photoUrls=new Map();let suspendedDraft=null;
   let renderedMarkup='';
+  let salesUi=createSalesUi();
   const restoredDrafts=new Set();
   const draftStorage=createReportDraftStorage(()=>toast('このブラウザでは下書きの復元用保存ができません。画面を閉じる前に登録してください'));
   function persistDraft(){draftStorage.save(state.session?.user?.id,selected,draft,suspendedDraft);}
@@ -84,6 +86,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   }
   function selector(){return `<div class="reportEvent"><span>展示会</span><strong class="reportActiveEvent">${esc(state.exhibition?.name||currentEvent()?.name||'')}</strong><button id="reportReload" type="button" class="secondary" ${busy?'disabled':''}>↻ 同期</button></div>`;}
   function salesHtml(forReport=false){
+    if(!forReport)return salesDashboardHtml(currentOrders(),salesUi);
     const summary=summarizeExhibition(currentOrders());
     return `${forReport?'':`<h2>${esc(currentEvent().name)}</h2>`}<div class="reportTotal"><small>売上（税抜・送料含む）</small><strong>${yen(summary.total)}</strong></div><div class="reportMetrics">${[['注文件数',`${summary.count}件`],['国内売上',yen(summary.domestic)],['海外売上',yen(summary.overseas)],['販売数量',`${summary.quantity}点`]].map(([label,value])=>`<div><small>${label}</small><b>${value}</b></div>`).join('')}</div>${forReport?`<div class="reportHandoffs"><h3>受け渡し方法別の注文件数</h3><div class="reportMetrics">${[['now','在庫あり・当日お渡し'],['later','翌日・翌々日お渡し'],['hotel','ホテル送り'],['ship','指定住所へ配送'],['normal','国内通常注文'],...(summary.handoffs.unknown?[['unknown','受け渡し方法未登録']]:[])].map(([key,label])=>`<div><small>${label}</small><b>${summary.handoffs[key]}件</b></div>`).join('')}</div></div>`:''}${forReport?'<h2>3. 商品別販売実績（数量TOP10・税抜）</h2>':'<h3>商品別販売実績（税抜）</h3>'}<table class="reportTable"><thead><tr><th>商品</th><th>数量</th><th>売上</th></tr></thead><tbody>${(forReport?summary.products.slice(0,10):summary.products).map(product=>`<tr><td>No.${esc(product.code)}<small>${esc(product.name)}</small></td><td>${product.quantity}</td><td>${yen(product.amount)}</td></tr>`).join('')||'<tr><td colspan="3">確定済み注文はありません</td></tr>'}</tbody></table>`;
   }
@@ -105,8 +108,17 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   function draw(){
     if(tab==='orders')return;
     if(ready&&tab==='notes')persistDraft();
+    if(tab==='sales'&&panel.querySelector('#salesFilters')){
+      // Read disclosure state synchronously: a select change can precede the
+      // browser's queued toggle event, especially on phones.
+      salesUi.filtersOpen=panel.querySelector('#salesFilters').open;
+      salesUi.trendOpen=panel.querySelector('#salesTrend').open;
+      for(const details of panel.querySelectorAll('[data-sales-order]')){
+        if(details.open)salesUi.openOrders.add(details.dataset.salesOrder);else salesUi.openOrders.delete(details.dataset.salesOrder);
+      }
+    }
     const markup=selector()+(error?`<p class="errorText" role="alert">${esc(error)}</p>`:!ready?'<p>読み込み中…</p>':tab==='sales'?salesHtml():tab==='notes'?notesHtml():`<div class="reportExport"><button id="reportPdf" class="primary" ${busy?'disabled':''}>PDFを保存</button><p class="reportMuted">日本語のA4 PDFを作成します</p></div>${reportHtml()}${adminHtml()}`);
-    if(ready&&tab!=='notes'&&markup===renderedMarkup)return;
+    if(ready&&tab!=='notes'&&markup===renderedMarkup){updateSalesSyncStatus();return;}
     const position={x:window.scrollX,y:window.scrollY};
     const containers=[];
     for(let node=panel.parentElement;node&&node!==document.scrollingElement;node=node.parentElement){containers.push({node,x:node.scrollLeft,y:node.scrollTop});}
@@ -118,8 +130,15 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
     const admin=panel.querySelector('.reportAdmin');
     const adminValues=admin?.open?[...admin.querySelectorAll('input')].map(input=>({name:input.name,value:input.value,readOnly:input.readOnly})):null;
     panel.innerHTML=markup;renderedMarkup=markup;
-    panel.querySelector('#reportReload').onclick=reload;
+    panel.querySelector('#reportReload').onclick=async()=>{
+      if(tab==='sales'&&ready&&!error&&syncSales){
+        const button=panel.querySelector('#reportReload');button.disabled=true;
+        try{await syncSales();}catch(e){toast('売上を更新できませんでした。表示中の内容を保持しています');}
+        finally{if(button.isConnected)button.disabled=false;updateSalesSyncStatus();}
+      }else await reload();
+    };
     if(!ready||error)return;
+    if(tab==='sales'){bindSalesDashboard(panel,salesUi,draw);updateSalesSyncStatus();}
     if(tab==='notes')bindNotes();
     if(tab==='reports'){
       panel.querySelector('#reportPdf').onclick=exportPdf;
@@ -138,6 +157,13 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
     if(active?.id){const replacement=panel.querySelector(`#${active.id}`);replacement?.focus({preventScroll:true});if(selection&&replacement)replacement.setSelectionRange(selection.start,selection.end);if(replacement&&inputScroll){replacement.scrollLeft=inputScroll.x;replacement.scrollTop=inputScroll.y;}}
     for(const item of containers)item.node.scrollTo({left:item.x,top:item.y,behavior:'instant'});
     window.scrollTo({left:position.x,top:position.y,behavior:'instant'});
+  }
+  function updateSalesSyncStatus(){
+    const status=panel.querySelector('#salesSyncStatus');if(!status)return;
+    const last=state.lastSyncedAt?new Date(state.lastSyncedAt).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo'}):'未取得';
+    const failed=!navigator.onLine||state.syncError;
+    status.textContent=`${failed?'同期できていません・前回の内容を表示中':'12秒ごとに自動更新'} ／ 最終同期 ${last}`;
+    status.classList.toggle('errorText',Boolean(failed));
   }
   function bindProducts(root){root.querySelectorAll('[data-note-product]').forEach(button=>button.onclick=()=>{
     draft.product=button.dataset.noteProduct||null;
@@ -367,7 +393,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   setInterval(()=>{if(state.online&&document.visibilityState==='visible'&&(tab==='sales'||(tab==='reports'&&!panel.querySelector('.reportAdmin[open]'))))reload();},12000);
   return {
     refresh(){if((tab==='sales'||tab==='reports')&&ready&&!panel.querySelector('.reportAdmin[open]')&&!busy)draw();},
-    clear(){generation++;restoredDrafts.clear();for(const value of new Set([draft,suspendedDraft,...exhibitionDrafts.values()]))releasePhotos(value);photoUrls.clear();suspendedDraft=null;events=[];reports=[];orders=[];focus=[];selected='';ready=false;busy=false;exhibitionDrafts.clear();draft=freshNote();tab='orders';panel.innerHTML='';show();},
+    clear(){generation++;restoredDrafts.clear();for(const value of new Set([draft,suspendedDraft,...exhibitionDrafts.values()]))releasePhotos(value);photoUrls.clear();suspendedDraft=null;events=[];reports=[];orders=[];focus=[];selected='';ready=false;busy=false;salesUi=createSalesUi();exhibitionDrafts.clear();draft=freshNote();tab='orders';panel.innerHTML='';show();},
     hasDraft,
     get busy(){return busy;},
   };

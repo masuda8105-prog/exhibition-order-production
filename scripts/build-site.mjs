@@ -9,7 +9,7 @@ const files=[
   'index.html','styles.css','app.js','workflow.js','security.js','receipt-share.js','order-attachments.js','order-pdf.js','exhibition-reports.js','exhibition-selection.js','report-model.js','manifest.webmanifest','assets/sun_nishimura_logo.jpg',
   'assets/neo-icon.svg','assets/neo-icon-192.png','assets/neo-icon-512.png','assets/apple-touch-icon.png',
   'assets/exhibition-icon.svg','assets/exhibition-icon-192.png','assets/exhibition-icon-512.png','assets/exhibition-apple-touch.png',
-  'report-drafts.js',
+  'report-drafts.js','sales-model.js','sales-view.js',
   'vendor/jspdf.umd.min.js','vendor/jspdf.LICENSE','vendor/qrcode.min.js','vendor/html2canvas.min.js',
 ];
 

@@ -177,3 +177,45 @@ html,body{max-width:100%;overflow-x:hidden}.app{padding-bottom:142px}.syncLine{f
 #exhibitionReport .reportComment p{margin:0;line-height:1.65}
 #exhibitionReport .reportRecordActions{margin-top:6px}
 @media(max-width:480px){.reportFeedback{margin:14px 12px 18px}.reportAuthorGroup{margin-left:8px}.reportProductName{font-size:19px}#exhibitionReport .reportProductHeading{padding:14px 12px}}
+
+/* Sales controls keep their state during background synchronization. */
+.salesHeading h2{margin-bottom:6px}.salesHeading p{min-height:36px;line-height:1.5;margin:0 0 14px}
+.salesRegion,.salesHistoryStatus{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.salesRegion button,.salesViews button,.salesHistoryStatus button,.salesDateActions button,.salesApplied button{min-height:46px;padding:8px;border:1px solid #ccd5df;border-radius:10px;background:#fff;color:#263e54;font:inherit;font-size:14px;cursor:pointer}
+.salesRegion button[aria-pressed=true],.salesViews button[aria-pressed=true],.salesHistoryStatus button[aria-pressed=true]{background:#172f46;color:white;border-color:#172f46}
+.salesProductLabel{display:block;font-weight:750;margin:16px 0;font-size:14px}
+.salesProductLabel select,.salesFilterGrid select{width:100%;min-width:0;min-height:48px;font:inherit;font-size:16px;padding:10px;border:1px solid #ccd5df;border-radius:10px;background:#fff;margin-top:7px}
+.salesFilters,.salesTrend{background:#fff;border:1px solid #dce3ea;border-radius:12px;padding:12px 14px;margin:14px 0}
+.salesFilters>summary,.salesTrend>summary{min-height:28px;cursor:pointer;font-weight:750;font-size:15px}
+.salesFilterGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}
+.salesFilterGrid label{min-width:0;font-size:14px;font-weight:750}.salesFilterGrid input{margin-top:7px;min-width:0;max-width:100%;font-size:16px;appearance:none}
+.salesSearchLabel,.salesDateActions{grid-column:1/-1}.salesDateActions{display:flex;gap:8px}.salesDateActions button{flex:1}
+.salesApplied{display:flex;align-items:center;gap:10px}.salesApplied p{flex:1;font-size:13px;overflow-wrap:anywhere;color:#263e54}.salesApplied button{flex-shrink:0;font-size:12px}
+.reportTotal>span{display:block;margin-top:8px;font-size:12px;color:#dce3ea}
+.salesMetrics small{font-size:12px;color:#475467}.salesMetrics b{overflow-wrap:anywhere}
+.salesOperations{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:16px 0;font-size:13px}.salesOperations>span{width:100%;color:#475467}.salesOperations>b{border:1px solid #dce3ea;background:#f7f9fc;padding:8px;border-radius:8px;font-weight:650}.salesOperations button{border:1px solid #f5cd93;background:#fff8ed;color:#75450e;border-radius:8px;padding:8px;min-height:44px;font:inherit;cursor:pointer}.salesOperations button span{display:block;font-size:11px;margin-top:2px}
+.salesDay{display:grid;grid-template-columns:86px minmax(0,1fr) 34px;gap:8px;align-items:center;margin:10px 0;font-size:12px}.salesDay>div{position:relative;min-height:30px;display:flex;align-items:center;padding:4px 6px;background:#f1f5f9}.salesDay i{position:absolute;inset:0 auto 0 0;background:#d8e8f5}.salesDay b{position:relative;overflow-wrap:anywhere}.salesDay small{text-align:right}
+.salesViews{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:24px 0 12px}.salesViews button{font-weight:700}
+#salesDetail{scroll-margin-top:100px;outline:none}.salesRows{display:grid;gap:10px}
+.salesRow,.salesOrder{background:#fff;border:1px solid #dce3ea;border-radius:12px;min-width:0;overflow:hidden}
+.salesRow,.salesOrder summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px;text-align:left}
+button.salesRow{width:100%;font:inherit;cursor:pointer}.salesRow>div:first-child,.salesOrder summary>div:first-child{flex:1;min-width:0}.salesRow h4,.salesOrder h4{font-size:16px;margin:0 0 6px;overflow-wrap:anywhere;color:#172f46}.salesRow small,.salesOrder small,.salesOrder summary>div>span{display:block;font-size:12px;color:#475467;line-height:1.5;overflow-wrap:anywhere}
+.salesRowNumbers{flex-shrink:0;text-align:right}.salesRowNumbers b{font-size:18px;display:block}.salesRowNumbers span{display:block;font-size:12px;color:#475467;margin-top:5px}
+.salesOrder summary{cursor:pointer;min-height:85px;list-style:none}.salesOrder summary::-webkit-details-marker{display:none}.salesOrder summary h4:before{content:'＋ ';color:#59748d}.salesOrder[open] summary h4:before{content:'− '}.salesOrderBody{padding:0 14px 16px;border-top:1px solid #dce3ea}.salesOrderBody>p{font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.salesProductTable button{padding:6px 0;min-height:44px;display:block;width:100%;border:0;background:transparent;text-align:left;font:inherit;color:#175b8f;font-weight:750;cursor:pointer}.salesProductTable small{font-weight:400;line-height:1.5}.salesEmpty{padding:24px 14px;background:#f5f7fa;border-radius:12px;color:#475467;font-size:14px}.salesMore{width:100%;min-height:48px;margin-top:16px}.salesDefinitions{line-height:1.6;margin-top:24px}
+@media(min-width:1024px){.reportPanel .salesMetrics{grid-template-columns:repeat(3,minmax(0,1fr))}.salesFilterGrid{grid-template-columns:repeat(4,minmax(0,1fr))}.salesSearchLabel{grid-column:1/4}.salesDateActions{grid-column:4}.salesViews{grid-template-columns:repeat(5,minmax(0,1fr))}.salesHeading p{min-height:0}.salesRow,.salesOrder summary{padding:18px 20px}.salesRowNumbers b{font-size:22px}}
+@media(max-width:360px){.salesRow,.salesOrder summary{padding:12px 10px;gap:8px}.salesRowNumbers b{font-size:16px}.salesViews button{font-size:13px}.salesMetrics>div{padding:12px 10px}}
+
+/* Readable copies in the browser, PNG, native print and generated A4 PDF. */
+.receiptSheet .receiptInfoValue{font-size:21px}.receiptSheet .receiptInfoLabel{font-size:15px;color:#263e54}
+.receiptSheet .receiptMetaLine{font-size:16px}.receiptSheet .receiptTable{font-size:20px;line-height:1.45}.receiptSheet .receiptTable th{font-size:16px;color:#263e54}
+.receiptSheet .receiptTable td{overflow-wrap:anywhere}.receiptSheet .receiptTable col{display:table-column!important}.receiptSheet .receiptTable col.code{width:108px}.receiptSheet .receiptTable col.qty{width:64px}.receiptSheet .receiptTable col.unit{width:120px}.receiptSheet .receiptTable col.subtotal{width:130px}.receiptSheet .receiptTable th.num{white-space:normal!important;overflow-wrap:normal!important}
+.receiptSheet .receiptNote{font-size:18px;color:#263e54}.receiptSheet .receiptSummaryRow{font-size:20px}.receiptSheet .receiptSummaryRow.total{font-size:27px}
+@media print{
+  .receiptSheet .receiptHeaderSimple{grid-template-columns:minmax(0,1fr) 250px!important}
+  .receiptSheet .receiptBrandName{font-size:13px!important}.receiptSheet .receiptBrandSub,.receiptSheet .receiptDocSub{font-size:11px!important}.receiptSheet .receiptMetaLine{font-size:13px!important;line-height:1.5!important}.receiptSheet .receiptDocTitle{font-size:24px!important}
+  .receiptSheet .receiptInfoBand{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;margin-top:10px!important}.receiptSheet .receiptInfoCard{padding:7px 8px!important}.receiptSheet .receiptInfoLabel{font-size:12px!important;color:#263e54!important}.receiptSheet .receiptInfoValue{font-size:16px!important;line-height:1.4!important;margin-top:3px!important}
+  .receiptSheet .receiptSection{margin-top:12px!important}.receiptSheet .receiptSectionTitle{font-size:17px!important}.receiptSheet .receiptSectionHint{font-size:13px!important}
+  .receiptSheet .receiptTable{font-size:16px!important}.receiptSheet .receiptTable th{font-size:13px!important}.receiptSheet .receiptTable th,.receiptSheet .receiptTable td{padding:7px 5px!important;line-height:1.4!important;overflow-wrap:anywhere!important}.receiptSheet .receiptTable col.code{width:92px!important}.receiptSheet .receiptTable col.qty{width:55px!important}.receiptSheet .receiptTable col.unit{width:105px!important}.receiptSheet .receiptTable col.subtotal{width:120px!important}
+  .receiptSheet .receiptFooterGrid{grid-template-columns:minmax(0,1fr) 300px!important;gap:12px!important;margin-top:12px!important}.receiptSheet .receiptNote{font-size:16px!important;line-height:1.5!important;padding:8px!important}.receiptSheet .receiptSummaryRow{font-size:16px!important;padding:5px 0!important}.receiptSheet .receiptSummaryRow.total{font-size:23px!important}.receiptSheet .receiptCurrencyNote,.receiptSheet .receiptFooterMini{font-size:11px!important;color:#263e54!important}
+}

@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest?v=20261009-events1">
 <meta name="apple-mobile-web-app-title" content="展示会注文">
 <meta name="referrer" content="no-referrer">
-<link rel="stylesheet" href="styles.css?v=20261009-events1">
+<link rel="stylesheet" href="styles.css?v=20261009-sales1">
 <script src="online-config.js?v=20260917-photo1"></script>
 </head>
 <body>
@@ -31,14 +31,15 @@
 
 <section id="eventChooser" class="eventChooser hidden" aria-labelledby="eventChooserTitle">
   <header class="eventChooserHead"><div><div class="eyebrow">展示会 注文管理</div><h1 id="eventChooserTitle">参加する展示会を選択</h1></div><button id="eventChooserCancel" type="button" class="secondary hidden">現在の展示会へ戻る</button></header>
+  <p class="reportMuted">同じ端末では、当日中は最後に選んだ展示会を自動で開きます。上部の「展示会変更」から切り替えられます。</p>
   <p>注文・売上・気づき・レポートは、選んだ展示会ごとに保存します。</p>
   <button id="eventChooserReload" type="button" class="secondary">↻ 一覧を更新</button>
   <p id="eventChooserError" class="errorText" role="alert"></p>
   <div id="eventChoices" class="eventChoices"></div>
   <details class="eventCreate"><summary>一覧にない展示会を新しく登録</summary>
     <form id="createExhibitionForm">
-      <p class="reportMuted">毎年・毎回別の展示会として、名前に年や開催回を入れると分かりやすくなります。</p>
-      <label>展示会名<input name="name" required maxlength="200" placeholder="例：IMF 2026（大阪）"></label>
+      <p class="reportMuted">開催ごとに登録すると、以前の注文やレポートと分けて管理できます。同じ名前の場合は開催場所・開催回で区別してください。</p>
+      <label>展示会名<input name="name" required maxlength="200" placeholder="例：IMF（大阪）"></label>
       <label>お渡し番号の接頭辞<input name="pickup_prefix" required maxlength="40" placeholder="例：IMF"><small>「IMF-1」のように表示します。発行後は変更できません。</small></label>
       <label>会場・開催地<input name="venue" maxlength="200" placeholder="例：大阪"></label>
       <div class="two"><label>開始日（任意）<input name="start_date" type="date"></label><label>終了日（任意）<input name="end_date" type="date"></label></div>
@@ -92,6 +93,6 @@
 <script src="vendor/qrcode.min.js"></script>
 <script src="vendor/html2canvas.min.js"></script>
 <script src="vendor/jspdf.umd.min.js"></script>
-<script type="module" src="app.js?v=20261009-events2"></script>
+<script type="module" src="app.js?v=20261009-sales1"></script>
 </body>
 </html>

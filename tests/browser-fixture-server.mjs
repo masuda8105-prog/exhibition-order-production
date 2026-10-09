@@ -4,6 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomBytes} from 'node:crypto';
 import {createReportDemo} from './report-demo-fixture.mjs';
+import {exhibitionDisplayName} from '../exhibition-selection.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..','_site');
 const portArgument=process.argv.find(value=>value.startsWith('--port='));
@@ -30,6 +31,8 @@ const publicFiles=new Map([
   ['/assets/exhibition-icon-512.png','assets/exhibition-icon-512.png'],
   ['/assets/exhibition-apple-touch.png','assets/exhibition-apple-touch.png'],
   ['/report-model.js','report-model.js'],
+  ['/sales-model.js','sales-model.js'],
+  ['/sales-view.js','sales-view.js'],
   ['/order-pdf.js','order-pdf.js'],
   ['/vendor/jspdf.umd.min.js','vendor/jspdf.umd.min.js'],
   ['/workflow.js','workflow.js'],
@@ -175,7 +178,7 @@ const server=http.createServer(async(request,response)=>{
   if(!relative)return sendJson(response,404,{error:'not_found'});
   try{
     let body=await fs.readFile(path.join(root,relative));
-    if(relative==='index.html'&&!manualEventPicker)body=Buffer.from(body.toString('utf8').replace('</body>',`<script>window.addEventListener('load',()=>{let selected=false;const choose=()=>{if(selected)return;const button=[...document.querySelectorAll('[data-event-id]')].find(el=>el.querySelector('strong')?.textContent===window.EXHIBITION_CONFIG.eventName);if(button){selected=true;button.click();}};new MutationObserver(choose).observe(document.body,{subtree:true,childList:true});choose();});</script></body>`));
+    if(relative==='index.html'&&!manualEventPicker)body=Buffer.from(body.toString('utf8').replace('</body>',`<script>window.addEventListener('load',()=>{let selected=false;const choose=()=>{if(selected)return;const button=[...document.querySelectorAll('[data-event-id]')].find(el=>el.querySelector('strong')?.textContent===${JSON.stringify(exhibitionDisplayName(demo?.eventName||'検証用展示会'))});if(button){selected=true;button.click();}};new MutationObserver(choose).observe(document.body,{subtree:true,childList:true});choose();});</script></body>`));
     if(demo&&relative==='index.html')body=Buffer.from(body.toString('utf8').replace('</body>',`<script>window.addEventListener('load',()=>{const banner=document.createElement('div');banner.textContent='試用デモ・架空データ ／ 入力はこのデモ内だけに保存されます';banner.style.cssText='position:sticky;top:0;z-index:100;background:#fef3c7;color:#78350f;text-align:center;padding:10px;font-size:13px;font-weight:bold';document.body.prepend(banner);if(!document.getElementById('loginView').classList.contains('hidden')){document.getElementById('loginEmail').value='fixture@example.invalid';document.getElementById('loginPassword').value='fixture-password';document.getElementById('loginBtn').click();}});</script></body>`));
     if(relative==='app.js'&&!keepPrint)body=Buffer.from(body.toString('utf8').replace('window.print();',"window.__FIXTURE_PRINT_CALLED__=true;window.dispatchEvent(new Event('afterprint'));"));
     response.writeHead(200,{'content-type':mime[path.extname(relative)]||'application/octet-stream','cache-control':'no-store'});

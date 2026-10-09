@@ -5,7 +5,7 @@ const require=createRequire(import.meta.url);
 const playwright=require('C:/Users/AONUSR02/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const engine=process.env.LAYOUT_BROWSER||'chromium';
 const browser=await playwright[engine].launch({headless:true,...(engine==='chromium'?{executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'}:{})});
-const base='http://127.0.0.1:8795/',errors=[];
+const base=process.env.MULTI_EXHIBITION_FIXTURE_URL||'http://127.0.0.1:8795/',errors=[];
 const eventName=`IMF 検証用（大阪）-${engine}-${Date.now()}`;
 try{
   const context=await browser.newContext({viewport:{width:1440,height:900}}),page=await context.newPage();
@@ -19,7 +19,7 @@ try{
   await page.setInputFiles('#notePhotoFiles','assets/exhibition-icon-192.png');await page.waitForSelector('.reportPhotoGrid img');
   await page.waitForTimeout(500);
   await page.click('#changeExhibition');assert.equal(await page.locator('#eventChooser').isVisible(),false,'入力中は切り替えない');
-  await page.reload();await page.waitForSelector('[data-event-id="jex_2026"]');await page.click('[data-event-id="jex_2026"]');
+  await page.reload();await page.waitForSelector('#appView:not(.hidden)');
   await page.click('[data-screen="notes"]');await page.waitForFunction(()=>document.querySelector('#noteComment')?.value.includes('記入途中'));
   assert.equal(await page.inputValue('#noteComment'),text);assert.equal(await page.locator('[data-note-category="positive"]').getAttribute('aria-pressed'),'true');
   assert.equal(await page.locator('.reportPhotoGrid img').count(),1);
@@ -28,7 +28,7 @@ try{
   await page.click('[data-screen="reports"]');await page.waitForSelector('#exhibitionReport');
   await page.locator('.reportComment').filter({hasText:text}).locator('[data-edit-report]').click();
   text+='（追記）';await page.fill('#noteComment',text);
-  await page.reload();await page.waitForSelector('[data-event-id="jex_2026"]');await page.click('[data-event-id="jex_2026"]');await page.click('[data-screen="notes"]');
+  await page.reload();await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-screen="notes"]');
   await page.waitForFunction(()=>document.querySelector('#noteComment')?.value.endsWith('（追記）'));
   assert.ok((await page.textContent('.reportPanel h2')).includes('書き直す'));assert.equal(await page.locator('.reportPhotoGrid img').count(),1);
   await page.click('#noteSave');await page.waitForFunction(()=>document.querySelector('#exhibitionReport')?.textContent.includes('（追記）'));
