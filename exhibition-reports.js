@@ -2,7 +2,7 @@ import {REPORT_CATEGORIES,summarizeExhibition,groupReports,groupReportsByAuthor}
 import {orderFromCloudRow} from './workflow.js?v=20261009-events1';
 import {preparePhoto,MAX_PHOTOS} from './order-attachments.js?v=20261009-events1';
 import {createReportDraftStorage} from './report-drafts.js?v=20261009-events1';
-import {createSalesUi,salesDashboardHtml,bindSalesDashboard} from './sales-view.js?v=20261009-sales1';
+import {createSalesUi,salesDashboardHtml,bindSalesDashboard} from './sales-view.js?v=20261009-sales2';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const yen=value=>`¥${Math.round(value).toLocaleString('ja-JP')}`;

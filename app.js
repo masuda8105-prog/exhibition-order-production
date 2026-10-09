@@ -3,7 +3,7 @@ import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmShared
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
 import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20261009-events1';
-import {createExhibitionReports} from './exhibition-reports.js?v=20261009-sales1';
+import {createExhibitionReports} from './exhibition-reports.js?v=20261009-sales2';
 import {createExhibitionSelection} from './exhibition-selection.js?v=20261009-sales1';
 
 const cfg={...(window.EXHIBITION_CONFIG||{})};

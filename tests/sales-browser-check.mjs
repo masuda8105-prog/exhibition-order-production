@@ -14,9 +14,17 @@ try{
   await page.route('**/rest/v1/exhibition_app_orders?**',route=>{calls++;return route.fulfill({status:failed?503:200,contentType:'application/json',body:JSON.stringify(failed?{}:rows)});});
   await page.goto('http://127.0.0.1:8794/');await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-screen="sales"]');await page.waitForSelector('#salesAmount');
   assert.equal(await page.locator('#salesAmount').innerText(),'¥3,580');assert.equal(await page.locator('.salesProductTable tbody tr').count(),2);
+  await page.click('[data-sales-region="domestic"]');await page.click('#salesFilters summary');await page.selectOption('#salesAccount','卸A');await page.selectOption('#salesProduct','1');
+  assert.equal(await page.locator('#salesAmount').innerText(),'¥980');assert.equal(await page.locator('#salesClearProduct').isVisible(),true);
+  await page.locator('#salesDetail [data-sales-clear="product"]').click();assert.equal(await page.inputValue('#salesProduct'),'');assert.equal(await page.inputValue('#salesAccount'),'卸A');assert.equal(await page.locator('[data-sales-region="domestic"]').getAttribute('aria-pressed'),'true');assert.equal(await page.locator('#salesAmount').innerText(),'¥2,080');assert.equal(await page.locator('.salesProductTable tbody tr').count(),2);
+  await page.selectOption('#salesProduct','1');await page.click('#salesClearProduct');assert.equal(await page.locator('#salesAmount').innerText(),'¥2,080');
+  await page.locator('.salesFilterChips [data-sales-clear="account"]').click();assert.equal(await page.inputValue('#salesAccount'),'');assert.equal(await page.locator('.salesFilterChips [data-sales-clear="region"]').count(),1);
+  await page.selectOption('#salesProduct','2');await page.locator('#salesDetail [data-sales-reset]').click();assert.equal(await page.locator('#salesAmount').innerText(),'¥3,580');assert.equal(await page.inputValue('#salesProduct'),'');assert.equal(await page.locator('[data-sales-region=""]').getAttribute('aria-pressed'),'true');assert.equal(await page.locator('.salesApplied').count(),0);assert.equal(await page.locator('[data-sales-view="products"]').getAttribute('aria-pressed'),'true');
   await page.click('[data-sales-region="overseas"]');assert.equal(await page.locator('#salesAmount').innerText(),'¥1,500');
-  await page.click('[data-sales-region="domestic"]');await page.click('#salesFilters summary');await page.selectOption('#salesAccount','卸A');await page.selectOption('#salesStaff','宮川');await page.selectOption('#salesProduct','1');
+  await page.click('[data-sales-region="domestic"]');if(!await page.locator('#salesFilters').evaluate(el=>el.open))await page.click('#salesFilters summary');await page.selectOption('#salesAccount','卸A');await page.selectOption('#salesStaff','宮川');await page.selectOption('#salesProduct','1');
   assert.equal(await page.locator('#salesAmount').innerText(),'¥480');assert.equal(await page.locator('.salesRow').count(),1);assert.match(await page.locator('.salesRow').innerText(),/眼鏡店A.*¥480.*4点/s);
+  await page.fill('#salesFrom','2026-10-08');await page.fill('#salesTo','2026-10-08');
+  await page.locator('.salesFilterChips [data-sales-clear="dates"]').click();assert.equal(await page.inputValue('#salesFrom'),'');assert.equal(await page.inputValue('#salesTo'),'');assert.equal(await page.inputValue('#salesStaff'),'宮川');assert.equal(await page.inputValue('#salesProduct'),'1');
   await page.fill('#salesFrom','2026-10-08');await page.fill('#salesTo','2026-10-08');
   await page.click('[data-sales-view="orders"]');await page.click('.salesOrder summary');assert.match(await page.locator('.salesOrderBody').innerText(),/商品1/);
   await page.evaluate(()=>scrollTo(0,600));const position=await page.evaluate(()=>scrollY),beforeCalls=calls;
