@@ -66,7 +66,7 @@ try{
   await other.click('#refreshBtn');await other.waitForFunction(()=>!document.querySelector('#refreshBtn').disabled);await other.click(`[data-detail="${first.id}"]`);assert.match(await other.textContent('.finalizeStep .pickupNumber'),new RegExp(number));await other.click('#finalizeClose');
   await page.click('#finalizeEdit');await page.click('[data-day="2"]');await page.fill('#fNotes','修正後も同じ番号');assert.equal(await page.textContent('#saveBtn'),'同じ番号で保存して進む');
   await page.click('#saveBtn');await page.waitForSelector('.finalizeStep .pickupNumber');assert.equal((await rows(page))[0].pickup_number,first.pickup_number);
-  await finishShared(page);assert.match(await page.textContent('.success'),/受け取り待ち/);assert.match(await page.textContent('#printArea'),new RegExp(number));
+  await finishShared(page);assert.match(await page.textContent('.success'),/受け取り待ち/);await page.click('#successPrint');await page.waitForFunction(()=>document.querySelector('#printArea')?.textContent.includes('NEO-'));assert.match(await page.textContent('#printArea'),new RegExp(number));
   await page.click('#successCustomerCopy');await page.waitForSelector('#customerQrCode img');assert.match(await page.textContent('.qrReceipt .pickupNumber'),new RegExp(number));
   const receiptUrl=await page.getAttribute('#openReceiptImage','href');assert.equal((await page.request.get(receiptUrl)).status(),200);
   await page.click('#qrClose');await page.click('#detailClose');

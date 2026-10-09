@@ -69,7 +69,7 @@ function harness(fetchImpl){
     calls.push({url,options});return fetchImpl?fetchImpl(url,options):{ok:true,json:async()=>[{id:'fixture-pickup',payload:JSON.parse(options.body).payload,updated_at:'2099-01-02T00:00:00Z'}]};
   }});
   vm.runInContext(source+'\nglobalThis.subject={state,pendingPayments,cardHtml,showPickupPayment,handOverFromCard,loadOrders,receiptDocumentHtml};',context);
-  context.subject.state.session={access_token:'fixture-token',expires_at:4102444800,user:{id:'fixture-user'}};
+  context.subject.state.exhibition={id:'neo_2026',order_event_name:'展示会',pickup_prefix:'NEO'};context.subject.state.session={access_token:'fixture-token',expires_at:4102444800,user:{id:'fixture-user'}};
   context.subject.state.orders=[pickup()];
   return {...context.subject,context,calls,element,credit,cash};
 }

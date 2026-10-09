@@ -16,11 +16,10 @@ try{
   await page.click('[data-screen="notes"]');await page.waitForSelector('#noteForm');
   assert.ok(!(await page.locator('#noteForm').innerText()).includes('今回の注力商品'));
   await page.fill('#noteSearch','1065');await page.click('[data-note-product="1065"]');await page.click('[data-note-category="positive"]');await page.fill('#noteComment','デモの下書き分離確認');
-  await page.selectOption('#reportEvent','wof_2026');await page.waitForSelector('#noteForm');assert.equal(await page.inputValue('#noteComment'),'');
-  await page.selectOption('#reportEvent','jex_2026');await page.waitForSelector('#noteForm');assert.equal(await page.inputValue('#noteComment'),'デモの下書き分離確認');
+  await page.click('#changeExhibition');assert.equal(await page.locator('#eventChooser').isVisible(),false);assert.equal(await page.inputValue('#noteComment'),'デモの下書き分離確認');
   await page.click('#noteSave');await page.waitForFunction(()=>document.querySelector('#noteComment')?.value==='');
-  await page.selectOption('#reportEvent','wof_2026');await page.waitForSelector('#noteForm');
-  await page.selectOption('#reportEvent','jex_2026');await page.waitForSelector('#noteForm');assert.equal(await page.inputValue('#noteComment'),'');
+  await page.click('#changeExhibition');await page.click('[data-event-id="wof_2026"]');await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-screen="notes"]');await page.waitForSelector('#noteForm');assert.equal(await page.inputValue('#noteComment'),'');
+  await page.click('#changeExhibition');await page.click('[data-event-id="jex_2026"]');await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-screen="notes"]');await page.waitForSelector('#noteForm');assert.equal(await page.inputValue('#noteComment'),'');
   await page.click('[data-screen="reports"]');await page.waitForSelector('#exhibitionReport');
   assert.ok((await page.locator('#exhibitionReport').innerText()).includes('デモの下書き分離確認'));
   await fs.mkdir('tmp/report-demo',{recursive:true});await page.screenshot({path:'tmp/report-demo/report-mobile.png',fullPage:true});

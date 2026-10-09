@@ -1,11 +1,12 @@
 import {createOrderPdf} from './order-pdf.js?v=20261001-reference-size1';
-import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,SHIPPING_FEE,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,orderTaxSummary,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow,validOfficePhotoPaths} from './workflow.js?v=20261002-orderround2';
+import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,SHIPPING_FEE,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,orderTaxSummary,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow,validOfficePhotoPaths} from './workflow.js?v=20261009-events1';
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
 import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20260930-officephotos1';
-import {createExhibitionReports} from './exhibition-reports.js?v=20261009-desktop3';
+import {createExhibitionReports} from './exhibition-reports.js?v=20261009-events1';
+import {createExhibitionSelection} from './exhibition-selection.js?v=20261009-events1';
 
-const cfg=window.EXHIBITION_CONFIG||{};
+const cfg={...(window.EXHIBITION_CONFIG||{})};
 const $=id=>document.getElementById(id);
 const LS_STAFF='exhibitionOps.staff.v2',LS_KEYPAD_ALIGN='exhibitionOps.keypadAlign.v1';
 const pendingHandovers=new Set(),pendingDeletes=new Set(),pendingPayments=new Set();
@@ -15,6 +16,29 @@ let attachmentOperation=null,attachmentPrintBusy=false,printGeneration=0;
 let printOriginalTitle='';
 const state={online:false,session:null,staff:null,orders:[],products:[],accounts:[],draft:null,rememberDraftInput:null,signalsBound:false,syncTimer:null,syncInFlight:null,refreshPromise:null,lastSyncedAt:null,dataEpoch:0,tab:'active',sheetVersion:0,receiptBlobUrl:null};
 let exhibitionReports=null;
+let eventPicker=null;
+function initializeEventPicker(){return eventPicker||=createExhibitionSelection({state,request:exhibitionRequest,onSelect:enterExhibition,onCancel:showApp});}
+async function exhibitionRequest(path,options={}){
+  await ensureFreshSession();
+  return fetchJson(`${sbBase()}/rest/v1/${path}`,{method:options.method||'GET',headers:{...sbHeaders(),Prefer:'return=representation'},...(options.body?{body:JSON.stringify(options.body)}:{})});
+}
+async function enterExhibition(event){
+  if(state.exhibition?.id===event.id){showApp();return;}
+  state.dataEpoch++;clearInterval(state.syncTimer);state.syncTimer=null;state.syncInFlight=null;
+  exhibitionReports?.clear();attachmentStore.clear();clearReceiptPreview();printGeneration++;
+  for(const order of state.orders)wipeOrderData(order);
+  state.orders=[];state.draft=null;state.rememberDraftInput=null;state.tab='active';
+  $('orderSearch').value='';$('orders').innerHTML='';$('sheetBody').innerHTML='';$('printArea').innerHTML='';
+  state.exhibition=event;cfg.eventName=event.order_event_name;
+  const epoch=state.dataEpoch,user=state.session?.user?.id;
+  try{await loadOrders();if(epoch!==state.dataEpoch||user!==state.session?.user?.id)throw new Error('SESSION_CHANGED');showApp();window.scrollTo({top:0,behavior:'instant'});}
+  catch(error){if(epoch===state.dataEpoch){state.exhibition=null;state.orders=[];}throw error;}
+}
+function changeExhibition(){
+  state.rememberDraftInput?.();
+  if(hasResumableDraft()||exhibitionReports?.hasDraft()||exhibitionReports?.busy||attachmentStore.hasUnsavedPhotos()||attachmentOperation||attachmentPrintBusy||pendingFinalizations.size||pendingHandovers.size||pendingPayments.size||pendingDeletes.size){toast('入力や処理の途中です。保存・破棄・処理完了の後に展示会を変更してください');return;}
+  initializeEventPicker().show();
+}
 function initializeExhibitionReports(){if(exhibitionReports)return;exhibitionReports=createExhibitionReports({state,cfg,toast,photoApi:{
   async upload(path,blob){await ensureFreshSession();try{return await fetchJson(`${sbBase()}/storage/v1/object/exhibition-report-photos/${path}`,{method:'POST',headers:{...sbHeaders(),'Content-Type':'image/jpeg'},body:blob});}catch(error){if(error.status===409||error.storageCode==='409'||error.storageCode===409)return;throw error;}},
   async sign(path){await ensureFreshSession();const result=await fetchJson(`${sbBase()}/storage/v1/object/sign/exhibition-report-photos/${path}`,{method:'POST',headers:sbHeaders(),body:JSON.stringify({expiresIn:3600})});const signed=result.signedURL;if(typeof signed!=='string')throw new Error('INVALID_PHOTO_URL');const url=new URL(signed.startsWith('/object/')?`${sbBase()}/storage/v1${signed}`:signed,`${sbBase()}/storage/v1/`);if(url.origin!==new URL(sbBase()).origin)throw new Error('INVALID_PHOTO_URL');return url.href;},
@@ -91,6 +115,7 @@ async function loadPrivateReferenceData(){
 }
 
 async function saveNew(order){
+  if(!state.exhibition)throw new Error('EXHIBITION_REQUIRED');
   if(needsHeadOfficeShare(order)&&!isUnconfirmed(order))throw new Error('SHARE_REQUIRED');
   await ensureFreshSession();
   const id=order.clientSubmissionId||newUuid(),saved=normalizeForSave({...order,localId:id,clientSubmissionId:id,syncState:'synced'});
@@ -103,7 +128,7 @@ async function saveNew(order){
   try{rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders`,{method:'POST',headers:{...sbHeaders(),Prefer:'return=representation'},body:JSON.stringify({id,event_name:cfg.eventName||'展示会',payload})})}
   catch(error){
     if(error.status!==409)throw error;
-    rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders?select=id,payload,pickup_number,confirmation_state,created_at,updated_at&id=eq.${encodeURIComponent(id)}&deleted_at=is.null`,{headers:sbHeaders()});
+    rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders?select=id,event_name,payload,pickup_number,pickup_prefix,confirmation_state,created_at,updated_at&id=eq.${encodeURIComponent(id)}&event_name=eq.${encodeURIComponent(cfg.eventName)}&deleted_at=is.null`,{headers:sbHeaders()});
     if(rows?.[0]){
       const existing=orderFromCloudRow(rows[0]),existingPayload=JSON.stringify(orderPayloadForCloud(existing));
       if(existingPayload!==JSON.stringify(payload)){
@@ -126,7 +151,7 @@ async function saveEdited(draft){
 async function patchCloudOrder(order,changes){
   await ensureFreshSession();
   const revision=order.cloudUpdatedAt?`&updated_at=eq.${encodeURIComponent(order.cloudUpdatedAt)}`:'';
-  const rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders?id=eq.${encodeURIComponent(order.localId)}&deleted_at=is.null${revision}`,{method:'PATCH',headers:{...sbHeaders(),Prefer:'return=representation'},body:JSON.stringify(changes)});
+  const rows=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders?id=eq.${encodeURIComponent(order.localId)}&event_name=eq.${encodeURIComponent(cfg.eventName||'展示会')}&deleted_at=is.null${revision}`,{method:'PATCH',headers:{...sbHeaders(),Prefer:'return=representation'},body:JSON.stringify(changes)});
   if(!rows?.[0]){await loadOrders();throw new Error('SYNC_CONFLICT')}
   return rows[0];
 }
@@ -134,17 +159,18 @@ async function updateOrder(order){const result=orderFromCloudRow(await patchClou
 async function hideOrder(order){await patchCloudOrder(order,{deleted_at:new Date().toISOString()});state.dataEpoch++;state.orders=state.orders.filter(item=>item.localId!==order.localId);markSynced();render()}
 function markSynced(){state.lastSyncedAt=new Date();setSync('online',`保存済み・自動同期 ${formatDateTime(state.lastSyncedAt,true)}`)}
 async function loadOrders(){
+  if(!state.exhibition)return;
   const rows=[],pageSize=500,epoch=state.dataEpoch,userId=state.session?.user?.id;
   for(let offset=0;;offset+=pageSize){
     await ensureFreshSession();
-    const page=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders?select=id,payload,pickup_number,confirmation_state,created_at,updated_at&event_name=eq.${encodeURIComponent(cfg.eventName||'展示会')}&deleted_at=is.null&order=created_at.desc,id.desc&limit=${pageSize}&offset=${offset}`,{headers:sbHeaders()});
+    const page=await fetchJson(`${sbBase()}/rest/v1/exhibition_app_orders?select=id,event_name,payload,pickup_number,pickup_prefix,confirmation_state,created_at,updated_at&event_name=eq.${encodeURIComponent(cfg.eventName||'展示会')}&deleted_at=is.null&order=created_at.desc,id.desc&limit=${pageSize}&offset=${offset}`,{headers:sbHeaders()});
     rows.push(...(page||[]));if(!page||page.length<pageSize)break;
   }
   if(epoch!==state.dataEpoch||!state.session||state.session.user?.id!==userId)return;
   state.orders=rows.map(orderFromCloudRow);markSynced();render();
 }
 async function syncOrders(){
-  if(!state.online||!navigator.onLine||state.syncInFlight)return state.syncInFlight;
+  if(!state.online||!state.exhibition||!navigator.onLine||state.syncInFlight||!$('eventChooser').classList.contains('hidden'))return state.syncInFlight;
   state.syncInFlight=loadOrders().catch(error=>{setSync('error','同期できません。接続後に再試行します');throw error}).finally(()=>{state.syncInFlight=null});
   return state.syncInFlight;
 }
@@ -414,7 +440,7 @@ function renderFinalizeStep(d){
   const pickup=isPickupOrder(d),saved=d.sharingSaved&&isUnconfirmed(d),shared=saved&&d.slackShared,ready=saved&&canConfirmSharedOrder(d);
   const stepOne=pickup?'お渡し番号を発行':'共有の準備';
   $('stepLabel').textContent='最後の手順：上から順に進めてください';$('sheetTitle').textContent='Slack共有 → 注文確定';
-  $('sheetBody').innerHTML=`<div class="step finalizeFlow"><div class="finalizeSummary"><b>${esc(d.store)} / ${esc(d.customer)}</b><span>${esc(handoffLabel(d))}</span><strong>${yen(totalOf(d))} · ${itemCountOf(d)}点</strong><button id="finalizeEdit" class="linkBtn">入力内容を修正する</button></div><section class="finalizeStep ${saved?'complete':'current'}"><div class="finalizeHeading"><span class="stepNumber">${saved?'✓':'1'}</span><h3>${stepOne}</h3><small>${saved?'準備済み':'まずここから'}</small></div>${saved?pickup?pickupNumberHtml(d):'<p>共有用の注文を保存しました。</p>':`<p>${pickup?'注文確定前に、重複しないNEO番号を発行します。':'PDFにする注文内容を先に保存します。'}<br>この時点では、まだ注文は確定しません。</p><button id="prepareSharing" class="primary fullButton">${pickup?pickupNumberLabel(d)?'同じお渡し番号で変更を保存':'お渡し番号を発行する':'共有用の注文を保存する'}</button>`}</section><section class="finalizeStep ${shared?'complete':saved?'current':'locked'}"><div class="finalizeHeading"><span class="stepNumber">${shared?'✓':'2'}</span><h3>Slackに共有</h3><small>${shared?'送信確認済み':saved?'次にここ':'1のあと'}</small></div><p>会社控え・添付写真を1つのPDFにまとめます。PDFを作成したら、下に表示される「PDFを共有する」からSlackへ投稿してください。会社控えは常に日本語です。</p><button id="prepareSharePdf" class="secondary fullButton" ${saved?'':'disabled'}>PDFを作成する</button><div id="pdfOutput" class="pdfOutput" role="status"></div><label class="flowShareCheck" ${d.pdfPrepared||shared?'':'hidden'}><input id="acknowledgeSlack" type="checkbox" ${shared?'checked':''} ${saved&&(d.pdfPrepared||shared)?'':'disabled'}><span>Slackに共有済み<br><small>投稿できたことを確認してチェック</small></span></label>${shared?`<small>確認日時：${esc(formatDateTime(d.slackSharedAt))}</small>`:''}</section><section class="finalizeStep ${ready?'current':'locked'}"><div class="finalizeHeading"><span class="stepNumber">3</span><h3>注文確定</h3><small>${ready?'あと1回':'2のあと'}</small></div><p>${pickup?'確定すると「受け取り待ち」に移ります。会計・お渡しは受け取り時に行います。':'確定すると「完了」に移ります。'}</p><button id="confirmSharedOrder" class="primary fullButton" ${ready?'':'disabled'}>Slack共有を完了して、注文確定</button>${!ready?'<small>Slackへの送信確認が済むと押せます。</small>':''}</section><p class="draftRetentionNote">${saved?'保存済みのため、閉じても「要対応」から再開できます。未確定の注文は受注件数・一括印刷に含めません。':'手順1を完了すると、入力内容がスタッフ間で保存・同期されます。'}</p>${d.localId?'<button id="cancelReservedOrder" class="linkBtn">この注文をキャンセルする</button>':''}</div><div class="stickyActions one"><button id="finalizeClose" class="secondary">閉じる・あとで続ける</button></div>`;
+  $('sheetBody').innerHTML=`<div class="step finalizeFlow"><div class="finalizeSummary"><b>${esc(d.store)} / ${esc(d.customer)}</b><span>${esc(handoffLabel(d))}</span><strong>${yen(totalOf(d))} · ${itemCountOf(d)}点</strong><button id="finalizeEdit" class="linkBtn">入力内容を修正する</button></div><section class="finalizeStep ${saved?'complete':'current'}"><div class="finalizeHeading"><span class="stepNumber">${saved?'✓':'1'}</span><h3>${stepOne}</h3><small>${saved?'準備済み':'まずここから'}</small></div>${saved?pickup?pickupNumberHtml(d):'<p>共有用の注文を保存しました。</p>':`<p>${pickup?'注文確定前に、この展示会のお渡し番号を発行します。':'PDFにする注文内容を先に保存します。'}<br>この時点では、まだ注文は確定しません。</p><button id="prepareSharing" class="primary fullButton">${pickup?pickupNumberLabel(d)?'同じお渡し番号で変更を保存':'お渡し番号を発行する':'共有用の注文を保存する'}</button>`}</section><section class="finalizeStep ${shared?'complete':saved?'current':'locked'}"><div class="finalizeHeading"><span class="stepNumber">${shared?'✓':'2'}</span><h3>Slackに共有</h3><small>${shared?'送信確認済み':saved?'次にここ':'1のあと'}</small></div><p>会社控え・添付写真を1つのPDFにまとめます。PDFを作成したら、下に表示される「PDFを共有する」からSlackへ投稿してください。会社控えは常に日本語です。</p><button id="prepareSharePdf" class="secondary fullButton" ${saved?'':'disabled'}>PDFを作成する</button><div id="pdfOutput" class="pdfOutput" role="status"></div><label class="flowShareCheck" ${d.pdfPrepared||shared?'':'hidden'}><input id="acknowledgeSlack" type="checkbox" ${shared?'checked':''} ${saved&&(d.pdfPrepared||shared)?'':'disabled'}><span>Slackに共有済み<br><small>投稿できたことを確認してチェック</small></span></label>${shared?`<small>確認日時：${esc(formatDateTime(d.slackSharedAt))}</small>`:''}</section><section class="finalizeStep ${ready?'current':'locked'}"><div class="finalizeHeading"><span class="stepNumber">3</span><h3>注文確定</h3><small>${ready?'あと1回':'2のあと'}</small></div><p>${pickup?'確定すると「受け取り待ち」に移ります。会計・お渡しは受け取り時に行います。':'確定すると「完了」に移ります。'}</p><button id="confirmSharedOrder" class="primary fullButton" ${ready?'':'disabled'}>Slack共有を完了して、注文確定</button>${!ready?'<small>Slackへの送信確認が済むと押せます。</small>':''}</section><p class="draftRetentionNote">${saved?'保存済みのため、閉じても「要対応」から再開できます。未確定の注文は受注件数・一括印刷に含めません。':'手順1を完了すると、入力内容がスタッフ間で保存・同期されます。'}</p>${d.localId?'<button id="cancelReservedOrder" class="linkBtn">この注文をキャンセルする</button>':''}</div><div class="stickyActions one"><button id="finalizeClose" class="secondary">閉じる・あとで続ける</button></div>`;
   $('prepareSharePdf').insertAdjacentHTML('beforebegin',attachmentPickerHtml(d,saved));
   bindAttachmentPicker(d,saved);
   if(d.pdfPrepared&&sharePdfCache.has(d))offerSharePdf(d);
@@ -763,7 +789,7 @@ function showPickupResetDialog(){
   openSheet('お渡し番号のリセット','管理用の設定');
   const version=state.sheetVersion,requestId=newUuid();
   let pending=false;
-  $('sheetBody').innerHTML=`<div class="step"><div class="section"><p>今後発行するお渡し番号を <b>NEO-1</b> から始めます。発行済みの注文番号は変わりません。</p><p>過去の注文と同じNEO番号が表示される場合があります。現在の注文やSlack投稿は変更されません。</p></div><div class="field"><label for="pickupResetConfirm">操作する場合は「リセット」と入力</label><input id="pickupResetConfirm" type="text" autocomplete="off" spellcheck="false" placeholder="リセット"></div></div><div class="stickyActions"><button id="pickupResetCancel" type="button" class="secondary">戻る</button><button id="pickupResetSubmit" type="button" class="dangerBtn" disabled>番号を1から始める</button></div>`;
+  $('sheetBody').innerHTML=`<div class="step"><div class="section"><p>今後発行するお渡し番号を <b>${esc(state.exhibition?.pickup_prefix||'NEO')}-1</b> から始めます。発行済みの注文番号は変わりません。</p><p>この展示会の過去の注文と同じお渡し番号が表示される場合があります。現在の注文やSlack投稿は変更されません。</p></div><div class="field"><label for="pickupResetConfirm">操作する場合は「リセット」と入力</label><input id="pickupResetConfirm" type="text" autocomplete="off" spellcheck="false" placeholder="リセット"></div></div><div class="stickyActions"><button id="pickupResetCancel" type="button" class="secondary">戻る</button><button id="pickupResetSubmit" type="button" class="dangerBtn" disabled>番号を1から始める</button></div>`;
   const input=$('pickupResetConfirm'),submit=$('pickupResetSubmit');
   input.oninput=()=>{submit.disabled=pending||input.value!=='リセット';clearError()};
   $('pickupResetCancel').onclick=closeSheet;
@@ -772,9 +798,9 @@ function showPickupResetDialog(){
     pending=true;submit.disabled=true;input.disabled=true;$('pickupResetCancel').disabled=true;
     try{
       await ensureFreshSession();
-      await fetchJson(`${sbBase()}/rest/v1/rpc/reset_exhibition_pickup_counter`,{method:'POST',headers:sbHeaders(),body:JSON.stringify({p_confirmation:'リセット',p_request_id:requestId})});
+      await fetchJson(`${sbBase()}/rest/v1/rpc/reset_exhibition_pickup_counter`,{method:'POST',headers:sbHeaders(),body:JSON.stringify({p_confirmation:'リセット',p_request_id:requestId,p_event_name:cfg.eventName})});
       if(version===state.sheetVersion){$('pickupResetTools').open=false;closeSheet()}
-      toast('次のお渡し番号はNEO-1です');
+      toast(`次のお渡し番号は${state.exhibition?.pickup_prefix||'NEO'}-1です`);
     }catch(error){
       if(version===state.sheetVersion){pending=false;input.disabled=false;$('pickupResetCancel').disabled=false;submit.disabled=input.value!=='リセット';showError('リセットできませんでした。接続とスタッフ権限を確認して、もう一度お試しください。')}
     }
@@ -812,15 +838,15 @@ async function bootOnline(){
   const saved=storedSession();bindConnectivitySignals();
   if(!saved?.access_token){showLogin();return}
   state.session=saved;
-  try{saveSession(saved);await ensureFreshSession();await loadStaff();await Promise.all([loadPrivateReferenceData(),loadOrders()]);state.online=true;showApp()}
+  try{saveSession(saved);await ensureFreshSession();await loadStaff();await loadPrivateReferenceData();state.online=true;await initializeEventPicker().show()}
   catch(error){
     state.online=false;
     if(error.status===400||error.status===401||error.message==='SESSION_EXPIRED'){clearStoredSession();state.session=null}
     showLogin();$('loginMsg').textContent='接続またはログイン情報を確認できません。再接続後に更新するか、ログインしてください。';
   }
 }
-function showLogin(){$('loginView').classList.remove('hidden');$('appView').classList.add('hidden');$('loginNetworkGuide').classList.toggle('hidden',navigator.onLine);$('loginBtn').disabled=!navigator.onLine}
-function showApp(){initializeExhibitionReports();$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('eventName').textContent=cfg.eventName||'EXHIBITION';$('logoutBtn').classList.remove('hidden');markSynced();render();updateNewOrderButton();if(!state.syncTimer)state.syncTimer=setInterval(()=>{if(document.visibilityState==='visible')syncOrders().catch(()=>{})},12000)}
+function showLogin(){$('eventChooser').classList.add('hidden');$('loginView').classList.remove('hidden');$('appView').classList.add('hidden');$('loginNetworkGuide').classList.toggle('hidden',navigator.onLine);$('loginBtn').disabled=!navigator.onLine}
+function showApp(){initializeExhibitionReports();$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('eventName').textContent=state.exhibition?.name||cfg.eventName||'EXHIBITION';$('logoutBtn').classList.remove('hidden');markSynced();render();updateNewOrderButton();if(!state.syncTimer)state.syncTimer=setInterval(()=>{if(document.visibilityState==='visible')syncOrders().catch(()=>{})},12000)}
 function bindConnectivitySignals(){
   if(state.signalsBound)return;state.signalsBound=true;
   window.addEventListener('online',()=>{if(state.online)syncOrders().catch(()=>{});else if(storedSession())bootOnline();else showLogin()});
@@ -842,11 +868,12 @@ async function login(){
   if(!navigator.onLine)return $('loginMsg').textContent='接続してからログインしてください。';
   if(!email||!password)return $('loginMsg').textContent='メールとパスワードを入力してください。';
   $('loginMsg').textContent='';$('loginBtn').disabled=true;
-  try{await signIn(email,password);await loadStaff();await Promise.all([loadPrivateReferenceData(),loadOrders()]);state.online=true;showApp();bindConnectivitySignals()}
+  try{await signIn(email,password);await loadStaff();await loadPrivateReferenceData();state.online=true;await initializeEventPicker().show();bindConnectivitySignals()}
   catch(error){clearStoredSession();state.session=null;state.online=false;$('loginMsg').textContent='ログインできませんでした。アカウントまたは通信を確認してください。'}
   finally{$('loginPassword').value='';$('loginBtn').disabled=!navigator.onLine}
 }
 function clearLocalApp(){
+  eventPicker?.clear();state.exhibition=null;
   exhibitionReports?.clear();
   attachmentStore.clear();attachmentOperation=null;attachmentPrintBusy=false;printGeneration++;
   state.dataEpoch++;
@@ -861,6 +888,7 @@ async function logout(){
   clearLocalApp();
 }
 $('loginBtn').onclick=login;$('loginPassword').onkeydown=event=>{if(event.key==='Enter')login()};
+$('changeExhibition').onclick=changeExhibition;$('eventChooserLogout').onclick=logout;
 window.addEventListener('afterprint',()=>{
   // Some browsers fire afterprint when the preview opens, before the PDF is captured.
   // Keep the hidden print DOM until the next print replaces it or logout clears it.

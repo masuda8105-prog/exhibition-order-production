@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="展示会 注文管理">
+  <rect width="512" height="512" fill="#172f46"/>
+  <rect x="132" y="114" width="248" height="298" rx="24" fill="#fff"/>
+  <rect x="205" y="92" width="102" height="46" rx="13" fill="#7dd3c8"/>
+  <g fill="none" stroke="#172f46" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="163" y="177" width="73" height="50" rx="20"/>
+    <rect x="276" y="177" width="73" height="50" rx="20"/>
+    <path d="M236 192q20-14 40 0M151 183h12m186 0h12"/>
+    <path d="M170 278h116M170 312h88M170 346h74" stroke="#9aabb8" stroke-width="10"/>
+  </g>
+  <circle cx="328" cy="344" r="32" fill="#35816b"/>
+  <path d="m312 344 11 11 22-25" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

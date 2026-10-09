@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const playwright=require('C:/Users/AONUSR02/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const engine=process.env.LAYOUT_BROWSER||'chromium';
+const browser=await playwright[engine].launch({headless:true,...(engine==='chromium'?{executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'}:{})});
+const base='http://127.0.0.1:8795/',errors=[];
+const eventName=`IMF 検証用（大阪）-${engine}-${Date.now()}`;
+try{
+  const context=await browser.newContext({viewport:{width:1440,height:900}}),page=await context.newPage();
+  page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
+  await page.goto(base);await page.waitForSelector('[data-event-id="jex_2026"]');
+  assert.equal(await page.locator('#appView').isVisible(),false);
+  await page.click('[data-event-id="jex_2026"]');await page.waitForSelector('#appView:not(.hidden)');
+  await page.click('[data-screen="notes"]');await page.waitForSelector('#noteForm');
+  await page.fill('#noteSearch','1065');await page.click('[data-note-product="1065"]');await page.click('[data-note-category="positive"]');
+  let text=`記入途中のレポートを再読み込みしても維持する確認 ${eventName}`;await page.fill('#noteComment',text);
+  await page.setInputFiles('#notePhotoFiles','assets/exhibition-icon-192.png');await page.waitForSelector('.reportPhotoGrid img');
+  await page.waitForTimeout(500);
+  await page.click('#changeExhibition');assert.equal(await page.locator('#eventChooser').isVisible(),false,'入力中は切り替えない');
+  await page.reload();await page.waitForSelector('[data-event-id="jex_2026"]');await page.click('[data-event-id="jex_2026"]');
+  await page.click('[data-screen="notes"]');await page.waitForFunction(()=>document.querySelector('#noteComment')?.value.includes('記入途中'));
+  assert.equal(await page.inputValue('#noteComment'),text);assert.equal(await page.locator('[data-note-category="positive"]').getAttribute('aria-pressed'),'true');
+  assert.equal(await page.locator('.reportPhotoGrid img').count(),1);
+  await page.waitForFunction(()=>{const img=document.querySelector('.reportPhotoGrid img');return img?.complete&&img.naturalWidth>0;});
+  await page.click('#noteSave');await page.waitForFunction(()=>document.querySelector('#noteComment')?.value==='');
+  await page.click('[data-screen="reports"]');await page.waitForSelector('#exhibitionReport');
+  await page.locator('.reportComment').filter({hasText:text}).locator('[data-edit-report]').click();
+  text+='（追記）';await page.fill('#noteComment',text);
+  await page.reload();await page.waitForSelector('[data-event-id="jex_2026"]');await page.click('[data-event-id="jex_2026"]');await page.click('[data-screen="notes"]');
+  await page.waitForFunction(()=>document.querySelector('#noteComment')?.value.endsWith('（追記）'));
+  assert.ok((await page.textContent('.reportPanel h2')).includes('書き直す'));assert.equal(await page.locator('.reportPhotoGrid img').count(),1);
+  await page.click('#noteSave');await page.waitForFunction(()=>document.querySelector('#exhibitionReport')?.textContent.includes('（追記）'));
+  await page.click('#changeExhibition');await page.waitForSelector('#eventChooser:not(.hidden)');
+  await page.click('.eventCreate summary');await page.fill('[name="name"]',eventName);await page.fill('[name="venue"]','大阪');
+  assert.equal(await page.inputValue('[name="pickup_prefix"]'),'IMF');
+  await page.click('#createExhibitionForm button[type="submit"]');await page.waitForSelector('#appView:not(.hidden)');
+  assert.equal(await page.textContent('#eventName'),eventName);
+  await page.click('[data-screen="reports"]');await page.waitForSelector('#exhibitionReport');assert.ok(!(await page.textContent('#exhibitionReport')).includes(text));
+  await page.click('[data-screen="orders"]');await page.click('#newOrderBtn');
+  await page.fill('#productQ','1065');await page.click('[data-product-id="product-102"]');await page.click('#toType');await page.click('[data-type="spot"]');await page.click('[data-handoff="later"]');await page.click('#toInfo');
+  await page.fill('#fStore','展示会分離の検証店舗');await page.fill('#fPhone','000');await page.fill('#fCustomer','検証');await page.click('#saveBtn');
+  await page.waitForSelector('.pickupNumber');assert.ok((await page.textContent('.pickupNumber')).includes('IMF-1'));
+  await page.click('#closeSheet');await page.click('#changeExhibition');await page.waitForSelector('#eventChooser:not(.hidden)');
+  await page.click('[data-event-id="jex_2026"]');await page.waitForSelector('#appView:not(.hidden)');
+  assert.ok(!(await page.textContent('#orders')).includes('IMF-1'));
+  await page.click('[data-screen="reports"]');await page.waitForSelector('#exhibitionReport');assert.ok((await page.textContent('#exhibitionReport')).includes(text));
+  for(const width of [320,390,768,1024,1440]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`report overflow ${width}`);}
+  await page.click('#changeExhibition');await page.waitForSelector('#eventChooser:not(.hidden)');
+  for(const width of [320,390,768,1440]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`chooser overflow ${width}`);}
+  await page.setViewportSize({width:1440,height:900});await fs.mkdir('tmp/multi-exhibition',{recursive:true});await page.screenshot({path:`tmp/multi-exhibition/chooser-${engine}.png`,fullPage:true});
+  assert.deepEqual(errors,[]);
+  console.log(`PASS ${engine}: login selection, event creation, isolated orders/reports, IMF-1, draft text/category/photo reload recovery, switch guard, responsive UI`);
+}finally{await browser.close();}

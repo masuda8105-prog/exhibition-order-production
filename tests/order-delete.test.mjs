@@ -15,7 +15,7 @@ function harness({confirmed=true,fetchImpl}={}){
   };
   const context=vm.createContext({...attachments,...workflow,window:{EXHIBITION_CONFIG:{supabaseUrl:'https://fixture.invalid',publishableKey:'fixture-key'}},document:{getElementById:element,body:{style:{}}},navigator:{},URL,AbortController,setTimeout:()=>0,clearTimeout(){},confirm:message=>{messages.push(message);return confirmed},fetch:async(url,options)=>{calls.push({url,options});return fetchImpl?fetchImpl(url,options):{ok:true,json:async()=>[{id:'fixture-order'}]}}});
   vm.runInContext(source+'\nglobalThis.subject={state,pendingDeletes,cardHtml,deleteOrderWithConfirmation,loadOrders};',context);
-  context.subject.state.session={access_token:'fixture-token',expires_at:4102444800,user:{id:'fixture-user'}};
+  context.subject.state.exhibition={id:'neo_2026',order_event_name:'展示会',pickup_prefix:'NEO'};context.subject.state.session={access_token:'fixture-token',expires_at:4102444800,user:{id:'fixture-user'}};
   context.subject.state.orders=[order()];
   return{...context.subject,context,calls,messages,element};
 }

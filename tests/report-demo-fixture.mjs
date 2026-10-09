@@ -11,6 +11,7 @@ export function createReportDemo(){
   const events=[{id:'jex_2026',name:'JEX 2026（デモ）',order_event_name:'JEX 2026（デモ）',start_date:'2026-10-07',end_date:'2026-10-08',venue:'サンプル会場',participants:['増田','宮川','小野村']},
     {id:'wof_2026',name:'WOF 2026（デモ）',order_event_name:'WOF 2026（デモ）',start_date:null,end_date:null,venue:'サンプル会場',participants:[]}];
   const focused=new Map([['jex_2026',['1064','1065','1067','1053','1054']],['wof_2026',['1053','1054']]]);
+  for(const event of events)event.pickup_prefix=event.id.split('_')[0].toUpperCase();
   const notes=[
     {id:'00000000-0000-4000-8000-000000000001',exhibition_id:'jex_2026',product_code:'1065',category:'positive',comment:'小型で使いやすいという声が多かった。',author_name:'増田'},
     {id:'00000000-0000-4000-8000-000000000002',exhibition_id:'jex_2026',product_code:'1065',category:'negative',comment:'バネ付きが欲しいという要望があった。',author_name:'小野村'},
@@ -29,7 +30,10 @@ export function createReportDemo(){
     const table=url.pathname.split('/').at(-1),page=rows=>rows.slice(Number(url.searchParams.get('offset')||0),Number(url.searchParams.get('offset')||0)+Number(url.searchParams.get('limit')||500));
     if(table==='products')return {body:products};
     if(table==='exhibition_staff')return {body:[{display_name:'増田（デモ）',role:'staff',active:true}]};
-    if(table==='exhibitions')return {body:page(events)};
+    if(table==='exhibitions'){
+      if(request.method==='POST'){const body=await readJson(request);if(events.some(e=>e.id===body.id||e.order_event_name===body.order_event_name))return {status:409,body:{message:'duplicate'}};const saved={...body,participants:[]};events.push(saved);return {status:201,body:[saved]};}
+      const id=url.searchParams.get('id')?.replace(/^eq\./,'');return {body:page(events.filter(e=>!id||e.id===id))};
+    }
     if(table==='exhibition_products'){
       const id=url.searchParams.get('exhibition_id')?.replace(/^eq\./,'');
       return {body:(focused.get(id)||[]).map((product_code,display_order)=>({exhibition_id:id,product_code,display_order}))};
@@ -57,5 +61,5 @@ export function createReportDemo(){
     }
     return null;
   }
-  return {orders,handle,eventName:'JEX 2026（デモ）'};
+  return {orders,handle,events,eventName:'JEX 2026（デモ）'};
 }

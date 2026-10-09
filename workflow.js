@@ -41,7 +41,7 @@ export function confirmSharedOrder(order){
 
 export function pickupNumberLabel(order){
   const number=String(order?.pickupNumber||'');
-  return isPickupOrder(order)&&/^[1-9][0-9]*$/.test(number)?`NEO-${number}`:'';
+  return isPickupOrder(order)&&/^[1-9][0-9]*$/.test(number)?`${order.pickupPrefix||'NEO'}-${number}`:'';
 }
 
 export function paymentMethodOnHandoffChange(order,handoff){
@@ -308,6 +308,8 @@ export function orderFromCloudRow(row){
     staff:correctedStaffName(payload.staff),
     confirmationState:row?.confirmation_state==='draft'?'draft':'confirmed',
     pickupNumber:/^[1-9][0-9]*$/.test(String(row?.pickup_number||''))?String(row.pickup_number):'',
+    pickupPrefix:String(row?.pickup_prefix||'NEO'),
+    exhibitionName:String(row?.event_name||''),
     items:Array.isArray(payload.items)?payload.items.map(item=>({...item})):[],
     officePhotoPaths:validOfficePhotoPaths(payload.officePhotoPaths,row?.id),
     localId:String(row?.id||''),

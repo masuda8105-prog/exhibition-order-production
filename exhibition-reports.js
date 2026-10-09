@@ -1,6 +1,7 @@
 import {REPORT_CATEGORIES,summarizeExhibition,groupReports,groupReportsByAuthor} from './report-model.js?v=20261002-layout1';
 import {orderFromCloudRow} from './workflow.js';
 import {preparePhoto,MAX_PHOTOS} from './order-attachments.js';
+import {createReportDraftStorage} from './report-drafts.js?v=20261009-events1';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const yen=value=>`¥${Math.round(value).toLocaleString('ja-JP')}`;
@@ -10,6 +11,9 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   const exhibitionDrafts=new Map();
   const photoUrls=new Map();let suspendedDraft=null;
   let renderedMarkup='';
+  const restoredDrafts=new Set();
+  const draftStorage=createReportDraftStorage(()=>toast('このブラウザでは下書きの復元用保存ができません。画面を閉じる前に登録してください'));
+  function persistDraft(){draftStorage.save(state.session?.user?.id,selected,draft,suspendedDraft);}
   const photos=()=>draft.photos||[];
   function releasePhotos(value){for(const photo of value?.photos||[])if(photo.url?.startsWith('blob:'))URL.revokeObjectURL(photo.url);}
   async function signPhotos(entries){
@@ -41,6 +45,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
       const loadedEvents=await all('exhibitions','','start_date.desc.nullslast,id.asc');
       if(version!==generation||state.session?.user?.id!==user)return;
       events=loadedEvents;
+      if(state.exhibition)selected=state.exhibition.id;
       if(!events.some(event=>event.id===selected))selected=events.find(event=>event.order_event_name===(cfg.eventName||'展示会'))?.id||events[0]?.id||'';
       if(!selected)throw new Error('NO_EVENTS');
       const event=currentEvent(),filter=`exhibition_id=eq.${encodeURIComponent(selected)}`;
@@ -58,7 +63,14 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
         }));
       }catch(e){toast('写真を読み込めませんでした。「同期」で再試行できます');}
       if(version!==generation||state.session?.user?.id!==user)return;
-      reports=loadedReports;focus=loadedFocus;orders=loadedOrders.map(orderFromCloudRow);ready=true;
+      reports=loadedReports;focus=loadedFocus;orders=loadedOrders.map(orderFromCloudRow);
+      if(!restoredDrafts.has(selected)){
+        restoredDrafts.add(selected);const saved=await draftStorage.load(user,selected);
+        if(version!==generation||state.session?.user?.id!==user)return;
+        if(saved?.draft){draft=saved.draft;suspendedDraft=saved.suspended;exhibitionDrafts.set(selected,draft);}
+      }
+      for(const value of [draft,suspendedDraft].filter(Boolean))for(const photo of value.photos||[])if(photo.remotePath)photo.url=photoUrls.get(photo.remotePath)?.url||photo.url;
+      ready=true;
     }catch(e){if(version===generation){if(ready){toast('同期できませんでした。表示中の内容を保持しています');return;}error=e.message==='NO_EVENTS'?'展示会が未登録です。管理者に登録を依頼してください。':'レポートを読み込めませんでした。接続とレポート機能の導入状況を確認してください。';}}
     if(version===generation)draw();
   }
@@ -70,7 +82,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
     app.querySelector('.orderOverview').classList.toggle('hidden',tab!=='orders');
     draw();
   }
-  function selector(){return `<div class="reportEvent"><label for="reportEvent">展示会</label><select id="reportEvent" ${busy||draft.pendingPayload||draft.editingId?'disabled':''}>${events.map(event=>`<option value="${esc(event.id)}" ${event.id===selected?'selected':''}>${esc(event.name)}</option>`).join('')}</select><button id="reportReload" type="button" class="secondary" ${busy?'disabled':''}>↻ 同期</button></div>`;}
+  function selector(){return `<div class="reportEvent"><span>展示会</span><strong class="reportActiveEvent">${esc(state.exhibition?.name||currentEvent()?.name||'')}</strong><button id="reportReload" type="button" class="secondary" ${busy?'disabled':''}>↻ 同期</button></div>`;}
   function salesHtml(forReport=false){
     const summary=summarizeExhibition(currentOrders());
     return `${forReport?'':`<h2>${esc(currentEvent().name)}</h2>`}<div class="reportTotal"><small>売上（税抜・送料含む）</small><strong>${yen(summary.total)}</strong></div><div class="reportMetrics">${[['注文件数',`${summary.count}件`],['国内売上',yen(summary.domestic)],['海外売上',yen(summary.overseas)],['販売数量',`${summary.quantity}点`]].map(([label,value])=>`<div><small>${label}</small><b>${value}</b></div>`).join('')}</div>${forReport?`<div class="reportHandoffs"><h3>受け渡し方法別の注文件数</h3><div class="reportMetrics">${[['now','在庫あり・当日お渡し'],['later','翌日・翌々日お渡し'],['hotel','ホテル送り'],['ship','指定住所へ配送'],['normal','国内通常注文'],...(summary.handoffs.unknown?[['unknown','受け渡し方法未登録']]:[])].map(([key,label])=>`<div><small>${label}</small><b>${summary.handoffs[key]}件</b></div>`).join('')}</div></div>`:''}${forReport?'<h2>3. 商品別販売実績（数量TOP10・税抜）</h2>':'<h3>商品別販売実績（税抜）</h3>'}<table class="reportTable"><thead><tr><th>商品</th><th>数量</th><th>売上</th></tr></thead><tbody>${(forReport?summary.products.slice(0,10):summary.products).map(product=>`<tr><td>No.${esc(product.code)}<small>${esc(product.name)}</small></td><td>${product.quantity}</td><td>${yen(product.amount)}</td></tr>`).join('')||'<tr><td colspan="3">確定済み注文はありません</td></tr>'}</tbody></table>`;
@@ -88,10 +100,11 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
     return `<article id="exhibitionReport"><div class="reportSummary"><h1>${esc(event.name)} 展示会レポート</h1><h2>1. 基本情報</h2><p>開催日：${esc(event.start_date||'未登録')} ～ ${esc(event.end_date||'未登録')}</p><p>会場：${esc(event.venue||'未登録')}</p><p>参加者：${esc((event.participants||[]).join('、')||'未登録')}</p><h2>2. 売上</h2>${salesHtml(true)}</div><div class="reportDetails"><h2>4. 商品別フィードバック</h2>${grouped.products.map(([code,list])=>`<section class="reportProduct"><h3 class="reportProductHeading"><span class="reportProductCode">No.${esc(code)}</span><span class="reportProductName">${esc(state.products.find(item=>String(item.code)===code)?.name||soldProducts.get(code)||'商品名未登録')}</span></h3>${feedbackHtml(list)}</section>`).join('')||'<p>まだ気づきの登録はありません</p>'}<h2 data-report-section-start="true">5. 会場・運営</h2>${feedbackHtml(grouped.general.filter(item=>item.category==='venue'))||'<p>まだ気づきの登録はありません</p>'}<h2 data-report-section-start="true">6. その他気づき・次回課題</h2>${feedbackHtml(grouped.general.filter(item=>item.category!=='venue'))||'<p>まだ気づきの登録はありません</p>'}</div></article>`;
   }
   function adminHtml(){
-    return `<details class="reportAdmin"><summary>展示会の管理</summary><form id="eventForm"><label>展示会ID<input name="id" pattern="[a-z0-9_]+" required value="${esc(selected)}" ${events.some(event=>event.id===selected)?'readonly':''}></label><label>展示会名<input name="name" required value="${esc(currentEvent().name)}"></label><label>注文の展示会名<input name="order_event_name" required value="${esc(currentEvent().order_event_name)}"></label><label>開始日<input name="start_date" type="date" value="${esc(currentEvent().start_date||'')}"></label><label>終了日<input name="end_date" type="date" value="${esc(currentEvent().end_date||'')}"></label><label>会場<input name="venue" value="${esc(currentEvent().venue||'')}"></label><label>参加者（カンマ区切り）<input name="participants" value="${esc((currentEvent().participants||[]).join(','))}"></label><p id="eventError" class="errorText"></p><button class="primary" ${busy?'disabled':''}>管理内容を保存</button><button type="button" id="newReportEvent" class="secondary">別の展示会を追加</button></form></details>`;
+    return `<details class="reportAdmin"><summary>展示会の管理</summary><form id="eventForm"><label>展示会ID<input name="id" pattern="[a-z0-9_]+" required value="${esc(selected)}" ${events.some(event=>event.id===selected)?'readonly':''}></label><label>展示会名<input name="name" required value="${esc(currentEvent().name)}"></label><label>注文の展示会名<input name="order_event_name" readonly required value="${esc(currentEvent().order_event_name)}"></label><label>開始日<input name="start_date" type="date" value="${esc(currentEvent().start_date||'')}"></label><label>終了日<input name="end_date" type="date" value="${esc(currentEvent().end_date||'')}"></label><label>会場<input name="venue" value="${esc(currentEvent().venue||'')}"></label><label>参加者（カンマ区切り）<input name="participants" value="${esc((currentEvent().participants||[]).join(','))}"></label><p id="eventError" class="errorText"></p><button class="primary" ${busy?'disabled':''}>管理内容を保存</button></form></details>`;
   }
   function draw(){
     if(tab==='orders')return;
+    if(ready&&tab==='notes')persistDraft();
     const markup=selector()+(error?`<p class="errorText" role="alert">${esc(error)}</p>`:!ready?'<p>読み込み中…</p>':tab==='sales'?salesHtml():tab==='notes'?notesHtml():`<div class="reportExport"><button id="reportPdf" class="primary" ${busy?'disabled':''}>PDFを保存</button><p class="reportMuted">日本語のA4 PDFを作成します</p></div>${reportHtml()}${adminHtml()}`);
     if(ready&&tab!=='notes'&&markup===renderedMarkup)return;
     const position={x:window.scrollX,y:window.scrollY};
@@ -105,7 +118,6 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
     const admin=panel.querySelector('.reportAdmin');
     const adminValues=admin?.open?[...admin.querySelectorAll('input')].map(input=>({name:input.name,value:input.value,readOnly:input.readOnly})):null;
     panel.innerHTML=markup;renderedMarkup=markup;
-    panel.querySelector('#reportEvent').onchange=async event=>{selectEvent(event.target.value);await reload();};
     panel.querySelector('#reportReload').onclick=reload;
     if(!ready||error)return;
     if(tab==='notes')bindNotes();
@@ -114,7 +126,6 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
       panel.querySelectorAll('[data-edit-report]').forEach(button=>button.onclick=()=>beginEdit(button.dataset.editReport));
       panel.querySelectorAll('[data-delete-report]').forEach(button=>button.onclick=()=>deleteReport(button.dataset.deleteReport));
       panel.querySelector('#eventForm').onsubmit=saveEvent;
-      panel.querySelector('#newReportEvent').onclick=()=>{const form=panel.querySelector('#eventForm');form.reset();for(const input of form.querySelectorAll('input')){input.value='';input.readOnly=false;}form.elements.id.focus();};
     }
     if(search!==undefined&&tab==='notes'){
       const input=panel.querySelector('#noteSearch');input.value=search;input.dispatchEvent(new Event('input'));
@@ -130,6 +141,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   }
   function bindProducts(root){root.querySelectorAll('[data-note-product]').forEach(button=>button.onclick=()=>{
     draft.product=button.dataset.noteProduct||null;
+    persistDraft();
     panel.querySelectorAll('[data-note-product]').forEach(item=>item.setAttribute('aria-pressed',String((item.dataset.noteProduct||null)===draft.product)));
     panel.querySelector('#noteSelected').innerHTML=draft.product===null?'商品なし・会場全体':productLabel(draft.product);
   });}
@@ -144,6 +156,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
         const photo=await preparePhoto(file);
         if(version!==generation||draft!==target){URL.revokeObjectURL(photo.url);return;}
         (target.photos||=[]).push(photo);
+        persistDraft();await draftStorage.flush();
       }
     }catch(e){if(version===generation)toast(e.message);}
     finally{if(version===generation){busy=false;draw();}}
@@ -176,17 +189,17 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   function bindNotes(){
     if(draft.pendingPayload){panel.querySelectorAll('#noteForm input,#noteForm textarea,#noteForm button[type="button"]').forEach(control=>control.disabled=true);panel.querySelector('#noteError').textContent='前回の保存結果を確認します。「登録する」で同じ内容を再送してください。';}
     bindProducts(panel);
-    panel.querySelectorAll('[data-note-category]').forEach(button=>button.onclick=()=>{draft.category=button.dataset.noteCategory;panel.querySelectorAll('[data-note-category]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));});
+    panel.querySelectorAll('[data-note-category]').forEach(button=>button.onclick=()=>{draft.category=button.dataset.noteCategory;persistDraft();panel.querySelectorAll('[data-note-category]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));});
     panel.querySelector('#noteSearch').oninput=event=>{
       const query=event.target.value.trim().toLowerCase(),results=panel.querySelector('#noteResults');
       results.innerHTML=query?state.products.filter(product=>`${product.code} ${product.name}`.toLowerCase().includes(query)).slice(0,20).map(product=>`<button type="button" data-note-product="${esc(product.code)}" aria-pressed="${draft.product===product.code}">${productLabel(product.code)}</button>`).join('')||'<p>該当する商品はありません</p>':'';bindProducts(results);
     };
-    panel.querySelector('#noteComment').oninput=event=>{draft.comment=event.target.value;};
+    panel.querySelector('#noteComment').oninput=event=>{draft.comment=event.target.value;persistDraft();};
     panel.querySelector('#notePhotoPick').onclick=()=>panel.querySelector('#notePhotoFiles').click();
     panel.querySelector('#notePhotoCamera').onclick=()=>panel.querySelector('#notePhotoCapture').click();
     for(const id of ['notePhotoFiles','notePhotoCapture'])panel.querySelector(`#${id}`).onchange=event=>addPhotos([...event.target.files]);
     panel.querySelectorAll('[data-remove-note-photo]').forEach(button=>button.onclick=()=>{const photo=photos().find(value=>value.id===button.dataset.removeNotePhoto);if(photo?.url?.startsWith('blob:'))URL.revokeObjectURL(photo.url);draft.photos=photos().filter(value=>value!==photo);draw();});
-    if(draft.editingId){const cancel=panel.querySelector('#noteEditCancel');cancel.disabled=busy;cancel.onclick=async()=>{releasePhotos(draft);draft=suspendedDraft||freshNote();suspendedDraft=null;tab='reports';show();await reload();};}
+    if(draft.editingId){const cancel=panel.querySelector('#noteEditCancel');cancel.disabled=busy;cancel.onclick=async()=>{releasePhotos(draft);draft=suspendedDraft||freshNote();suspendedDraft=null;persistDraft();tab='reports';show();await reload();};}
     panel.querySelector('#noteForm').onsubmit=async event=>{
       event.preventDefault();if(busy)return;
       const message=panel.querySelector('#noteError');
@@ -197,6 +210,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
       // Freeze the exact request for retries after a lost response.
       panel.querySelectorAll('input,textarea,button,select').forEach(control=>control.disabled=true);
       draft.pendingPayload=draft.pendingPayload||payload;
+      persistDraft();
       try{
         let rows;const paths=[];
         if(draft.editingId){
@@ -227,7 +241,7 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
         }
         if(!rows?.[0]||['exhibition_id','product_code','category','comment'].some(key=>rows[0][key]!==draft.pendingPayload[key]))throw new Error('SAVE_NOT_CONFIRMED');
         if(version!==generation||state.session?.user?.id!==user)return;
-        const edited=Boolean(draft.editingId);try{await signPhotos(rows);}catch(e){}if(version!==generation)return;releasePhotos(draft);draft=suspendedDraft||freshNote();suspendedDraft=null;exhibitionDrafts.set(selected,draft);reports=[...reports.filter(item=>item.id!==rows[0].id),rows[0]];toast(edited?'変更を保存しました':'登録しました');if(edited){tab='reports';show();}
+        const edited=Boolean(draft.editingId);try{await signPhotos(rows);}catch(e){}if(version!==generation)return;releasePhotos(draft);draft=suspendedDraft||freshNote();suspendedDraft=null;exhibitionDrafts.set(selected,draft);persistDraft();reports=[...reports.filter(item=>item.id!==rows[0].id),rows[0]];toast(edited?'変更を保存しました':'登録しました');if(edited){tab='reports';show();}
       }catch(e){if(version===generation){if(e.status&&e.status<500&&e.status!==409&&!photos().length){delete draft.pendingPayload;}toast(e.message==='REPORT_CONFLICT'?'別の画面で更新されています。編集をやめて最新内容を確認してください。':'保存できませんでした。入力と写真を保持しています');}}
       finally{if(version===generation){busy=false;draw();}}
     };
@@ -352,8 +366,9 @@ export function createExhibitionReports({state,cfg,request,toast,photoApi}){
   // Refresh shared observations only where no form is being edited.
   setInterval(()=>{if(state.online&&document.visibilityState==='visible'&&(tab==='sales'||(tab==='reports'&&!panel.querySelector('.reportAdmin[open]'))))reload();},12000);
   return {
-    refresh(){if(tab==='sales'&&ready)draw();},
-    clear(){generation++;for(const value of new Set([draft,suspendedDraft,...exhibitionDrafts.values()]))releasePhotos(value);photoUrls.clear();suspendedDraft=null;events=[];reports=[];orders=[];focus=[];selected='';ready=false;busy=false;exhibitionDrafts.clear();draft=freshNote();tab='orders';panel.innerHTML='';show();},
+    refresh(){if((tab==='sales'||tab==='reports')&&ready&&!panel.querySelector('.reportAdmin[open]')&&!busy)draw();},
+    clear(){generation++;restoredDrafts.clear();for(const value of new Set([draft,suspendedDraft,...exhibitionDrafts.values()]))releasePhotos(value);photoUrls.clear();suspendedDraft=null;events=[];reports=[];orders=[];focus=[];selected='';ready=false;busy=false;exhibitionDrafts.clear();draft=freshNote();tab='orders';panel.innerHTML='';show();},
     hasDraft,
+    get busy(){return busy;},
   };
 }

@@ -10,6 +10,8 @@ const portArgument=process.argv.find(value=>value.startsWith('--port='));
 const port=Number(portArgument?.slice('--port='.length)||process.env.BROWSER_FIXTURE_PORT||8766);
 const keepPrint=process.argv.includes('--keep-print')||process.env.BROWSER_FIXTURE_KEEP_PRINT==='1';
 const demo=process.argv.includes('--report-demo')?createReportDemo():null;
+const manualEventPicker=process.argv.includes('--event-picker');
+const fixtureEvents=[{id:'neo_2026',name:'検証用展示会',order_event_name:'検証用展示会',pickup_prefix:'NEO',venue:'検証会場',participants:[]}];
 const publicFiles=new Map([
   ['/','index.html'],
   ['/index.html','index.html'],
@@ -21,6 +23,12 @@ const publicFiles=new Map([
   ['/styles.css','styles.css'],
   ['/app.js','app.js'],
   ['/exhibition-reports.js','exhibition-reports.js'],
+  ['/exhibition-selection.js','exhibition-selection.js'],
+  ['/report-drafts.js','report-drafts.js'],
+  ['/assets/exhibition-icon.svg','assets/exhibition-icon.svg'],
+  ['/assets/exhibition-icon-192.png','assets/exhibition-icon-192.png'],
+  ['/assets/exhibition-icon-512.png','assets/exhibition-icon-512.png'],
+  ['/assets/exhibition-apple-touch.png','assets/exhibition-apple-touch.png'],
   ['/report-model.js','report-model.js'],
   ['/order-pdf.js','order-pdf.js'],
   ['/vendor/jspdf.umd.min.js','vendor/jspdf.umd.min.js'],
@@ -37,7 +45,8 @@ const orders=new Map();
 if(demo)for(const order of demo.orders)orders.set(order.id,order);
 let pickupNumberSequence=0,pickupGeneration=1;
 const resetRequests=new Map();
-const allocatePickup=row=>{if(!row.pickup_number&&row.payload?.type==='spot'&&row.payload?.handoff==='later'&&!row.deleted_at){row.pickup_number=++pickupNumberSequence;row.pickup_generation=pickupGeneration}return row};
+const eventCounters=new Map();
+const allocatePickup=row=>{if(!row.pickup_number&&row.payload?.type==='spot'&&row.payload?.handoff==='later'&&!row.deleted_at){let counter=eventCounters.get(row.event_name);if(!counter){counter={number:0,generation:1};eventCounters.set(row.event_name,counter);}row.pickup_number=++counter.number;row.pickup_generation=counter.generation;row.pickup_prefix=[...fixtureEvents,...(demo?.events||[])].find(e=>e.order_event_name===row.event_name)?.pickup_prefix||'NEO';}return row};
 const receiptImages=new Map(),signedImages=new Map();
 const reportPhotos=new Map(),reportPhotoTokens=new Map();
 
@@ -124,10 +133,12 @@ const server=http.createServer(async(request,response)=>{
   }
   if(url.pathname.startsWith('/rest/v1/')&&request.headers.authorization!=='Bearer fixture-access-token')return sendJson(response,401,{error:'login_required'});
   if(demo&&url.pathname.startsWith('/rest/v1/')){const result=await demo.handle(url,request,readJson);if(result)return sendJson(response,result.status||200,result.body);}
+  if(url.pathname==='/rest/v1/exhibitions')return sendJson(response,200,fixtureEvents);
   if(url.pathname==='/rest/v1/rpc/reset_exhibition_pickup_counter'&&request.method==='POST'){
     const body=await readJson(request);
     if(body.p_confirmation!=='リセット'||!body.p_request_id)return sendJson(response,400,{error:'confirmation_required'});
     if(resetRequests.has(body.p_request_id))return sendJson(response,200,resetRequests.get(body.p_request_id));
+    if(body.p_event_name){let counter=eventCounters.get(body.p_event_name)||{number:0,generation:1};counter.generation++;counter.number=0;eventCounters.set(body.p_event_name,counter);resetRequests.set(body.p_request_id,counter.generation);return sendJson(response,200,counter.generation);}
     pickupGeneration++;pickupNumberSequence=0;resetRequests.set(body.p_request_id,pickupGeneration);
     return sendJson(response,200,pickupGeneration);
   }
@@ -164,6 +175,7 @@ const server=http.createServer(async(request,response)=>{
   if(!relative)return sendJson(response,404,{error:'not_found'});
   try{
     let body=await fs.readFile(path.join(root,relative));
+    if(relative==='index.html'&&!manualEventPicker)body=Buffer.from(body.toString('utf8').replace('</body>',`<script>window.addEventListener('load',()=>{let selected=false;const choose=()=>{if(selected)return;const button=[...document.querySelectorAll('[data-event-id]')].find(el=>el.querySelector('strong')?.textContent===window.EXHIBITION_CONFIG.eventName);if(button){selected=true;button.click();}};new MutationObserver(choose).observe(document.body,{subtree:true,childList:true});choose();});</script></body>`));
     if(demo&&relative==='index.html')body=Buffer.from(body.toString('utf8').replace('</body>',`<script>window.addEventListener('load',()=>{const banner=document.createElement('div');banner.textContent='試用デモ・架空データ ／ 入力はこのデモ内だけに保存されます';banner.style.cssText='position:sticky;top:0;z-index:100;background:#fef3c7;color:#78350f;text-align:center;padding:10px;font-size:13px;font-weight:bold';document.body.prepend(banner);if(!document.getElementById('loginView').classList.contains('hidden')){document.getElementById('loginEmail').value='fixture@example.invalid';document.getElementById('loginPassword').value='fixture-password';document.getElementById('loginBtn').click();}});</script></body>`));
     if(relative==='app.js'&&!keepPrint)body=Buffer.from(body.toString('utf8').replace('window.print();',"window.__FIXTURE_PRINT_CALLED__=true;window.dispatchEvent(new Event('afterprint'));"));
     response.writeHead(200,{'content-type':mime[path.extname(relative)]||'application/octet-stream','cache-control':'no-store'});

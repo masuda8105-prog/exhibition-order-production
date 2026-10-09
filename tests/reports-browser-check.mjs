@@ -44,12 +44,12 @@ try{
   assert.equal(await page.locator('#exhibitionReport script').count(),0);
   for(const width of [320,390,768,1280]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`overflow: ${width}`);await page.screenshot({path:`tmp/report-checks/report-${width}.png`,fullPage:true});}
   const downloadPromise=page.waitForEvent('download');await page.click('#reportPdf');const download=await downloadPromise;await download.saveAs('tmp/report-checks/exhibition-report.pdf');assert.ok((await fs.stat('tmp/report-checks/exhibition-report.pdf')).size>15000);
-  await page.selectOption('#reportEvent','jex_2026');await page.waitForFunction(()=>document.querySelector('#exhibitionReport')?.textContent.includes('JEX 2026'));
+  await page.click('#changeExhibition');await page.click('[data-event-id="jex_2026"]');await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-screen="reports"]');await page.waitForFunction(()=>document.querySelector('#exhibitionReport')?.textContent.includes('JEX 2026'));
   assert.ok(!(await page.locator('#exhibitionReport').innerText()).includes('受付スペースは展示台2台分必要。'));
   await page.click('[data-screen="orders"]');await page.waitForSelector('#newOrderBtn:visible');
-  assert.equal(await page.locator('#eventName').textContent(),'検証用展示会');
+  assert.equal(await page.locator('#eventName').textContent(),'JEX 2026');
   await page.click('[data-screen="notes"]');await page.waitForSelector('#noteForm');
-  await page.selectOption('#reportEvent','neo_2026');await page.waitForSelector('#noteForm');
+  await page.click('#changeExhibition');await page.click('[data-event-id="neo_2026"]');await page.waitForSelector('#appView:not(.hidden)');await page.click('[data-screen="notes"]');await page.waitForSelector('#noteForm');
   await page.click('[data-note-product=""]');await page.click('[data-note-category="venue"]');
   const longComment='搬入・搬出の実務記録。'.repeat(400);
   await page.fill('#noteComment',longComment);await page.click('#noteSave');await page.waitForFunction(()=>document.querySelector('#noteComment').value==='');

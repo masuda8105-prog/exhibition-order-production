@@ -52,7 +52,7 @@ function harness({afterWrite,beforeWrite}={}){
     return{ok:true,json:async()=>[row]};
   }});
   vm.runInContext(source+"\ngenerateSharePdf=async()=>({blob:{},pages:2});offerSharePdf=()=>{};render=()=>{};renderDraft=()=>{if(state.draft.stage==='finalize')renderFinalizeStep(state.draft)};globalThis.subject={state,renderFinalizeStep,resumeFinalization,cardHtml,saveNew,saveEdited,handOverFromCard,showPickupPayment,pendingFinalizations};",ctx);
-  const api=ctx.subject;api.state.session={access_token:'fixture',expires_at:4102444800,user:{id:'fixture'}};api.state.draft=draft();
+  const api=ctx.subject;api.state.exhibition={id:'neo_2026',order_event_name:'展示会',pickup_prefix:'NEO'};api.state.session={access_token:'fixture',expires_at:4102444800,user:{id:'fixture'}};api.state.draft=draft();
   return{...api,ctx,calls,rows,element,sequence:()=>sequence,render:()=>api.renderFinalizeStep(api.state.draft)};
 }
 test('番号発行→PDF→送信確認→確定を順番に保存し、印刷だけでは確定できない',async()=>{

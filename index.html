@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <title>展示会 注文管理</title>
-<link rel="icon" type="image/svg+xml" href="assets/neo-icon.svg?v=20260929-neo1">
-<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260929-neo1">
-<link rel="manifest" href="manifest.webmanifest?v=20260929-neo1">
-<meta name="apple-mobile-web-app-title" content="NEO注文">
+<link rel="icon" type="image/svg+xml" href="assets/exhibition-icon.svg?v=20261009-events1">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/exhibition-apple-touch.png?v=20261009-events1">
+<link rel="manifest" href="manifest.webmanifest?v=20261009-events1">
+<meta name="apple-mobile-web-app-title" content="展示会注文">
 <meta name="referrer" content="no-referrer">
-<link rel="stylesheet" href="styles.css?v=20261009-desktop3">
+<link rel="stylesheet" href="styles.css?v=20261009-events1">
 <script src="online-config.js?v=20260917-photo1"></script>
 </head>
 <body>
@@ -29,11 +29,30 @@
   </div>
 </section>
 
+<section id="eventChooser" class="eventChooser hidden" aria-labelledby="eventChooserTitle">
+  <header class="eventChooserHead"><div><div class="eyebrow">展示会 注文管理</div><h1 id="eventChooserTitle">参加する展示会を選択</h1></div><button id="eventChooserCancel" type="button" class="secondary hidden">現在の展示会へ戻る</button></header>
+  <p>注文・売上・気づき・レポートは、選んだ展示会ごとに保存します。</p>
+  <button id="eventChooserReload" type="button" class="secondary">↻ 一覧を更新</button>
+  <p id="eventChooserError" class="errorText" role="alert"></p>
+  <div id="eventChoices" class="eventChoices"></div>
+  <details class="eventCreate"><summary>一覧にない展示会を新しく登録</summary>
+    <form id="createExhibitionForm">
+      <p class="reportMuted">毎年・毎回別の展示会として、名前に年や開催回を入れると分かりやすくなります。</p>
+      <label>展示会名<input name="name" required maxlength="200" placeholder="例：IMF 2026（大阪）"></label>
+      <label>お渡し番号の接頭辞<input name="pickup_prefix" required maxlength="40" placeholder="例：IMF"><small>「IMF-1」のように表示します。発行後は変更できません。</small></label>
+      <label>会場・開催地<input name="venue" maxlength="200" placeholder="例：大阪"></label>
+      <div class="two"><label>開始日（任意）<input name="start_date" type="date"></label><label>終了日（任意）<input name="end_date" type="date"></label></div>
+      <button type="submit" class="primary">登録して、この展示会を開く</button>
+    </form>
+  </details>
+  <button id="eventChooserLogout" type="button" class="linkBtn">ログアウト</button>
+</section>
+
 <div id="appView" class="app hidden">
   <header class="topbar">
     <div class="brandRow">
       <div><div class="eyebrow" id="eventName">EXHIBITION</div><h1>注文管理</h1></div>
-      <button id="refreshBtn" class="secondary compact" aria-label="注文と商品を同期する">↻ 同期</button>
+      <div class="eventTopActions"><button id="changeExhibition" type="button" class="secondary compact">展示会を変更</button><button id="refreshBtn" class="secondary compact" aria-label="注文と商品を同期する">↻ 同期</button></div>
     </div>
     <div class="syncLine"><span id="syncDot" class="syncDot"></span><span id="syncText">認証状態を確認中</span><button id="logoutBtn" class="linkBtn hidden">ログアウト</button></div>
     <div class="orderOverview">
@@ -73,6 +92,6 @@
 <script src="vendor/qrcode.min.js"></script>
 <script src="vendor/html2canvas.min.js"></script>
 <script src="vendor/jspdf.umd.min.js"></script>
-<script type="module" src="app.js?v=20261009-desktop3"></script>
+<script type="module" src="app.js?v=20261009-events1"></script>
 </body>
 </html>

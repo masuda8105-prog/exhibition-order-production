@@ -67,7 +67,7 @@ export async function preparePhoto(file,{mimeType='image/jpeg',maxDimension=2400
     const blob = await new Promise(resolve => canvas.toBlob(resolve, mimeType, 0.92));
     canvas.width = canvas.height = 1;
     if (!blob || blob.size > 10 * 1024 * 1024) throw new Error("写真を処理できませんでした。画像を小さくして撮り直してください。");
-    return { id: crypto.randomUUID(), name: file.name || "撮影した写真", url: URL.createObjectURL(blob) };
+    return { id: crypto.randomUUID(), name: file.name || "撮影した写真", blob, url: URL.createObjectURL(blob) };
   } catch (error) {
     throw new Error(error.message.includes("処理") ? error.message : "この写真を読み込めません。JPEG・PNGで保存し直すか、カメラで撮り直してください。");
   } finally { clearTimeout(timeout); image.src = ""; URL.revokeObjectURL(source); }
