@@ -1,6 +1,6 @@
 import {REPORT_CATEGORIES,summarizeExhibition,groupReports,groupReportsByAuthor} from './report-model.js?v=20261002-layout1';
-import {orderFromCloudRow} from './workflow.js';
-import {preparePhoto,MAX_PHOTOS} from './order-attachments.js';
+import {orderFromCloudRow} from './workflow.js?v=20261009-events1';
+import {preparePhoto,MAX_PHOTOS} from './order-attachments.js?v=20261009-events1';
 import {createReportDraftStorage} from './report-drafts.js?v=20261009-events1';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

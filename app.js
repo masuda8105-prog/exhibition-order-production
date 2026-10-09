@@ -2,8 +2,8 @@ import {createOrderPdf} from './order-pdf.js?v=20261001-reference-size1';
 import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,SHIPPING_FEE,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,orderTaxSummary,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow,validOfficePhotoPaths} from './workflow.js?v=20261009-events1';
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
-import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20260930-officephotos1';
-import {createExhibitionReports} from './exhibition-reports.js?v=20261009-events1';
+import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20261009-events1';
+import {createExhibitionReports} from './exhibition-reports.js?v=20261009-events2';
 import {createExhibitionSelection} from './exhibition-selection.js?v=20261009-events1';
 
 const cfg={...(window.EXHIBITION_CONFIG||{})};
