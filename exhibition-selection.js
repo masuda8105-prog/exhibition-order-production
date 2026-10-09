@@ -1,3 +1,4 @@
+import {findSavedReportDraftEvent} from './report-drafts.js?v=20261009-reset1';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const exhibitionDay=(now=new Date())=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
 export const exhibitionDisplayName=name=>String(name||'').replace(/(?:19|20)\d{2}(?:年(?:度)?)?/g,'').replace(/[（(]\s*[）)]/g,'').replace(/\s+/g,' ').replace(/\s+([（(])/g,'$1').trim()||'展示会';
@@ -19,11 +20,13 @@ export function createExhibitionSelection({state,request,onSelect,onCancel}){
   const preference=createDailyExhibitionPreference({storage,getUserId:()=>state.session?.user?.id});
   function controls(disabled){busy=disabled;view.querySelectorAll('button,input,select').forEach(el=>el.disabled=disabled);}
   function render(){
-    list.innerHTML=events.map(event=>{
-      const name=exhibitionDisplayName(event.name),same=events.filter(value=>exhibitionDisplayName(value.name)===name&&(value.venue||'')===(event.venue||''));
+    const choices=rows=>rows.map(event=>{
+      const name=exhibitionDisplayName(event.name),same=rows.filter(value=>exhibitionDisplayName(value.name)===name&&(value.venue||'')===(event.venue||''));
       const occurrence=same.length>1?` ／ 開催回 ${same.indexOf(event)+1}`:'';
-      return `<button type="button" class="eventChoice" data-event-id="${esc(event.id)}"><strong>${esc(name)}</strong><span>${esc(event.venue||'会場未登録')}${event.start_date?` ／ ${shortDate(event.start_date)}${event.end_date?` ～ ${shortDate(event.end_date)}`:''}`:''}${occurrence}</span><small>お渡し番号：${esc(event.pickup_prefix||name.split(' ')[0])}-1〜${state.exhibition?.id===event.id?' ／ 選択中':''}</small></button>`;
-    }).join('')||'<p>展示会を登録して開始してください。</p>';
+      return `<button type="button" class="eventChoice" data-event-id="${esc(event.id)}"><strong>${esc(name)}${event.superseded_by?' ／ 過去の開催':''}</strong><span>${esc(event.venue||'会場未登録')}${event.start_date?` ／ ${event.superseded_by?esc(event.start_date):shortDate(event.start_date)}${event.end_date?` ～ ${event.superseded_by?esc(event.end_date):shortDate(event.end_date)}`:''}`:''}${occurrence}</span><small>${event.superseded_by?'以前の注文・売上・レポートを確認':`お渡し番号：${esc(event.pickup_prefix||name.split(' ')[0])}-1〜`}${state.exhibition?.id===event.id?' ／ 選択中':''}</small></button>`;
+    }).join('');
+    const archived=events.filter(event=>event.superseded_by);
+    list.innerHTML=(choices(events.filter(event=>!event.superseded_by))||'<p>展示会を登録して開始してください。</p>')+(archived.length?`<details class="eventArchive"><summary>過去の開催を見る（${archived.length}件）</summary><div class="eventChoices">${choices(archived)}</div></details>`:'');
     list.querySelectorAll('[data-event-id]').forEach(button=>button.onclick=()=>select(events.find(event=>event.id===button.dataset.eventId)));
   }
   async function select(event){
@@ -41,7 +44,8 @@ export function createExhibitionSelection({state,request,onSelect,onCancel}){
       const rows=[];for(let offset=0;;offset+=500){const page=await request(`exhibitions?select=*&order=start_date.desc.nullslast,created_at.desc,id.asc&limit=500&offset=${offset}`);rows.push(...page);if(page.length<500)break;}
       if(token!==version)return;events=rows;render();
       if(resume){
-        const remembered=preference.read(),event=events.find(value=>value.id===remembered);
+        const remembered=preference.read(),draftEvent=findSavedReportDraftEvent(state.session?.user?.id,events);let event=events.find(value=>value.id===(draftEvent||remembered));
+        const seen=new Set();while(!draftEvent&&event?.superseded_by&&!seen.has(event.id)){seen.add(event.id);event=events.find(value=>value.id===event.superseded_by);}
         if(event){controls(false);await select(event);}else if(remembered)preference.forget();
       }
     }catch{if(token===version){list.textContent='';message.textContent='展示会を読み込めませんでした。「一覧を更新」で再試行してください。';}}
@@ -73,5 +77,5 @@ export function createExhibitionSelection({state,request,onSelect,onCancel}){
   };
   document.getElementById('eventChooserReload').onclick=show;
   document.getElementById('eventChooserCancel').onclick=()=>{if(!busy){view.classList.add('hidden');onCancel();}};
-  return {show,clear(){version++;events=[];pending=null;busy=false;form.reset();delete form.elements.pickup_prefix.dataset.edited;list.innerHTML='';message.textContent='';view.classList.add('hidden');}};
+  return {show,remember(event){preference.save(event.id);},clear(){version++;events=[];pending=null;busy=false;form.reset();delete form.elements.pickup_prefix.dataset.edited;list.innerHTML='';message.textContent='';view.classList.add('hidden');}};
 }

@@ -223,3 +223,12 @@ button.salesRow{width:100%;font:inherit;cursor:pointer}.salesRow>div:first-child
   .receiptSheet .receiptTable{font-size:16px!important}.receiptSheet .receiptTable th{font-size:13px!important}.receiptSheet .receiptTable th,.receiptSheet .receiptTable td{padding:7px 5px!important;line-height:1.4!important;overflow-wrap:anywhere!important}.receiptSheet .receiptTable col.code{width:92px!important}.receiptSheet .receiptTable col.qty{width:55px!important}.receiptSheet .receiptTable col.unit{width:105px!important}.receiptSheet .receiptTable col.subtotal{width:120px!important}
   .receiptSheet .receiptFooterGrid{grid-template-columns:minmax(0,1fr) 300px!important;gap:12px!important;margin-top:12px!important}.receiptSheet .receiptNote{font-size:16px!important;line-height:1.5!important;padding:8px!important}.receiptSheet .receiptSummaryRow{font-size:16px!important;padding:5px 0!important}.receiptSheet .receiptSummaryRow.total{font-size:23px!important}.receiptSheet .receiptCurrencyNote,.receiptSheet .receiptFooterMini{font-size:11px!important;color:#263e54!important}
 }
+.reportResetSection{margin:24px 0;padding:20px;border-top:1px solid #d8dee7}
+.reportResetDialog{width:min(560px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;border:0;border-radius:16px;padding:24px;color:#172033;box-shadow:0 16px 60px #0005}
+.reportResetDialog::backdrop{background:#17203399}
+.reportResetDialog h2{margin-top:0;font-size:22px}.reportResetDialog p{line-height:1.7;overflow-wrap:anywhere}
+.reportResetDialog label{display:block;font-weight:700}.reportResetDialog input{display:block;box-sizing:border-box;width:100%;margin:8px 0;font-size:18px;padding:12px;border:1px solid #aab5c5;border-radius:8px}
+.reportResetActions{display:flex;flex-wrap:wrap;gap:12px}.reportResetActions button{flex:1;min-width:150px;min-height:48px}
+.reportArchiveNotice,.reportSourceNotice{padding:12px 16px;background:#edf3fa;border-radius:8px;line-height:1.6;font-size:14px}
+.eventArchive{grid-column:1/-1;padding:18px 0;border-top:1px solid #d8dee7}.eventArchive summary{font-weight:700;cursor:pointer;padding:12px 0}.eventArchive .eventChoices{margin-top:12px}
+@media(max-width:480px){.reportResetDialog{padding:20px}.reportResetActions{flex-direction:column}.reportResetActions button{width:100%}}

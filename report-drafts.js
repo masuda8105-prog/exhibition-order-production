@@ -1,5 +1,18 @@
 // Text is saved synchronously in this tab; prepared photos use IndexedDB.
 const storagePrefix='exhibitionOps.reportDraft.v1.';
+export const reportDraftHasInput=value=>Boolean(value&&(value.comment||value.photos?.length||value.product!==undefined||value.category||value.editingId||value.pendingPayload));
+// A pending draft in this tab takes priority over another tab's daily selection.
+export function findSavedReportDraftEvent(user,events){
+  if(!user)return '';
+  try{
+    const tab=sessionStorage.getItem('exhibitionOps.reportDraftTab');if(!tab)return '';
+    for(const event of events){
+      const value=JSON.parse(sessionStorage.getItem(`${storagePrefix}${tab}.${user}.${event.id}`)||'null');
+      if(reportDraftHasInput(value?.draft)||reportDraftHasInput(value?.suspended))return event.id;
+    }
+  }catch{}
+  return '';
+}
 let database;
 function db(){
   if(!database)database=new Promise((resolve,reject)=>{

@@ -137,6 +137,7 @@ const server=http.createServer(async(request,response)=>{
   if(url.pathname.startsWith('/rest/v1/')&&request.headers.authorization!=='Bearer fixture-access-token')return sendJson(response,401,{error:'login_required'});
   if(demo&&url.pathname.startsWith('/rest/v1/')){const result=await demo.handle(url,request,readJson);if(result)return sendJson(response,result.status||200,result.body);}
   if(url.pathname==='/rest/v1/exhibitions')return sendJson(response,200,fixtureEvents);
+  if(url.pathname==='/rest/v1/exhibition_sales_sources')return sendJson(response,200,[]);
   if(url.pathname==='/rest/v1/rpc/reset_exhibition_pickup_counter'&&request.method==='POST'){
     const body=await readJson(request);
     if(body.p_confirmation!=='リセット'||!body.p_request_id)return sendJson(response,400,{error:'confirmation_required'});

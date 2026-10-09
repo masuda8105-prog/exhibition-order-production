@@ -29,6 +29,16 @@ export function createReportDemo(){
   async function handle(url,request,readJson){
     const table=url.pathname.split('/').at(-1),page=rows=>rows.slice(Number(url.searchParams.get('offset')||0),Number(url.searchParams.get('offset')||0)+Number(url.searchParams.get('limit')||500));
     if(table==='products')return {body:products};
+    if(table==='exhibition_sales_sources')return {body:[]};
+    if(table==='start_next_exhibition'){
+      const body=await readJson(request),original=events.find(event=>event.id===body.p_exhibition_id);
+      if(!original||body.p_confirmation!=='リセット')return {status:400,body:{message:'invalid_reset'}};
+      if(original.superseded_by)return {body:events.find(event=>event.id===original.superseded_by)};
+      const id=`event_${body.p_request_id.replaceAll('-','')}`;
+      const next={id,name:original.name,order_event_name:id,pickup_prefix:original.pickup_prefix,venue:original.venue,participants:[],start_date:null,end_date:null,previous_exhibition_id:original.id};
+      events.push(next);original.superseded_by=id;focused.set(id,[...(focused.get(original.id)||[])]);
+      return {body:next};
+    }
     if(table==='exhibition_staff')return {body:[{display_name:'増田（デモ）',role:'staff',active:true}]};
     if(table==='exhibitions'){
       if(request.method==='POST'){const body=await readJson(request);if(events.some(e=>e.id===body.id||e.order_event_name===body.order_event_name))return {status:409,body:{message:'duplicate'}};const saved={...body,participants:[]};events.push(saved);return {status:201,body:[saved]};}

@@ -3,8 +3,8 @@ import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmShared
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
 import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20261009-events1';
-import {createExhibitionReports} from './exhibition-reports.js?v=20261009-sales2';
-import {createExhibitionSelection} from './exhibition-selection.js?v=20261009-sales1';
+import {createExhibitionReports} from './exhibition-reports.js?v=20261009-reset1';
+import {createExhibitionSelection} from './exhibition-selection.js?v=20261009-reset1';
 
 const cfg={...(window.EXHIBITION_CONFIG||{})};
 const $=id=>document.getElementById(id);
@@ -39,7 +39,19 @@ function changeExhibition(){
   if(hasResumableDraft()||exhibitionReports?.hasDraft()||exhibitionReports?.busy||attachmentStore.hasUnsavedPhotos()||attachmentOperation||attachmentPrintBusy||pendingFinalizations.size||pendingHandovers.size||pendingPayments.size||pendingDeletes.size){toast('入力や処理の途中です。保存・破棄・処理完了の後に展示会を変更してください');return;}
   initializeEventPicker().show();
 }
-function initializeExhibitionReports(){if(exhibitionReports)return;exhibitionReports=createExhibitionReports({state,cfg,toast,syncSales:syncOrders,photoApi:{
+async function startNextExhibition(event,requestId){
+  state.rememberDraftInput?.();
+  const d=state.draft,unfinished=d&&d.stage!=='success'&&(d.editingId||d.items?.length||d.productQuery||d.type||d.store||d.phone||d.customer||d.notes);
+  if(unfinished||exhibitionReports?.hasDraft()||attachmentStore.hasUnsavedPhotos()||attachmentOperation||attachmentPrintBusy||pendingFinalizations.size||pendingHandovers.size||pendingPayments.size||pendingDeletes.size)throw new Error('UNSAVED_INPUT');
+  const user=state.session?.user?.id;
+  const result=await exhibitionRequest('rpc/start_next_exhibition',{method:'POST',body:{p_exhibition_id:event.id,p_request_id:requestId,p_confirmation:'リセット'}});
+  if(user!==state.session?.user?.id||state.exhibition?.id!==event.id)throw new Error('SESSION_CHANGED');
+  const next=Array.isArray(result)?result[0]:result;if(!next?.id||next.previous_exhibition_id!==event.id)throw new Error('INVALID_NEXT_EXHIBITION');
+  initializeEventPicker().remember(next);
+  try{await enterExhibition(next);toast('過去分を残して、次回開催を開始しました');}
+  catch(e){await initializeEventPicker().show();toast('次回開催は作成済みです。一覧から開いてください');}
+}
+function initializeExhibitionReports(){if(exhibitionReports)return;exhibitionReports=createExhibitionReports({state,cfg,toast,syncSales:syncOrders,onStartNext:startNextExhibition,photoApi:{
   async upload(path,blob){await ensureFreshSession();try{return await fetchJson(`${sbBase()}/storage/v1/object/exhibition-report-photos/${path}`,{method:'POST',headers:{...sbHeaders(),'Content-Type':'image/jpeg'},body:blob});}catch(error){if(error.status===409||error.storageCode==='409'||error.storageCode===409)return;throw error;}},
   async sign(path){await ensureFreshSession();const result=await fetchJson(`${sbBase()}/storage/v1/object/sign/exhibition-report-photos/${path}`,{method:'POST',headers:sbHeaders(),body:JSON.stringify({expiresIn:3600})});const signed=result.signedURL;if(typeof signed!=='string')throw new Error('INVALID_PHOTO_URL');const url=new URL(signed.startsWith('/object/')?`${sbBase()}/storage/v1${signed}`:signed,`${sbBase()}/storage/v1/`);if(url.origin!==new URL(sbBase()).origin)throw new Error('INVALID_PHOTO_URL');return url.href;},
 },request:async(path,options={})=>{
@@ -286,13 +298,13 @@ function showPickupPayment(order,{fromDetail=false}={}){
 function clearReceiptPreview(){if(state.receiptBlobUrl)URL.revokeObjectURL(state.receiptBlobUrl);state.receiptBlobUrl=null;state.sheetVersion++}
 function openSheet(title,step=''){clearReceiptPreview();state.rememberDraftInput=null;$('sheetTitle').textContent=title;$('stepLabel').textContent=step;$('sheet').classList.remove('hidden');document.body.style.overflow='hidden';clearError()}
 function hasResumableDraft(){return Boolean(state.draft&&state.draft.stage!=='success'&&!state.draft.editingId)}
-function updateNewOrderButton(){const resumable=hasResumableDraft();$('newOrderBtn').textContent=resumable?'↩ 入力途中の注文を再開':'＋ 新しい注文';$('discardDraftBtn').classList.toggle('hidden',!resumable)}
+function updateNewOrderButton(){const resumable=hasResumableDraft();$('newOrderBtn').textContent=resumable?'↩ 入力途中の注文を再開':state.exhibition?.superseded_by?'過去の開催を表示中':'＋ 新しい注文';$('newOrderBtn').disabled=Boolean(state.exhibition?.superseded_by&&!resumable);$('discardDraftBtn').classList.toggle('hidden',!resumable)}
 function closeSheet(){state.rememberDraftInput?.();state.rememberDraftInput=null;clearReceiptPreview();$('sheet').classList.add('hidden');$('sheet').classList.remove('productFullscreen');document.body.style.overflow='';updateNewOrderButton()}
 function showError(msg){$('sheetError').textContent=msg;$('sheetError').classList.remove('hidden');$('sheetPanel')?.scrollTo({top:0,behavior:'smooth'})}
 function clearError(){$('sheetError').classList.add('hidden');$('sheetError').textContent=''}
 function savedKeypadAlign(){try{return localStorage.getItem(LS_KEYPAD_ALIGN)==='left'?'left':'right'}catch{return'right'}}
 function freshDraft(){return{stage:'products',productQuery:'',keypadMode:'number',keypadAlign:savedKeypadAlign(),type:null,handoff:null,customerRegion:'domestic',items:[],store:'',phone:'',customer:'',account:'',accountChoice:'',accountOther:'',staff:state.staff?.display_name||'',paymentMethod:PAYMENT.CREDIT,paid:false,delivered:false,shipped:false,prepared:PREP.NONE,headOfficeShared:false,headOfficeSharedAt:'',slackShared:false,slackSharedAt:'',workflowStatus:'active',pickupDate:dateOffset(1),notes:'',clientSubmissionId:newUuid()}}
-function startOrder(){const resume=hasResumableDraft();if(!resume){attachmentStore.clear();state.draft=freshDraft()}openSheet('新しい注文','1 / 3');renderDraft();if(resume)toast('入力途中の注文を再開しました')}
+function startOrder(){const resume=hasResumableDraft();if(state.exhibition?.superseded_by&&!resume){toast('過去の開催です。「展示会を変更」から現在の開催を開いてください');return;}if(!resume){attachmentStore.clear();state.draft=freshDraft()}openSheet('新しい注文','1 / 3');renderDraft();if(resume)toast('入力途中の注文を再開しました')}
 function showDiscardDraftConfirm(){if(!hasResumableDraft())return startOrder();state.rememberDraftInput?.();const d=state.draft,count=itemCountOf(d),store=String(d.store||'').trim();openSheet('入力途中の注文を破棄','確認');$('sheetBody').innerHTML=`<div class="step"><div class="shareConfirm"><div class="successMark pending">!</div><h3>入力途中の内容を破棄しますか？</h3><p>破棄を確定した場合だけ新しい注文へ切り替わります。</p></div><div class="section"><div class="summaryRow"><span>追加済み商品</span><b>${count}点</b></div>${store?`<div class="summaryRow"><span>入力済み店舗</span><b>${esc(store)}</b></div>`:''}</div></div><div class="stickyActions"><button id="discardCancel" class="secondary">キャンセル</button><button id="discardConfirm" class="dangerBtn">破棄して新規開始</button></div>`;$('discardCancel').onclick=renderDraft;$('discardConfirm').onclick=()=>{state.draft=null;startOrder();toast('入力途中の注文を破棄しました')}}
 function startEditOrder(order){if(!(state.draft?.editingId===order.localId&&state.draft.stage!=='success'))state.draft={...order,productQuery:'',keypadMode:'number',keypadAlign:savedKeypadAlign(),items:(order.items||[]).map(item=>({...item,lineId:item.lineId||newUuid()})),stage:'products',editingId:order.localId};openSheet('注文を修正','1 / 3');renderDraft()}
 function renderDraft(){state.rememberDraftInput=null;clearError();if(!state.draft)return;const d=state.draft;$('sheet').classList.toggle('productFullscreen',d.stage==='products');if(d.stage==='products')renderProductStep(d);else if(d.stage==='type')renderTypeStep(d);else if(d.stage==='info')renderInfoStep(d);else if(d.stage==='finalize')renderFinalizeStep(d);else if(d.stage==='success')renderSuccess(d)}
@@ -744,7 +756,8 @@ function printOrders(orders,title,withCover=true,{targetLabel='全期間',custom
   if(!list.length)return toast('印刷する注文がありません');
   if(list.some(order=>isPickupOrder(order)&&!pickupNumberLabel(order)))return toast('お渡し番号が未発行です。「お渡し番号を発行する」を先に押してください。');
   const totalQty=list.reduce((sum,order)=>sum+itemCountOf(order),0),grandTotal=list.reduce((sum,order)=>sum+totalOf(order),0);
-  const cover=withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(cfg.eventName||'展示会')}</div><h1>${esc(title)}</h1><p><b>対象受付日 ${esc(targetLabel)}</b><br>出力日時 ${new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'medium'}).format(new Date())}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計（税抜）</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>受付日時</th><th>区分</th><th>卸屋・帳合先</th><th>店舗・お客様</th><th>合計（税抜）</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(formatDateTime(order.createdAt||order.created_at,true))}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.account||'-')}</td><td>${pickupNumberLabel(order)?`<b>${esc(pickupNumberLabel(order))}</b><br>`:''}${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
+  const displayEventName=state.exhibition?.name||cfg.eventName||'展示会';
+  const cover=withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(displayEventName)}</div><h1>${esc(title)}</h1><p><b>対象受付日 ${esc(targetLabel)}</b><br>出力日時 ${new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'medium'}).format(new Date())}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計（税抜）</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>受付日時</th><th>区分</th><th>卸屋・帳合先</th><th>店舗・お客様</th><th>合計（税抜）</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(formatDateTime(order.createdAt||order.created_at,true))}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.account||'-')}</td><td>${pickupNumberLabel(order)?`<b>${esc(pickupNumberLabel(order))}</b><br>`:''}${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
   const englishCopy=customerCopy&&list.every(order=>order.customerRegion==='overseas');
   const printedAt=new Intl.DateTimeFormat(englishCopy?'en-GB':'ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'short'}).format(new Date());
   const photosIncluded=includeAttachments&&!customerCopy&&list.some(order=>attachmentStore.list(order.localId).length);
