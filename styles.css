@@ -80,6 +80,9 @@ html,body{max-width:100%;overflow-x:hidden}.app{padding-bottom:142px}.syncLine{f
 .pdfOutput:empty{display:none}.pdfOutput{margin:12px 0;padding:16px;background:#fff;border:1px solid #d1d5db;border-radius:12px;display:flex;flex-wrap:wrap;gap:10px}.pdfOutput p{flex-basis:100%;margin:0}
 .flowShareCheck{display:flex;align-items:center;gap:12px;margin-top:12px;min-height:70px;padding:12px;border:2px solid #667085;border-radius:12px;cursor:pointer;font-weight:850}.flowShareCheck[hidden]{display:none}.flowShareCheck:has(input:checked){border-color:#08754d;background:#effaf3}.flowShareCheck input{flex:0 0 24px;width:24px;height:24px;accent-color:#08754d}.flowShareCheck small{font-size:12px;font-weight:500}
 .receiptCopyLabel{margin-bottom:12px;padding:9px 12px;border:2px solid #111827;color:#111827;font-size:19px;font-weight:900;text-align:center;overflow-wrap:anywhere}
+.receiptCopyLabel .receiptExhibitionName{display:block;font-size:26px;line-height:1.3;margin-bottom:3px}
+.receiptCopyLabel span{display:block}
+@media print{.receiptCopyLabel .receiptExhibitionName{font-size:21px!important;line-height:1.25!important}}
 .receiptPickupNumber{display:grid;gap:3px;margin:0 0 18px;padding:12px;border:3px solid #111827;text-align:center;break-inside:avoid}
 .receiptPickupNumber strong{font-size:38px;line-height:1.2;overflow-wrap:anywhere}
 .receiptPickupNumber small{font-size:11px}
