@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {orderPayloadForCloud,orderFromCloudRow,totalOf,validate} from '../workflow.js';
+const source=readFileSync(new URL('../app.js',import.meta.url),'utf8');
+test('自由入力は必須・単価・整数数量を検証し、同じ品番の別商品も独立して保存する',()=>{
+ const nodes=Object.fromEntries(['manual-code','manual-name','manual-price','manual-qty','manualProduct','manualProductError','addManualProduct'].map(id=>[id,{value:''}]));
+ let id=0;const context=vm.createContext({$:id=>nodes[id],newUuid:()=>String(++id),clearError(){},renderCart(){},toast(){}});
+ vm.runInContext(source.slice(source.indexOf('function bindManualProduct('),source.indexOf('function productRank(')),context);
+ const draft={items:[]};context.bindManualProduct(draft);const add=()=>nodes.addManualProduct.onclick();
+ add();assert.match(nodes.manualProductError.textContent,/品番/);
+ nodes['manual-code'].value=' CUSTOM-1 ';nodes['manual-name'].value=' 未登録商品 <A> ';nodes['manual-price'].value='0';nodes['manual-qty'].value='2';add();assert.match(nodes.manualProductError.textContent,/単価/);
+ nodes['manual-price'].value='1250';nodes['manual-qty'].value='1.5';add();assert.match(nodes.manualProductError.textContent,/整数/);
+ nodes['manual-qty'].value='2';add();assert.equal(draft.items.length,1);assert.equal(nodes['manual-code'].value,'');
+ nodes['manual-code'].value='CUSTOM-1';nodes['manual-name'].value='別仕様';nodes['manual-price'].value='500';nodes['manual-qty'].value='1';add();assert.notEqual(draft.items[0].productId,draft.items[1].productId);
+ const order={...draft,type:'normal',store:'テスト',phone:'000',account:'テスト',staff:'テスト'};
+ const saved=orderFromCloudRow({id:'test',payload:orderPayloadForCloud(order)});
+ assert.equal(saved.items[0].code,'CUSTOM-1');assert.equal(saved.items[0].name,'未登録商品 <A>');assert.equal(totalOf(saved),3000);assert.deepEqual(validate(saved),[]);
+});

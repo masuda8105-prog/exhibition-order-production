@@ -235,3 +235,5 @@ button.salesRow{width:100%;font:inherit;cursor:pointer}.salesRow>div:first-child
 .reportArchiveNotice,.reportSourceNotice{padding:12px 16px;background:#edf3fa;border-radius:8px;line-height:1.6;font-size:14px}
 .eventArchive{grid-column:1/-1;padding:18px 0;border-top:1px solid #d8dee7}.eventArchive summary{font-weight:700;cursor:pointer;padding:12px 0}.eventArchive .eventChoices{margin-top:12px}
 @media(max-width:480px){.reportResetDialog{padding:20px}.reportResetActions{flex-direction:column}.reportResetActions button{width:100%}}
+
+.manualProduct{margin-bottom:16px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#f7f9fc}.manualProduct summary{cursor:pointer;font-weight:800;min-height:40px;display:flex;align-items:center}.manualProduct p{font-size:12px;line-height:1.6}.manualProduct input{min-width:0;width:100%}
