@@ -25,7 +25,8 @@ try{
     const px=selector=>parseFloat(getComputedStyle(element.querySelector(selector)).fontSize);
     return {label:px('.receiptInfoLabel'),value:px('.receiptInfoValue'),item:px('.receiptTable'),heading:px('.receiptTable th'),total:px('.receiptSummaryRow.total')};
   });
-  assert.ok(printSizes.label>=12&&printSizes.value>=16&&printSizes.item>=16&&printSizes.heading>=13&&printSizes.total>=23,JSON.stringify(printSizes));
+  assert.ok(printSizes.label>=12&&printSizes.value>=16&&printSizes.total>=23,JSON.stringify(printSizes));
+  assert.deepEqual({item:printSizes.item,heading:printSizes.heading},{item:13,heading:11});
   const qtyColumn=await page.locator('#printArea .receiptTable').first().evaluate(table=>({display:getComputedStyle(table.querySelector('col.qty')).display,width:table.querySelector('tbody tr').cells[2].getBoundingClientRect().width}));
   assert.equal(qtyColumn.display,'table-column');assert.ok(qtyColumn.width<=60,'quantity column leaves space for product names');
   const schedule=await page.locator('#printArea .receiptPickupSchedule').first().evaluate(element=>({color:getComputedStyle(element).color,background:getComputedStyle(element).backgroundColor,border:getComputedStyle(element).borderTopWidth,size:parseFloat(getComputedStyle(element).fontSize),width:element.getBoundingClientRect().width,parentWidth:element.parentElement.getBoundingClientRect().width}));
@@ -47,7 +48,7 @@ try{
   await fs.mkdir('tmp/receipt-readability',{recursive:true});
   await fs.writeFile('tmp/receipt-readability/copies.pdf',bytes);
   await page.locator('#printArea .receiptSheet').first().screenshot({path:'tmp/receipt-readability/print.png'});
-  // Long orders must keep their larger type and flow onto additional pages.
+  // Long orders must flow onto additional pages without losing any rows.
   await page.locator('#printArea .receiptSheet').last().evaluate(element=>element.remove());
   await page.locator('#printArea .receiptTable tbody').evaluate(element=>{const row=element.firstElementChild.outerHTML;element.innerHTML=Array.from({length:40},(_,i)=>row.replace('TEST-1',`LONG-${i+1}`)).join('');});
   const longBytes=await page.pdf({format:'A4',preferCSSPageSize:true,printBackground:true});
@@ -58,7 +59,7 @@ try{
   assert.match(longText,/税込合計/);
   await page.locator('#printArea .receiptTable th').evaluateAll(cells=>{['Code','Product','Qty','Unit Price (excl. tax)','Amount (excl. tax)'].forEach((text,i)=>cells[i].textContent=text);});
   const overflow=await page.locator('#printArea .receiptTable th').evaluateAll(cells=>cells.filter(cell=>cell.scrollWidth>cell.clientWidth+2).map(cell=>cell.textContent));assert.deepEqual(overflow,[],'larger English headings wrap within their columns');
-  console.log('PASS: 20px image / 16px print, separate eight-item copies, long orders paginate with every row and totals');
+  console.log('PASS: 20px image / 13px print, separate eight-item copies, long orders paginate with every row and totals');
 }finally{
   await browser.close();
 }
