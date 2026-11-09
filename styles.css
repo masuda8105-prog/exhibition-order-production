@@ -221,7 +221,10 @@ button.salesRow{width:100%;font:inherit;cursor:pointer}.salesRow>div:first-child
 @media print{
   .receiptSheet .receiptHeaderSimple{grid-template-columns:minmax(0,1fr) 250px!important}
   .receiptSheet .receiptBrandName{font-size:13px!important}.receiptSheet .receiptBrandSub,.receiptSheet .receiptDocSub{font-size:11px!important}.receiptSheet .receiptMetaLine{font-size:13px!important;line-height:1.5!important}.receiptSheet .receiptDocTitle{font-size:24px!important}
-  .receiptSheet .receiptInfoBand{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;margin-top:10px!important}.receiptSheet .receiptInfoCard{padding:7px 8px!important}.receiptSheet .receiptInfoLabel{font-size:12px!important;color:#263e54!important}.receiptSheet .receiptInfoValue{font-size:16px!important;line-height:1.4!important;margin-top:3px!important}
+  .receiptSheet .receiptInfoBand{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important;margin-top:10px!important}
+  .receiptSheet .receiptInfoCard{padding:6px 8px!important}
+  .receiptSheet .receiptInfoLabel{font-size:11px!important;color:#263e54!important}
+  .receiptSheet .receiptInfoValue{font-size:14px!important;line-height:1.4!important;margin-top:3px!important}
   .receiptSheet .receiptSection{margin-top:12px!important}.receiptSheet .receiptSectionTitle{font-size:17px!important}.receiptSheet .receiptSectionHint{font-size:13px!important}
   .receiptSheet .receiptTable{font-size:13px!important}
   .receiptSheet .receiptTable th{font-size:11px!important}

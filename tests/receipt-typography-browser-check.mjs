@@ -25,7 +25,8 @@ try{
     const px=selector=>parseFloat(getComputedStyle(element.querySelector(selector)).fontSize);
     return {label:px('.receiptInfoLabel'),value:px('.receiptInfoValue'),item:px('.receiptTable'),heading:px('.receiptTable th'),total:px('.receiptSummaryRow.total')};
   });
-  assert.ok(printSizes.label>=12&&printSizes.value>=16&&printSizes.total>=23,JSON.stringify(printSizes));
+  assert.deepEqual({label:printSizes.label,value:printSizes.value},{label:11,value:14});
+  assert.ok(printSizes.total>=23,JSON.stringify(printSizes));
   assert.deepEqual({item:printSizes.item,heading:printSizes.heading},{item:13,heading:11});
   const qtyColumn=await page.locator('#printArea .receiptTable').first().evaluate(table=>({display:getComputedStyle(table.querySelector('col.qty')).display,width:table.querySelector('tbody tr').cells[2].getBoundingClientRect().width}));
   assert.equal(qtyColumn.display,'table-column');assert.ok(qtyColumn.width<=60,'quantity column leaves space for product names');
