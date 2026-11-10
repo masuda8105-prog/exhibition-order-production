@@ -28,6 +28,7 @@ jobs:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           EXHIBITION_EVENT_NAME: ${{ vars.EXHIBITION_EVENT_NAME }}
+          EXHIBITION_PREPARATION_URL: ${{ vars.EXHIBITION_PREPARATION_URL }}
         run: node scripts/build-site.mjs
       - uses: actions/upload-pages-artifact@v4
         with:

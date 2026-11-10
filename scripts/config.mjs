@@ -25,6 +25,8 @@ export function browserConfigSource(environment){
   const supabaseUrl=String(environment.SUPABASE_URL||'').replace(/\/$/,'');
   const publishableKey=String(environment.SUPABASE_PUBLISHABLE_KEY||'');
   const eventName=String(environment.EXHIBITION_EVENT_NAME||'展示会').trim();
+  const prepSetting=String(environment.EXHIBITION_PREPARATION_URL||'').trim();
+  const preparationUrl=/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(prepSetting)?prepSetting:'';
   if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(supabaseUrl))throw new Error('SUPABASE_URL is missing or invalid.');
   if(!/^sb_publishable_[A-Za-z0-9_-]+$/.test(publishableKey))throw new Error('SUPABASE_PUBLISHABLE_KEY is missing or invalid.');
   const config={
@@ -32,6 +34,7 @@ export function browserConfigSource(environment){
     publishableKey,
     eventName,
     currency:'JPY',
+    preparationUrl,
   };
   return `/* Generated from environment variables. Do not commit this file. */\nwindow.EXHIBITION_CONFIG = Object.freeze(${JSON.stringify(config,null,2)});\n`;
 }

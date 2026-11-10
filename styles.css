@@ -244,3 +244,10 @@ button.salesRow{width:100%;font:inherit;cursor:pointer}.salesRow>div:first-child
 @media(max-width:480px){.reportResetDialog{padding:20px}.reportResetActions{flex-direction:column}.reportResetActions button{width:100%}}
 
 .manualProduct{margin-bottom:16px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#f7f9fc}.manualProduct summary{cursor:pointer;font-weight:800;min-height:40px;display:flex;align-items:center}.manualProduct p{font-size:12px;line-height:1.6}.manualProduct input{min-width:0;width:100%}
+
+.preparationEntry{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin:12px 0;color:#667085;font-size:13px}
+.preparationEntry button{min-height:44px;margin:0}
+@media(max-width:420px){
+  .brandRow:has(#openExhibitionPreparation:not(.hidden)){flex-wrap:wrap;gap:4px 8px}
+  .eventTopActions:has(#openExhibitionPreparation:not(.hidden)){flex-wrap:wrap;flex-shrink:1}
+}

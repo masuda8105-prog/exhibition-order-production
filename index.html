@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest?v=20261009-events1">
 <meta name="apple-mobile-web-app-title" content="展示会注文">
 <meta name="referrer" content="no-referrer">
-<link rel="stylesheet" href="styles.css?v=20261109-receipt-print2">
+<link rel="stylesheet" href="styles.css?v=20261110-prep1">
 <script src="online-config.js?v=20260917-photo1"></script>
 </head>
 <body>
@@ -33,6 +33,10 @@
   <header class="eventChooserHead"><div><div class="eyebrow">展示会 注文管理</div><h1 id="eventChooserTitle">参加する展示会を選択</h1></div><button id="eventChooserCancel" type="button" class="secondary hidden">現在の展示会へ戻る</button></header>
   <p class="reportMuted">同じ端末では、当日中は最後に選んだ展示会を自動で開きます。上部の「展示会変更」から切り替えられます。</p>
   <p>注文・売上・気づき・レポートは、選んだ展示会ごとに保存します。</p>
+  <div id="preparationEntry" class="preparationEntry hidden">
+    <button id="openPreparationList" type="button" class="secondary">展示会準備・設営</button>
+    <span>箱の中身・設営見本・撤収の確認</span>
+  </div>
   <button id="eventChooserReload" type="button" class="secondary">↻ 一覧を更新</button>
   <p id="eventChooserError" class="errorText" role="alert"></p>
   <div id="eventChoices" class="eventChoices"></div>
@@ -53,7 +57,7 @@
   <header class="topbar">
     <div class="brandRow">
       <div><div class="eyebrow" id="eventName">EXHIBITION</div><h1>注文管理</h1></div>
-      <div class="eventTopActions"><button id="changeExhibition" type="button" class="secondary compact">展示会を変更</button><button id="refreshBtn" class="secondary compact" aria-label="注文と商品を同期する">↻ 同期</button></div>
+      <div class="eventTopActions"><button id="changeExhibition" type="button" class="secondary compact">展示会を変更</button><button id="openExhibitionPreparation" type="button" class="secondary compact hidden">準備・設営</button><button id="refreshBtn" class="secondary compact" aria-label="注文と商品を同期する">↻ 同期</button></div>
     </div>
     <div class="syncLine"><span id="syncDot" class="syncDot"></span><span id="syncText">認証状態を確認中</span><button id="logoutBtn" class="linkBtn hidden">ログアウト</button></div>
     <div class="orderOverview">
@@ -93,6 +97,6 @@
 <script src="vendor/qrcode.min.js"></script>
 <script src="vendor/html2canvas.min.js"></script>
 <script src="vendor/jspdf.umd.min.js"></script>
-<script type="module" src="app.js?v=20261019-manual-products1"></script>
+<script type="module" src="app.js?v=20261110-prep1"></script>
 </body>
 </html>

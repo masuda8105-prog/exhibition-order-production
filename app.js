@@ -928,6 +928,17 @@ async function logout(){
 }
 $('loginBtn').onclick=login;$('loginPassword').onkeydown=event=>{if(event.key==='Enter')login()};
 $('changeExhibition').onclick=changeExhibition;$('eventChooserLogout').onclick=logout;
+if(cfg.preparationUrl){
+  const openPreparation=eventId=>{
+    const url=new URL('./prep/',window.location.href);
+    if(eventId)url.searchParams.set('event',eventId);
+    window.open(url.href,'_blank','noopener');
+  };
+  $('preparationEntry').classList.remove('hidden');
+  $('openPreparationList').onclick=()=>openPreparation();
+  $('openExhibitionPreparation').classList.remove('hidden');
+  $('openExhibitionPreparation').onclick=()=>openPreparation(state.exhibition?.id);
+}
 window.addEventListener('afterprint',()=>{
   // Some browsers fire afterprint when the preview opens, before the PDF is captured.
   // Keep the hidden print DOM until the next print replaces it or logout clears it.
