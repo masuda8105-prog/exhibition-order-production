@@ -28,7 +28,7 @@ jobs:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           EXHIBITION_EVENT_NAME: ${{ vars.EXHIBITION_EVENT_NAME }}
-          EXHIBITION_PREPARATION_URL: ${{ vars.EXHIBITION_PREPARATION_URL }}
+          EXHIBITION_PREPARATION_URL: ${{ vars.EXHIBITION_PREPARATION_URL || 'https://script.google.com/macros/s/AKfycbw_MScBv4Iq10vJqENFw9smbC6L2xUqz-k9X3Y6_XmWI02q1SGda9X5xQI6S7enQ2OcOQ/exec' }}
         run: node scripts/build-site.mjs
       - uses: actions/upload-pages-artifact@v4
         with:

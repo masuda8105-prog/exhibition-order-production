@@ -23,7 +23,7 @@
       const box = query.get('box') || '';
       if (/^[a-zA-Z0-9_-]{1,128}$/.test(event)) destination.searchParams.set('event', event);
       if (/^SN-B[0-9]{3,8}$/.test(box)) destination.searchParams.set('box', box);
-      document.getElementById('message').textContent = '会社のGoogleアカウントで準備画面を開きます。';
+      document.getElementById('message').textContent = '準備・設営の画面を開いています。';
       const link = document.getElementById('openPreparation');
       link.href = destination.href;
       link.hidden = false;
