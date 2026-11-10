@@ -36,12 +36,12 @@ test('一覧・注文書・お客様控えは同じNEO番号を表示し、送�
   assert.match(companyCopy,/税抜合計<\/span><span>¥800/);
   assert.match(companyCopy,/消費税（10%）<\/span><span>¥80/);
   assert.match(companyCopy,/税込合計<\/span><span>¥880/);
-  assert.match(companyCopy,/^<div class="receiptCopyLabel">会社控え<\/div>/);
+  assert.match(companyCopy,/^<div class="receiptCopyLabel"><strong class="receiptExhibitionName">[^<]+<\/strong><span>会社控え<\/span><\/div>/);
   assert.ok(companyCopy.indexOf('receiptInfoBand')<companyCopy.indexOf('receiptPickupNumber'));
   assert.match(companyCopy,/お受け取り時に、この番号をご提示ください。/);
   assert.match(companyCopy,/お渡し日 2099\/01\/02　13時以降/);
   const customerCopy=ctx.subject.receiptDocumentHtml(order,{customerCopy:true});
-  assert.match(customerCopy,/^<div class="receiptCopyLabel">お客様控え<\/div>/);
+  assert.match(customerCopy,/^<div class="receiptCopyLabel"><strong class="receiptExhibitionName">[^<]+<\/strong><span>お客様控え<\/span><\/div>/);
   assert.match(customerCopy,/配送料（一律）/);
   assert.ok(customerCopy.indexOf('receiptInfoBand')<customerCopy.indexOf('receiptPickupNumber'));
   assert.match(customerCopy,/お渡し日 2099\/01\/02　13時以降/);
