@@ -251,3 +251,15 @@ button.salesRow{width:100%;font:inherit;cursor:pointer}.salesRow>div:first-child
   .brandRow:has(#openExhibitionPreparation:not(.hidden)){flex-wrap:wrap;gap:4px 8px}
   .eventTopActions:has(#openExhibitionPreparation:not(.hidden)){flex-wrap:wrap;flex-shrink:1}
 }
+
+.productResultInfo{display:flex;align-items:center;gap:10px;min-width:0}
+.productImageLink{display:flex;align-items:center;justify-content:center;width:68px;min-height:42px;flex:0 0 68px}
+.productImageLink span{display:none}
+.productImageLink.thumbnailUnavailable span{display:inline;font-size:12px}
+.productThumbnail{width:68px;height:46px;object-fit:contain;border-radius:5px;background:#fff}
+.koreaDistributor{margin-top:12px;break-inside:avoid}
+[lang="ko"]{font-family:"Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+
+.koreaPricePicker{display:flex;align-items:center;gap:8px;margin:6px 0}
+.koreaPricePicker label{margin:0;white-space:nowrap}
+.koreaPricePicker select{width:auto;min-height:34px;padding:4px 8px}

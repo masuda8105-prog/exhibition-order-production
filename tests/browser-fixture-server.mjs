@@ -12,7 +12,9 @@ const port=Number(portArgument?.slice('--port='.length)||process.env.BROWSER_FIX
 const keepPrint=process.argv.includes('--keep-print')||process.env.BROWSER_FIXTURE_KEEP_PRINT==='1';
 const demo=process.argv.includes('--report-demo')?createReportDemo():null;
 const manualEventPicker=process.argv.includes('--event-picker');
+const koreaFixture=process.argv.includes('--korea');
 const fixtureEvents=[{id:'neo_2026',name:'検証用展示会',order_event_name:'検証用展示会',pickup_prefix:'NEO',venue:'検証会場',participants:[]}];
+if(koreaFixture)fixtureEvents.push({id:'korea_exhibition',name:'韓国展示会',order_event_name:'korea_exhibition',pickup_prefix:'KR',venue:'',participants:[]});
 const publicFiles=new Map([
   ['/','index.html'],
   ['/index.html','index.html'],
@@ -64,7 +66,7 @@ async function readJson(request){
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return{}}
 }
 
-const server=http.createServer(async(request,response)=>{
+export async function handleFixture(request,response){
   const url=new URL(request.url||'/',`http://${request.headers.host||'127.0.0.1'}`);
   if(request.method==='OPTIONS'){
     response.writeHead(204,{'access-control-allow-origin':'*','access-control-allow-headers':'apikey,authorization,content-type'});
@@ -81,6 +83,15 @@ const server=http.createServer(async(request,response)=>{
     return sendJson(response,200,{access_token:'fixture-access-token',refresh_token:'fixture-refresh-token',expires_in:3600,user:{id:'fixture-user'}});
   }
   if(url.pathname==='/auth/v1/logout')return sendJson(response,200,{});
+  if(koreaFixture&&url.pathname==='/storage/v1/object/sign/korea-product-images'){
+    if(request.headers.authorization!=='Bearer fixture-access-token')return sendJson(response,401,{error:'login_required'});
+    const {paths}=await readJson(request);
+    return sendJson(response,200,paths.map(path=>({path,signedURL:`/object/sign/korea-product-images/${path}?token=fixture`})));
+  }
+  if(koreaFixture&&url.pathname==='/storage/v1/object/sign/korea-product-images/test-image.jpg'&&url.searchParams.get('token')==='fixture'){
+    response.writeHead(200,{'content-type':'image/jpeg'});
+    return response.end(await fs.readFile(path.join(root,'assets/sun_nishimura_logo.jpg')));
+  }
   if(url.pathname.startsWith('/storage/v1/')){
     const reportSign='/storage/v1/object/sign/exhibition-report-photos/',reportUpload='/storage/v1/object/exhibition-report-photos/';
     if(url.pathname.startsWith(reportSign)&&request.method==='GET'){
@@ -165,6 +176,7 @@ const server=http.createServer(async(request,response)=>{
     return sendJson(response,200,list.slice(offset,offset+limit));
   }
   if(url.pathname==='/rest/v1/exhibition_staff')return sendJson(response,200,[{display_name:'検証担当',role:'staff',active:true}]);
+  if(koreaFixture&&url.pathname==='/rest/v1/korea_products')return sendJson(response,200,[{id:1,product_no:'TEST-001',product_name:'테스트 상품',wholesale_price:17000.5,wholesale_price_165:16500,image_url:'korea-product-images/test-image.jpg',is_active:true}]);
   if(url.pathname==='/rest/v1/products')return sendJson(response,200,[
     {id:1,product_no:'TEST-001',product_name:'検証商品A',wholesale_price:100,image_url:null,is_active:true},
     {id:2,product_no:'TEST-002',product_name:'検証商品B',wholesale_price:250,image_url:null,is_active:true},
@@ -185,6 +197,8 @@ const server=http.createServer(async(request,response)=>{
     response.writeHead(200,{'content-type':mime[path.extname(relative)]||'application/octet-stream','cache-control':'no-store'});
     response.end(body);
   }catch(error){sendJson(response,500,{error:error.message})}
-});
+}
 
-server.listen(port,'127.0.0.1',()=>console.log(`browser fixture listening on http://127.0.0.1:${port}`));
+if(!process.argv.includes('--no-listen')){
+  http.createServer(handleFixture).listen(port,'127.0.0.1',()=>console.log(`browser fixture listening on http://127.0.0.1:${port}`));
+}

@@ -1,10 +1,10 @@
 import {createOrderPdf} from './order-pdf.js?v=20261001-reference-size1';
-import {isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,SHIPPING_FEE,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,orderTaxSummary,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow,validOfficePhotoPaths} from './workflow.js?v=20261009-events1';
+import {isKoreaExhibition,isKoreaOrder,won,isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,SHIPPING_FEE,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,orderTaxSummary,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow,validOfficePhotoPaths} from './workflow.js?v=20261112-korea2';
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
 import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20261009-events1';
-import {createExhibitionReports} from './exhibition-reports.js?v=20261009-reset1';
-import {createExhibitionSelection} from './exhibition-selection.js?v=20261009-reset1';
+import {createExhibitionReports} from './exhibition-reports.js?v=20261112-korea1';
+import {createExhibitionSelection} from './exhibition-selection.js?v=20261112-korea1';
 
 const cfg={...(window.EXHIBITION_CONFIG||{})};
 const $=id=>document.getElementById(id);
@@ -31,7 +31,7 @@ async function enterExhibition(event){
   $('orderSearch').value='';$('orders').innerHTML='';$('sheetBody').innerHTML='';$('printArea').innerHTML='';
   state.exhibition=event;cfg.eventName=event.order_event_name;
   const epoch=state.dataEpoch,user=state.session?.user?.id;
-  try{await loadOrders();if(epoch!==state.dataEpoch||user!==state.session?.user?.id)throw new Error('SESSION_CHANGED');showApp();window.scrollTo({top:0,behavior:'instant'});}
+  try{await Promise.all([loadOrders(),loadKoreaProducts()]);if(epoch!==state.dataEpoch||user!==state.session?.user?.id)throw new Error('SESSION_CHANGED');showApp();window.scrollTo({top:0,behavior:'instant'});}
   catch(error){if(epoch===state.dataEpoch){state.exhibition=null;state.orders=[];}throw error;}
 }
 function changeExhibition(){
@@ -59,7 +59,8 @@ function initializeExhibitionReports(){if(exhibitionReports)return;exhibitionRep
   await ensureFreshSession();
   return fetchJson(`${sbBase()}/rest/v1/${path}`,{method:options.method||'GET',headers:{...sbHeaders(),Prefer:'return=representation'},...(options.body?{body:JSON.stringify(options.body)}:{})});
 }});}
-const yen=n=>Number.isFinite(Number(n))?`¥${Math.round(Number(n)).toLocaleString('ja-JP')}`:'価格未定';
+const koreaMode=()=>isKoreaExhibition(state.exhibition);
+const yen=n=>Number.isFinite(Number(n))?koreaMode()?won(n):`¥${Math.round(Number(n)).toLocaleString('ja-JP')}`:'価格未定';
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const isoDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo'}).format(d);
 const today=()=>isoDate(new Date());
@@ -126,12 +127,27 @@ async function loadPrivateReferenceData(){
   if(!state.products.length)throw new Error('PRODUCT_MASTER_EMPTY');
 }
 
+async function loadKoreaProducts(){
+  const event=state.exhibition,userId=state.session?.user?.id;
+  if(!isKoreaExhibition(event)){state.koreaProducts=[];return}
+  const rows=await loadAllRows('korea_products','id,product_no,product_name,wholesale_price,wholesale_price_165,image_url,is_active','display_order.asc,id.asc');
+  if(state.exhibition!==event||state.session?.user?.id!==userId)return;
+  state.koreaProducts=rows.map(row=>({
+    productId:`kr-${row.product_no}`,code:row.product_no,name:row.product_name,price:Number(row.wholesale_price),price165:Number(row.wholesale_price_165),
+    imageUrl:row.image_url||'',status:row.is_active?'active':'price_pending',orderable:row.is_active&&Number(row.wholesale_price)>0,
+  }));
+}
+const orderProducts=()=>koreaMode()?state.koreaProducts||[]:state.products;
+
 async function saveNew(order){
   if(!state.exhibition)throw new Error('EXHIBITION_REQUIRED');
   if(needsHeadOfficeShare(order)&&!isUnconfirmed(order))throw new Error('SHARE_REQUIRED');
   await ensureFreshSession();
   const id=order.clientSubmissionId||newUuid(),saved=normalizeForSave({...order,localId:id,clientSubmissionId:id,syncState:'synced'});
-  if(needsReceipt(saved)&&!saved.receiptNo)saved.receiptNo=permanentReceipt(id);
+  if(!saved.receiptNo){
+    if(isKoreaOrder(saved))saved.receiptNo=`KR-${today().replaceAll('-','')}-${id.slice(0,8).toUpperCase()}`;
+    else if(needsReceipt(saved))saved.receiptNo=permanentReceipt(id);
+  }
   order.clientSubmissionId=id;
   const payload=orderPayloadForCloud(saved);
   const previousPayload=order.pendingSavePayload;
@@ -189,10 +205,13 @@ async function syncOrders(){
 
 function render(){renderMetrics();renderTabs();renderOrders();exhibitionReports?.refresh()}
 function currentSearch(){return $('orderSearch').value.trim()}
-function filteredOrders(){const q=currentSearch();return state.orders.filter(order=>!order.deleted).filter(order=>q?orderMatchesSearch(order,q):groupOf(order)===state.tab)}
+function filteredOrders(){const q=currentSearch();return state.orders.filter(order=>!order.deleted).filter(order=>q?orderMatchesSearch(order,q):koreaMode()||groupOf(order)===state.tab)}
 function clearListModes(){$('orderSearch').value=''}
 function revealOrder(order){clearListModes();if(order)state.tab=groupOf(order);render()}
 function renderTabs(){
+  $('tabs').classList.toggle('hidden',koreaMode());
+  $('pickupResetTools').classList.toggle('hidden',koreaMode());
+  if(koreaMode()){$('tabs').innerHTML='';return}
   const query=currentSearch();
   $('tabs').innerHTML=Object.entries(ORDER_STATUS).map(([key,label])=>{const count=state.orders.filter(order=>!order.deleted&&groupOf(order)===key).length;return `<button type="button" role="tab" aria-selected="${!query&&state.tab===key}" class="${!query&&state.tab===key?'active':''}" data-tab="${key}">${label}<span>${count}</span></button>`}).join('');
   $('tabs').querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{state.tab=button.dataset.tab;clearListModes();render()});
@@ -202,11 +221,11 @@ function renderMetrics(){
   const all=state.orders.filter(order=>!order.deleted&&!isUnconfirmed(order));
   $('orderCount').textContent=`${all.length}件`;
   $('todayOrderCount').textContent=`${all.filter(order=>createdDateInTokyo(order)===today()).length}件`;
-  $('searchSummary').textContent=currentSearch()?`すべての状態から検索：${filteredOrders().length}件`:`${ORDER_STATUS[state.tab]}の注文を、新しい順に表示しています`;
+  $('searchSummary').textContent=koreaMode()?`注文一覧：${filteredOrders().length}件`:currentSearch()?`すべての状態から検索：${filteredOrders().length}件`:`${ORDER_STATUS[state.tab]}の注文を、新しい順に表示しています`;
 }
 function renderOrders(){
   const list=filteredOrders(),wrap=$('orders');
-  if(!list.length){wrap.innerHTML=`<div class="empty">${currentSearch()?'該当する注文はありません。':`${ORDER_STATUS[state.tab]}の注文はありません。`}<br><small>${currentSearch()?'店舗名・電話・品番などで検索できます。':'別のタブを選ぶか、下の「新しい注文」から始めてください。'}</small></div>`;return}
+  if(!list.length){wrap.innerHTML=`<div class="empty">${currentSearch()||koreaMode()?'該当する注文はありません。':`${ORDER_STATUS[state.tab]}の注文はありません。`}<br><small>${currentSearch()?'店舗名・電話・品番などで検索できます。':koreaMode()?'「新しい注文」から始めてください。':'別のタブを選ぶか、下の「新しい注文」から始めてください。'}</small></div>`;return}
   wrap.innerHTML=list.map(cardHtml).join('');
   wrap.querySelectorAll('[data-detail]').forEach(button=>button.onclick=()=>showDetail(button.dataset.detail));
   wrap.querySelectorAll('[data-edit]').forEach(button=>button.onclick=()=>{const order=state.orders.find(item=>item.localId===button.dataset.edit);if(order)startEditOrder(order)});
@@ -216,7 +235,7 @@ function renderOrders(){
 }
 function pickupNumberHtml(order){const label=pickupNumberLabel(order);return label?`<div class="pickupNumber"><span>お渡し番号</span><strong>${esc(label)}</strong></div>`:''}
 function amountBreakdownHtml(order){const tax=orderTaxSummary(order);return `<div class="amountBreakdown"><small>税抜 ${yen(tax.subtotal)}</small><strong>税込 ${yen(tax.total)}</strong></div>`}
-function taxSummaryRowsHtml(order){const tax=orderTaxSummary(order),totalLabel=order.type===ORDER_TYPE.SPOT?'税込合計（お会計金額）':'税込合計';return `<div class="summaryRow"><span>税抜合計</span><b>${yen(tax.subtotal)}</b></div><div class="summaryRow total"><span>${totalLabel}</span><b>${yen(tax.total)}</b></div>`}
+function taxSummaryRowsHtml(order){if(isKoreaOrder(order))return `<div class="summaryRow total"><span>合計</span><b>${won(totalOf(order))}</b></div>`;const tax=orderTaxSummary(order),totalLabel=order.type===ORDER_TYPE.SPOT?'税込合計（お会計金額）':'税込合計';return `<div class="summaryRow"><span>税抜合計</span><b>${yen(tax.subtotal)}</b></div><div class="summaryRow total"><span>${totalLabel}</span><b>${yen(tax.total)}</b></div>`}
 function cardHtml(order){
   const deleting=pendingDeletes.has(order.localId);
   const editButton=`<button type="button" class="secondary compact orderEditButton" data-edit="${esc(order.localId)}" aria-label="${esc(order.store)}の注文を修正" ${deleting?'disabled':''}>修正</button>`;
@@ -224,7 +243,7 @@ function cardHtml(order){
   if(isUnconfirmed(order))return `<article class="orderCard unconfirmedCard"><div class="unconfirmedBadge">未確定・${order.slackShared?'最後の確定待ち':'Slack共有待ち'}</div>${pickupNumberHtml(order)}<div class="orderTop"><div class="store">${esc(order.store)}</div><div class="amount">${yen(totalOf(order))}</div></div><div class="cardNote">${esc(order.customer)} ／ ${esc(handoffLabel(order))}</div><p>まだ受注件数・一括印刷には含まれていません。</p><button class="primary fullButton" data-detail="${esc(order.localId)}" ${deleting?'disabled':''}>${order.slackShared?'注文確定へ進む':'Slack共有・確定を続ける'}</button><div class="orderQuickActions draftActions">${editButton}${deleteButton}</div></article>`;
   const paid=isPickupPaymentRecorded(order),paymentBusy=pendingPayments.has(order.localId);
   const handover=isPickupOrder(order)&&!order.delivered?`<div class="pickupCardActions">${paid?`<div class="pickupPaidStatus">✓ 会計済（${esc(paymentMethodLabel(order))}）</div>`:`<button type="button" class="secondary paymentButton" data-payment="${esc(order.localId)}" ${paymentBusy?'disabled':''}>${paymentBusy?'保存中…':'会計済'}</button>`}<button class="primary handoverButton" data-handover="${esc(order.localId)}" ${!paid||pendingHandovers.has(order.localId)||paymentBusy?'disabled':''}>${pendingHandovers.has(order.localId)?'保存中…':'お渡し済み'}</button>${!paid?'<small>会計後に「会計済」で現金・クレジットを記録してください。</small>':''}</div>`:'';
-  return `<article class="orderCard">${pickupNumberHtml(order)}<div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store)}</div></div>${groupOf(order)==='waiting'?amountBreakdownHtml(order):`<div class="amount">${yen(totalOf(order))}</div>`}</div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span><span class="chip">${itemCountOf(order)}点</span></div><div class="cardNote">${order.customer?`${esc(order.customer)} ／ `:''}${esc(handoffLabel(order))}</div><div class="cardBottom"><span class="receivedAt">${esc(formatDateTime(order.createdAt,true))}</span></div><div class="orderQuickActions"><button type="button" class="secondary compact" data-detail="${esc(order.localId)}" ${deleting?'disabled':''}>詳細・印刷</button>${editButton}${deleteButton}</div>${handover}</article>`;
+  return `<article class="orderCard">${pickupNumberHtml(order)}<div class="orderTop"><div>${order.receiptNo?`<div class="receiptNo">${esc(order.receiptNo)}</div>`:''}<div class="store">${esc(order.store||(isKoreaOrder(order)?order.customer||'店舗名未登録':''))}</div></div>${groupOf(order)==='waiting'?amountBreakdownHtml(order):`<div class="amount">${yen(totalOf(order))}</div>`}</div><div class="chips"><span class="chip">${esc(labelOrder(order))}</span><span class="chip">${itemCountOf(order)}点</span></div><div class="cardNote">${order.customer?`${esc(order.customer)} ／ `:''}${esc(handoffLabel(order))}</div><div class="cardBottom"><span class="receivedAt">${esc(formatDateTime(order.createdAt,true))}</span></div><div class="orderQuickActions"><button type="button" class="secondary compact" data-detail="${esc(order.localId)}" ${deleting?'disabled':''}>詳細・印刷</button>${editButton}${deleteButton}</div>${handover}</article>`;
 }
 
 async function deleteOrderWithConfirmation(order,{fromDetail=false}={}){
@@ -296,19 +315,19 @@ function showPickupPayment(order,{fromDetail=false}={}){
 }
 
 function clearReceiptPreview(){if(state.receiptBlobUrl)URL.revokeObjectURL(state.receiptBlobUrl);state.receiptBlobUrl=null;state.sheetVersion++}
-function openSheet(title,step=''){clearReceiptPreview();state.rememberDraftInput=null;$('sheetTitle').textContent=title;$('stepLabel').textContent=step;$('sheet').classList.remove('hidden');document.body.style.overflow='hidden';clearError()}
+function openSheet(title,step='',lang='ja'){$('sheet').lang=lang;$('closeSheet').ariaLabel=lang==='ko'?'닫기':'閉じる';clearReceiptPreview();state.rememberDraftInput=null;$('sheetTitle').textContent=title;$('stepLabel').textContent=step;$('sheet').classList.remove('hidden');document.body.style.overflow='hidden';clearError()}
 function hasResumableDraft(){return Boolean(state.draft&&state.draft.stage!=='success'&&!state.draft.editingId)}
 function updateNewOrderButton(){const resumable=hasResumableDraft();$('newOrderBtn').textContent=resumable?'↩ 入力途中の注文を再開':state.exhibition?.superseded_by?'過去の開催を表示中':'＋ 新しい注文';$('newOrderBtn').disabled=Boolean(state.exhibition?.superseded_by&&!resumable);$('discardDraftBtn').classList.toggle('hidden',!resumable)}
 function closeSheet(){state.rememberDraftInput?.();state.rememberDraftInput=null;clearReceiptPreview();$('sheet').classList.add('hidden');$('sheet').classList.remove('productFullscreen');document.body.style.overflow='';updateNewOrderButton()}
 function showError(msg){$('sheetError').textContent=msg;$('sheetError').classList.remove('hidden');$('sheetPanel')?.scrollTo({top:0,behavior:'smooth'})}
 function clearError(){$('sheetError').classList.add('hidden');$('sheetError').textContent=''}
 function savedKeypadAlign(){try{return localStorage.getItem(LS_KEYPAD_ALIGN)==='left'?'left':'right'}catch{return'right'}}
-function freshDraft(){return{stage:'products',productQuery:'',keypadMode:'number',keypadAlign:savedKeypadAlign(),type:null,handoff:null,customerRegion:'domestic',items:[],store:'',phone:'',customer:'',account:'',accountChoice:'',accountOther:'',staff:state.staff?.display_name||'',paymentMethod:PAYMENT.CREDIT,paid:false,delivered:false,shipped:false,prepared:PREP.NONE,headOfficeShared:false,headOfficeSharedAt:'',slackShared:false,slackSharedAt:'',workflowStatus:'active',pickupDate:dateOffset(1),notes:'',clientSubmissionId:newUuid()}}
+function freshDraft(){return{stage:'products',productQuery:'',keypadMode:'number',keypadAlign:savedKeypadAlign(),type:koreaMode()?ORDER_TYPE.NORMAL:null,handoff:null,market:koreaMode()?'KR':undefined,customerRegion:koreaMode()?'overseas':'domestic',items:[],store:'',phone:'',customer:'',account:'',accountChoice:'',accountOther:'',staff:state.staff?.display_name||'',paymentMethod:PAYMENT.CREDIT,paid:false,delivered:false,shipped:false,prepared:PREP.NONE,headOfficeShared:false,headOfficeSharedAt:'',slackShared:false,slackSharedAt:'',workflowStatus:'active',pickupDate:dateOffset(1),notes:'',clientSubmissionId:newUuid()}}
 function startOrder(){const resume=hasResumableDraft();if(state.exhibition?.superseded_by&&!resume){toast('過去の開催です。「展示会を変更」から現在の開催を開いてください');return;}if(!resume){attachmentStore.clear();state.draft=freshDraft()}openSheet('新しい注文','1 / 3');renderDraft();if(resume)toast('入力途中の注文を再開しました')}
 function showDiscardDraftConfirm(){if(!hasResumableDraft())return startOrder();state.rememberDraftInput?.();const d=state.draft,count=itemCountOf(d),store=String(d.store||'').trim();openSheet('入力途中の注文を破棄','確認');$('sheetBody').innerHTML=`<div class="step"><div class="shareConfirm"><div class="successMark pending">!</div><h3>入力途中の内容を破棄しますか？</h3><p>破棄を確定した場合だけ新しい注文へ切り替わります。</p></div><div class="section"><div class="summaryRow"><span>追加済み商品</span><b>${count}点</b></div>${store?`<div class="summaryRow"><span>入力済み店舗</span><b>${esc(store)}</b></div>`:''}</div></div><div class="stickyActions"><button id="discardCancel" class="secondary">キャンセル</button><button id="discardConfirm" class="dangerBtn">破棄して新規開始</button></div>`;$('discardCancel').onclick=renderDraft;$('discardConfirm').onclick=()=>{state.draft=null;startOrder();toast('入力途中の注文を破棄しました')}}
 function startEditOrder(order){if(!(state.draft?.editingId===order.localId&&state.draft.stage!=='success'))state.draft={...order,productQuery:'',keypadMode:'number',keypadAlign:savedKeypadAlign(),items:(order.items||[]).map(item=>({...item,lineId:item.lineId||newUuid()})),stage:'products',editingId:order.localId};openSheet('注文を修正','1 / 3');renderDraft()}
 function renderDraft(){state.rememberDraftInput=null;clearError();if(!state.draft)return;const d=state.draft;$('sheet').classList.toggle('productFullscreen',d.stage==='products');if(d.stage==='products')renderProductStep(d);else if(d.stage==='type')renderTypeStep(d);else if(d.stage==='info')renderInfoStep(d);else if(d.stage==='finalize')renderFinalizeStep(d);else if(d.stage==='success')renderSuccess(d)}
-function renderProductStep(d){const align=d.keypadAlign==='left'?'left':'right';$('stepLabel').textContent=`1 / 3　${d.editingId?'修正':'商品'}`;$('sheetTitle').textContent=d.editingId?'注文を修正':'商品を追加';$('sheetBody').innerHTML=`<div class="step productStep"><div class="productSearch"><div class="productSearchRow"><input id="productQ" type="search" inputmode="search" placeholder="品番・商品名" autocomplete="off"><button id="clearPQ" class="secondary" aria-label="検索をクリア">×</button></div><div id="productKeypadDock" class="productKeypadDock align-${align}"><div class="keypadTitle"><div class="keypadTitleMain"><b>固定入力キー</b><span id="keypadModeLabel" class="keypadModeLabel">数字・記号</span></div><div class="keypadAlignSwitch" aria-label="キーボードの位置"><button id="keypadAlignLeft" type="button" aria-label="キーボードを左寄せにする">◀ 左</button><button id="keypadAlignRight" type="button" aria-label="キーボードを右寄せにする">右 ▶</button></div></div><div id="productKeypad" class="productKeypad numberKeys"></div><button id="addShippingFee" type="button" class="secondary shippingFeeButton">＋ 送料 ${yen(SHIPPING_FEE)}（税抜）</button></div><div id="productResults" class="productResults" role="listbox"></div></div><div class="section productCartSection">${manualProductFields(d)}<div class="sectionTitle">注文明細 <span id="cartCount">${itemCountOf(d)}点</span></div><div id="cartLines" class="cart"></div></div></div><div class="stickyActions one"><button id="toType" class="primary" ${d.items.length?'':'disabled'}>注文内容へ進む</button></div>`;bindManualProduct(d);const q=$('productQ');q.value=d.productQuery||'';q.oninput=()=>renderProductResults(d,q.value);$('clearPQ').onclick=()=>{q.value='';renderProductResults(d,'')};bindProductKeypad(d,q);$('addShippingFee').onclick=()=>{if(addShippingFee(d,newUuid())){clearError();renderCart(d);toast(`送料${SHIPPING_FEE}円（税抜）を追加しました`)}};$('toType').onclick=()=>{if(!itemCountOf(d))return showError('商品を1点以上追加してください。');d.stage='type';renderDraft()};renderCart(d);renderProductResults(d,q.value)}
+function renderProductStep(d){const align=d.keypadAlign==='left'?'left':'right';$('stepLabel').textContent=`1 / ${isKoreaOrder(d)?2:3}　${d.editingId?'修正':'商品'}`;$('sheetTitle').textContent=d.editingId?'注文を修正':'商品を追加';$('sheetBody').innerHTML=`<div class="step productStep"><div class="productSearch"><div class="productSearchRow"><input id="productQ" type="search" inputmode="search" placeholder="品番・商品名" autocomplete="off"><button id="clearPQ" class="secondary" aria-label="検索をクリア">×</button></div>${isKoreaOrder(d)?koreaPricePicker(d):''}<div id="productKeypadDock" class="productKeypadDock align-${align}"><div class="keypadTitle"><div class="keypadTitleMain"><b>固定入力キー</b><span id="keypadModeLabel" class="keypadModeLabel">数字・記号</span></div><div class="keypadAlignSwitch" aria-label="キーボードの位置"><button id="keypadAlignLeft" type="button" aria-label="キーボードを左寄せにする">◀ 左</button><button id="keypadAlignRight" type="button" aria-label="キーボードを右寄せにする">右 ▶</button></div></div><div id="productKeypad" class="productKeypad numberKeys"></div><button id="addShippingFee" type="button" class="secondary shippingFeeButton">＋ 送料 ${yen(SHIPPING_FEE)}（税抜）</button></div><div id="productResults" class="productResults" role="listbox"></div></div><div class="section productCartSection">${manualProductFields(d)}<div class="sectionTitle">注文明細 <span id="cartCount">${itemCountOf(d)}点</span></div><div id="cartLines" class="cart"></div></div></div><div class="stickyActions one"><button id="toType" class="primary" ${d.items.length?'':'disabled'}>注文内容へ進む</button></div>`;bindManualProduct(d);if(isKoreaOrder(d))bindKoreaPricePicker(d);$('addShippingFee').classList.toggle('hidden',isKoreaOrder(d));const q=$('productQ');q.value=d.productQuery||'';q.oninput=()=>renderProductResults(d,q.value);$('clearPQ').onclick=()=>{q.value='';renderProductResults(d,'')};bindProductKeypad(d,q);$('addShippingFee').onclick=()=>{if(addShippingFee(d,newUuid())){clearError();renderCart(d);toast(`送料${SHIPPING_FEE}円（税抜）を追加しました`)}};$('toType').onclick=()=>{if(!itemCountOf(d))return showError('商品を1点以上追加してください。');d.stage=isKoreaOrder(d)?'info':'type';renderDraft()};renderCart(d);renderProductResults(d,q.value)}
 function bindProductKeypad(d,q){
   const wrap=$('productKeypad'),dock=$('productKeypadDock'),modeLabel=$('keypadModeLabel'),left=$('keypadAlignLeft'),right=$('keypadAlignRight');let mode=d.keypadMode==='alpha'?'alpha':'number';
   const numeric=[['1'],['2'],['3'],['4'],['5'],['6'],['7'],['8'],['9'],['-'],['0'],['⌫','backspace']],numericUtility=[['英字','alpha'],['クリア','clear']];
@@ -322,22 +341,83 @@ function bindProductKeypad(d,q){
   };
   [left,right].forEach(button=>button.onpointerdown=event=>event.preventDefault());left.onclick=()=>setAlign('left');right.onclick=()=>setAlign('right');setAlign(d.keypadAlign);draw();
 }
+function koreaPricePicker(d){
+  return `<div class="field koreaPricePicker"><label for="koreaPriceTier">卸価格</label><select id="koreaPriceTier">
+    <option value="1.7" ${d.priceTier==='1.65'?'':'selected'}>1.7倍</option>
+    <option value="1.65" ${d.priceTier==='1.65'?'selected':''}>1.65倍</option>
+  </select></div>`;
+}
+function productAtTier(product,tier){
+  if(tier!=='1.65')return product;
+  return {...product,price:product.price165,orderable:product.orderable&&product.price165>0};
+}
+function bindKoreaPricePicker(d){
+  const picker=$('koreaPriceTier');
+  picker.onchange=()=>{
+    const tier=picker.value,products=new Map(orderProducts().map(product=>[product.productId,product]));
+    const items=d.items.map(item=>{
+      if(!item.productId?.startsWith('kr-'))return item;
+      const product=products.get(item.productId);
+      const priced=product&&productAtTier(product,tier);
+      return priced?.orderable?{...item,price:priced.price}:null;
+    });
+    if(items.some(item=>!item)){
+      picker.value=d.priceTier||'1.7';
+      return showError('切り替え先の価格を取得できない商品があります。注文明細を確認してください。');
+    }
+    d.priceTier=tier;d.items=items;clearError();
+    renderCart(d);renderProductResults(d,$('productQ').value);
+  };
+}
 function renderProductResults(d,query){
   d.productQuery=String(query||'');const q=d.productQuery.trim().toLowerCase(),wrap=$('productResults');
   if(!q){wrap.innerHTML='';wrap.classList.remove('open');return}
-  const list=state.products.map((product,index)=>({product,index,rank:productRank(product,q)})).filter(result=>result.rank<9).sort((a,b)=>a.rank-b.rank||a.index-b.index).slice(0,35);
+  const list=orderProducts().map((product,index)=>({product,index,rank:productRank(product,q)})).filter(result=>result.rank<9).sort((a,b)=>a.rank-b.rank||a.index-b.index).slice(0,35);
   wrap.classList.add('open');
-  wrap.innerHTML=list.length?list.map(({product,rank})=>{const ordered=d.items.find(item=>item.productId===product.productId);return `<div class="productRow ${rank===0?'exact':''} ${product.orderable?'':'unavailable'}" role="option"><div><div class="productCodeLine"><b>${esc(product.code)}</b>${rank===0?'<span class="matchBadge">完全一致</span>':''}</div><small>${esc(product.name)} ／ ${product.orderable?yen(product.price):'価格未定・注文不可'}</small></div><button class="addBtn" data-product-id="${esc(product.productId)}" ${product.orderable?'':'disabled'}>${product.orderable?(ordered?`追加済み ${ordered.qty}・＋`:'追加'):'追加不可'}</button></div>`}).join(''):'<div class="empty">該当商品がありません。</div>';
+  wrap.innerHTML=list.length?list.map(({product:base,rank})=>{const product=productAtTier(base,d.priceTier);const ordered=d.items.find(item=>item.productId===product.productId);return `<div class="productRow ${rank===0?'exact':''} ${product.orderable?'':'unavailable'}" role="option"><div class="productResultInfo">${isKoreaOrder(d)?productImageHtml(product):''}<div><div class="productCodeLine"><b>${esc(product.code)}</b>${rank===0?'<span class="matchBadge">完全一致</span>':''}</div><small>${esc(product.name)} ／ ${product.orderable?yen(product.price):'価格未定・注文不可'}</small></div></div><button class="addBtn" data-product-id="${esc(product.productId)}" ${product.orderable?'':'disabled'}>${product.orderable?(ordered?`追加済み ${ordered.qty}・＋`:'追加'):'追加不可'}</button></div>`}).join(''):'<div class="empty">該当商品がありません。</div>';
+  if(isKoreaOrder(d))loadProductThumbnails(wrap);
   wrap.querySelectorAll('[data-product-id]').forEach(button=>button.onclick=()=>{
-    const product=state.products.find(item=>item.productId===button.dataset.productId);if(!product?.orderable)return;
+    const selected=orderProducts().find(item=>item.productId===button.dataset.productId);if(!selected)return;
+    const product=productAtTier(selected,d.priceTier);if(!product.orderable)return;
     const existing=d.items.find(item=>item.productId===product.productId);
     if(existing)existing.qty++;else d.items.push({...product,lineId:`line-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`,qty:1});
     clearError();renderCart(d);renderProductResults(d,$('productQ').value);toast(`${product.code} を追加`);
   });
 }
+const KOREA_IMAGE_BUCKET='korea-product-images';
+function productImageHtml(product){
+  const path=/^korea-product-images\/([\w-]+\.(?:jpe?g|png|webp))$/i.exec(product.imageUrl)?.[1];
+  if(path)return `<img class="productThumbnail" data-korea-image="${esc(path)}" alt="${esc(product.code)}" loading="lazy" hidden>`;
+  const match=/^https:\/\/drive\.google\.com\/file\/d\/([\w-]+)\/view$/.exec(product.imageUrl);
+  if(!match)return '';
+  return `<a class="productImageLink" href="${esc(product.imageUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(product.code)} の商品画像を開く"><img class="productThumbnail" src="https://drive.google.com/thumbnail?id=${match[1]}&amp;sz=w160" alt="" loading="lazy" referrerpolicy="no-referrer"><span>画像</span></a>`;
+}
+async function loadProductThumbnails(wrap){
+  const images=[...wrap.querySelectorAll('.productThumbnail')];
+  const storageImages=images.filter(image=>image.dataset.koreaImage);
+  for(const image of images)image.onerror=()=>{
+    image.hidden=true;
+    if(!image.dataset.koreaImage)image.parentElement.classList.add('thumbnailUnavailable');
+  };
+  if(!storageImages.length)return;
+  const paths=[...new Set(storageImages.map(image=>image.dataset.koreaImage))];
+  try{
+    await ensureFreshSession();
+    const base=`${sbBase()}/storage/v1`;
+    const signed=await fetchJson(`${base}/object/sign/${KOREA_IMAGE_BUCKET}`,{
+      method:'POST',headers:sbHeaders(),body:JSON.stringify({paths,expiresIn:300}),
+    });
+    const urls=new Map(signed.map(({path,signedURL})=>[path,signedURL]));
+    for(const image of storageImages){
+      const path=image.dataset.koreaImage,url=urls.get(path);
+      if(!image.isConnected||!url?.startsWith(`/object/sign/${KOREA_IMAGE_BUCKET}/${path}?token=`))continue;
+      image.src=base+url;image.hidden=false;
+    }
+  }catch{/* A thumbnail failure leaves the product searchable and orderable. */}
+}
 function manualProductFields(d){
   const value=d.manualProduct||{};
-  return `<details id="manualProduct" class="manualProduct" ${d.manualProductOpen?'open':''}><summary>＋ マスタ未登録の商品を入力</summary><p>品番・商品名・税抜単価・数量を入力して、注文明細に追加できます。</p>${[['code','品番','text',''],['name','商品名','text',''],['price','単価（税抜・円）','number',''],['qty','数量','number',1]].map(([key,label,type,fallback])=>`<div class="field"><label for="manual-${key}">${label} *</label><input id="manual-${key}" type="${type}" ${type==='number'?`min="${key==='qty'?1:0.01}" step="${key==='qty'?1:'any'}" inputmode="${key==='qty'?'numeric':'decimal'}"`:''} autocomplete="off" value="${esc(value[key]??fallback)}"></div>`).join('')}<p id="manualProductError" role="alert" class="fieldWarning"></p><button id="addManualProduct" type="button" class="secondary fullButton">明細に追加</button></details>`;
+  return `<details id="manualProduct" class="manualProduct" ${d.manualProductOpen?'open':''}><summary>＋ マスタ未登録の商品を入力</summary><p>品番・商品名・${isKoreaOrder(d)?'単価（ウォン）':'税抜単価'}・数量を入力して、注文明細に追加できます。</p>${[['code','品番','text',''],['name','商品名','text',''],['price',isKoreaOrder(d)?'単価（ウォン）':'単価（税抜・円）','number',''],['qty','数量','number',1]].map(([key,label,type,fallback])=>`<div class="field"><label for="manual-${key}">${label} *</label><input id="manual-${key}" type="${type}" ${type==='number'?`min="${key==='qty'?1:0.01}" step="${key==='qty'?1:'any'}" inputmode="${key==='qty'?'numeric':'decimal'}"`:''} autocomplete="off" value="${esc(value[key]??fallback)}"></div>`).join('')}<p id="manualProductError" role="alert" class="fieldWarning"></p><button id="addManualProduct" type="button" class="secondary fullButton">明細に追加</button></details>`;
 }
 function bindManualProduct(d){
   const fields=Object.fromEntries(['code','name','price','qty'].map(key=>[key,$(`manual-${key}`)]));
@@ -368,6 +448,7 @@ function slackSharedField(order,id){
   return `<div class="slackSharePanel"><b>${order.slackShared?'✓ Slack送信確認済み':'Slack送信の確認が必要です'}</b>${order.slackSharedAt?`<small>確認日時：${esc(formatDateTime(order.slackSharedAt))}</small>`:''}<p>共有内容を変える場合は「注文を修正」から、PDFを作り直して再共有してください。</p>${!order.slackShared?`<button id="${id}Resume" class="primary fullButton">Slack共有・確定へ進む</button>`:''}</div>`;
 }
 function renderInfoStep(d){
+  if(isKoreaOrder(d))return renderKoreaInfoStep(d);
   const normal=d.type===ORDER_TYPE.NORMAL,now=d.handoff===HANDOFF.NOW;
   $('stepLabel').textContent='3 / 3　入力・確認';$('sheetTitle').textContent=d.editingId?'注文を修正':normal?'通常注文を受ける':'現売りを登録';
   const accounts=state.accounts,staffNames=[...new Set([d.staff,state.staff?.display_name].filter(Boolean))];
@@ -385,19 +466,32 @@ function renderInfoStep(d){
   $('sheetBody').querySelector('.sectionTitle').parentElement.querySelector('.summaryRow:last-child').outerHTML=taxSummaryRowsHtml(d);
   bindInfo(d,normal,now);
 }
+function renderKoreaInfoStep(d){
+  $('stepLabel').textContent='2 / 2　入力・確認';
+  $('sheetTitle').textContent='お客様情報';
+  const fields=[['fStore','store','店舗名'],['fCustomer','customer','氏名'],['fPhone','phone','電話番号'],['fNotes','notes','備考']];
+  $('sheetBody').innerHTML=`<div class="step"><div class="section"><p>すべて任意です。名刺の写真は注文確定後に追加できます。</p>
+    ${fields.map(([id,key,label])=>`<div class="field"><label for="${id}">${label}（任意）</label><input id="${id}" ${key==='phone'?'type="tel" autocomplete="tel"':''} value="${esc(d[key])}"></div>`).join('')}
+    </div><div class="section"><div class="sectionTitle">注文確認 <span>卸価格 ${d.priceTier==='1.65'?'1.65':'1.7'}倍</span></div>
+    ${d.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${esc(item.qty)}</span><b>${won(item.price*item.qty)}</b></div>`).join('')}
+    ${taxSummaryRowsHtml(d)}</div></div>
+    <div class="stickyActions"><button id="backType" class="secondary">戻る</button><button id="saveBtn" class="primary">${d.editingId?'変更を確定':'注文確定'}</button></div>`;
+  bindInfo(d,true,false);
+}
 function bindInfo(d,normal,now){
   const remember=()=>{
     d.store=$('fStore').value.trim();d.phone=$('fPhone').value.trim();d.customer=$('fCustomer')?.value.trim()||'';d.notes=$('fNotes')?.value.trim()||'';
+    if(isKoreaOrder(d))return;
     if(normal){d.accountChoice=$('fAccount').value;d.accountOther=$('fAccountOther')?.value.trim()||'';d.account=d.accountChoice==='その他'?d.accountOther:d.accountChoice;d.staff=$('fStaff').value}
     else{d.customerRegion=$('fRegion').value;d.paymentMethod=$('fPayment').value;if($('fPickup'))d.pickupDate=$('fPickup').value;if($('fHotel'))d.hotelName=$('fHotel').value.trim();if($('fGuest'))d.guestName=$('fGuest').value.trim();if($('fRoom'))d.roomNo=$('fRoom').value.trim();if($('fCheckout'))d.checkoutDate=$('fCheckout').value;if($('fShip'))d.shipAddress=$('fShip').value.trim()}
   };
   state.rememberDraftInput=remember;
   const updateQuickDates=()=>document.querySelectorAll('[data-day]').forEach(button=>{const selected=d.pickupDate===dateOffset(Number(button.dataset.day));button.classList.toggle('on',selected);button.setAttribute('aria-pressed',String(selected))});
   document.querySelectorAll('#sheetBody input,#sheetBody select,#sheetBody textarea').forEach(element=>element.onchange=()=>{remember();updateQuickDates();clearError()});
-  $('fPhone').oninput=()=>{remember();$('phoneWarning').classList.toggle('hidden',!phoneHasUnexpectedCharacters($('fPhone').value));clearError()};
+  $('fPhone').oninput=()=>{remember();$('phoneWarning')?.classList.toggle('hidden',!phoneHasUnexpectedCharacters($('fPhone').value));clearError()};
   if($('fAccount'))$('fAccount').onchange=()=>{remember();renderDraft()};
   document.querySelectorAll('[data-day]').forEach(button=>button.onclick=()=>{remember();d.pickupDate=dateOffset(Number(button.dataset.day));$('fPickup').value=d.pickupDate;updateQuickDates();clearError()});
-  $('backType').onclick=()=>{remember();d.stage='type';renderDraft()};
+  $('backType').onclick=()=>{remember();d.stage=isKoreaOrder(d)?'products':'type';renderDraft()};
   $('saveBtn').onclick=async()=>{
     remember();if(now){if(!d.paid)d.paidAt=new Date().toISOString();d.paid=true;d.delivered=true;d.prepared=PREP.READY}
     const errors=validate(d);if(errors.length)return showError(errors[0]);
@@ -535,7 +629,8 @@ function bindAttachmentPicker(order,saved){
   });
 }
 function attachmentPagesHtml(order){
-  return attachmentStore.list(order.localId).map((photo,index)=>`<section class="shareAttachmentPage"><div class="receiptCopyLabel">会社控え・添付資料 ${index+1}</div><p>注文番号 ${esc(receiptOrderNumber(order))}${pickupNumberLabel(order)?` ／ お渡し番号 ${esc(pickupNumberLabel(order))}`:''}</p><img src="${esc(photo.url)}" alt="添付資料 ${index+1}"></section>`).join('');
+  const korean=isKoreaOrder(order);
+  return attachmentStore.list(order.localId).map((photo,index)=>`<section class="shareAttachmentPage"><div class="receiptCopyLabel">${korean?'회사 보관용 · 첨부 자료':'会社控え・添付資料'} ${index+1}</div><p>${korean?'주문 번호':'注文番号'} ${esc(receiptOrderNumber(order))}${pickupNumberLabel(order)?` ／ お渡し番号 ${esc(pickupNumberLabel(order))}`:''}</p><img src="${esc(photo.url)}" alt="${korean?'첨부 자료':'添付資料'} ${index+1}"></section>`).join('');
 }
 
 const supportsOfficePhotos=order=>order?.type===ORDER_TYPE.NORMAL||order?.type===ORDER_TYPE.SPOT;
@@ -621,10 +716,13 @@ function renderSuccess(d){
   $('sheetBody').querySelector('.summaryRow:last-child').outerHTML=taxSummaryRowsHtml(d);
   $('sheetBody').querySelector('.success h3').textContent='注文確定・同期が完了しました';
   $('sheetBody').querySelector('.success').insertAdjacentHTML('afterbegin',pickupNumberHtml(d));
-  $('sheetBody').querySelector('.summary').insertAdjacentHTML('afterbegin',`<div class="summaryRow"><span>注文の状態</span><b>${ORDER_STATUS[groupOf(d)]}</b></div>`);
+  if(!isKoreaOrder(d))$('sheetBody').querySelector('.summary').insertAdjacentHTML('afterbegin',`<div class="summaryRow"><span>注文の状態</span><b>${ORDER_STATUS[groupOf(d)]}</b></div>`);
   $('backDash').insertAdjacentHTML('beforebegin','<button id="successCustomerCopy" class="secondary customerCopyAction">お客様控え（QR・画像）</button>');
   $('successCustomerCopy').onclick=()=>showCustomerReceipt(d);
-  if($('successOfficePhotos'))$('successOfficePhotos').onclick=()=>showOfficePhotoManager(d.localId);
+  if($('successOfficePhotos')){
+    if(isKoreaOrder(d))$('successOfficePhotos').textContent='名刺を撮影・追加';
+    $('successOfficePhotos').onclick=()=>showOfficePhotoManager(d.localId);
+  }
   $('backDash').onclick=()=>{state.draft=null;closeSheet();revealOrder(d)};$('successPrint').onclick=()=>printOrder(d);$('continueOrder').onclick=()=>{state.draft=null;closeSheet();startOrder()};
 }
 
@@ -632,10 +730,10 @@ function showDetail(id){
   const order=state.orders.find(item=>item.localId===id);if(!order)return;if(isUnconfirmed(order))return resumeFinalization(order);openSheet('注文詳細','保存済み');
   const rows=[['店舗',order.store],['区分',labelOrder(order)],['電話',order.phone],['お客様',order.customer],['卸屋・帳合先',order.account],['担当',order.staff],['受付番号',order.receiptNo],['受け渡し',handoffLabel(order)],['会計方法',order.type===ORDER_TYPE.SPOT?paymentMethodLabel(order):''],['ホテル',order.hotelName],['宿泊者',order.guestName],['部屋番号',order.roomNo],['チェックアウト',order.checkoutDate],['配送先',order.shipAddress],['作成日時',formatDateTime(order.createdAt)],['最終更新',formatDateTime(order.updatedAt)],['備考',order.notes]];
   $('sheetBody').innerHTML=`<div class="step"><div class="section">${rows.filter(([,value])=>value).map(([label,value])=>`<div class="summaryRow"><span>${esc(label)}</span><b class="multiline">${esc(value)}</b></div>`).join('')}</div><div class="section"><div class="sectionTitle">商品</div>${order.items.map(item=>`<div class="summaryRow"><span>${esc(item.code)} ${esc(item.name)} × ${esc(item.qty)}</span><b>${yen(item.price*item.qty)}</b></div>`).join('')}<div class="summaryRow total"><span>合計</span><b>${yen(totalOf(order))}</b></div></div><button id="editOrderBtn" class="primary fullButton">注文を修正</button>${supportsOfficePhotos(order)?'<button id="manageOfficePhotos" class="secondary fullButton">写真を撮影・確認</button>':''}<div class="two"><button id="customerCopyBtn" class="secondary">お客様控え</button><button id="printBtn" class="secondary">注文書を印刷</button></div><button id="deleteBtn" class="linkBtn hideOrderButton">この注文を一覧から非表示</button></div><div class="stickyActions one"><button id="detailClose" class="secondary">閉じる</button></div>`;
-  $('sheetBody').querySelector('.step').insertAdjacentHTML('afterbegin',`<div class="orderStatusEditor"><div class="field"><label for="orderStatus">注文の状態</label><select id="orderStatus">${Object.entries(ORDER_STATUS).map(([key,label])=>`<option value="${key}" ${groupOf(order)===key?'selected':''}>${label}</option>`).join('')}</select></div><button id="saveStatus" class="secondary" disabled>変更</button></div>`);
+  if(!isKoreaOrder(order))$('sheetBody').querySelector('.step').insertAdjacentHTML('afterbegin',`<div class="orderStatusEditor"><div class="field"><label for="orderStatus">注文の状態</label><select id="orderStatus">${Object.entries(ORDER_STATUS).map(([key,label])=>`<option value="${key}" ${groupOf(order)===key?'selected':''}>${label}</option>`).join('')}</select></div><button id="saveStatus" class="secondary" disabled>変更</button></div>`);
   $('sheetBody').querySelector('.sectionTitle').parentElement.querySelector('.summaryRow:last-child').outerHTML=taxSummaryRowsHtml(order);
   $('sheetBody').querySelector('.step').insertAdjacentHTML('afterbegin',pickupNumberHtml(order));
-  $('sheetBody').querySelector('.orderStatusEditor').insertAdjacentHTML('afterend',slackSharedField(order,'detailSlackShared'));
+  $('sheetBody').querySelector('.orderStatusEditor')?.insertAdjacentHTML('afterend',slackSharedField(order,'detailSlackShared'));
   if(isPickupOrder(order)){
     $('orderStatus').querySelector('[value="done"]').disabled=!order.delivered;
     const paid=isPickupPaymentRecorded(order);
@@ -657,8 +755,8 @@ function showDetail(id){
       showError(error.message==='SYNC_CONFLICT'?'別の端末で更新されています。一覧から開き直してください。':'変更できませんでした。接続を確認して、もう一度お試しください。');
     }
   };
-  $('orderStatus').onchange=()=>{$('saveStatus').disabled=$('orderStatus').value===groupOf(order)};
-  $('saveStatus').onclick=()=>{
+  if($('orderStatus'))$('orderStatus').onchange=()=>{$('saveStatus').disabled=$('orderStatus').value===groupOf(order)};
+  if($('saveStatus'))$('saveStatus').onclick=()=>{
     const status=$('orderStatus').value;if(!Object.hasOwn(ORDER_STATUS,status))return;
     if(isPickupOrder(order)&&!order.delivered&&status==='done')return showError('お渡しが終わってから「お渡し済み」を押してください。');
     const next={...order,workflowStatus:status};if(isPickupOrder(order)&&status!=='done'){next.delivered=false;next.deliveredAt=''}
@@ -698,9 +796,10 @@ async function customerReceiptPng(html){
 }
 
 async function showCustomerReceipt(order){
-  openSheet('お客様控え','QR・画像');
+  const korean=isKoreaOrder(order);
+  openSheet(korean?'고객 보관용':'お客様控え',korean?'QR 코드 · 이미지':'QR・画像',korean?'ko':'ja');
   const view=state.sheetVersion;
-  $('sheetBody').innerHTML='<div class="step"><div class="receiptImagePreparing">控え画像とQRコードを準備しています…</div></div>';
+  $('sheetBody').innerHTML=korean?'<div class="step"><div class="receiptImagePreparing">주문서와 QR 코드를 준비하고 있습니다…</div></div>':'<div class="step"><div class="receiptImagePreparing">控え画像とQRコードを準備しています…</div></div>';
   const isCurrent=()=>view===state.sheetVersion&&Boolean(state.session);
   try{
     await loadOrders();
@@ -716,15 +815,27 @@ async function showCustomerReceipt(order){
     if(!isCurrent())return;
     const url=signedReceiptUrl(sbBase(),signed.signedURL),expires=new Date(Date.now()+RECEIPT_LINK_SECONDS*1000);
     state.receiptBlobUrl=URL.createObjectURL(blob);
-    $('sheetBody').innerHTML=`<div class="step"><div class="qrReceipt">${pickupNumberHtml(current)}<div class="qrOrderNo">注文番号 ${esc(receiptOrderNumber(current))}</div><p>お客様のスマートフォンでQRを読み取ると、控え画像が開きます。<br><b>画像を長押しして保存できます。</b></p><div id="customerQrCode"></div><p class="receiptExpiry">リンク有効期限：${esc(formatDateTime(expires))}<br>このQR・リンクを知っている方が控えを閲覧できます。対象のお客様にだけお渡しください。</p><a id="openReceiptImage" class="secondary fullButton receiptLink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">お客様が開く画像を確認</a><div class="two"><a id="downloadReceiptImage" class="secondary receiptLink" href="${esc(state.receiptBlobUrl)}" download="customer-copy-${esc(current.localId.slice(0,8))}.png">画像を保存</a><button id="printCustomerReceipt" class="secondary">控えを印刷</button></div><details><summary>控え画像のプレビュー</summary><img class="sharedReceiptPreview" src="${esc(state.receiptBlobUrl)}" alt="お客様控えの画像"></details></div></div><div class="stickyActions one"><button id="qrClose" class="primary">閉じる</button></div>`;
+    $('sheetBody').innerHTML=korean?koreanQrHtml(current,url,expires):`<div class="step"><div class="qrReceipt">${pickupNumberHtml(current)}<div class="qrOrderNo">注文番号 ${esc(receiptOrderNumber(current))}</div><p>お客様のスマートフォンでQRを読み取ると、控え画像が開きます。<br><b>画像を長押しして保存できます。</b></p><div id="customerQrCode"></div><p class="receiptExpiry">リンク有効期限：${esc(formatDateTime(expires))}<br>このQR・リンクを知っている方が控えを閲覧できます。対象のお客様にだけお渡しください。</p><a id="openReceiptImage" class="secondary fullButton receiptLink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">お客様が開く画像を確認</a><div class="two"><a id="downloadReceiptImage" class="secondary receiptLink" href="${esc(state.receiptBlobUrl)}" download="customer-copy-${esc(current.localId.slice(0,8))}.png">画像を保存</a><button id="printCustomerReceipt" class="secondary">控えを印刷</button></div><details><summary>控え画像のプレビュー</summary><img class="sharedReceiptPreview" src="${esc(state.receiptBlobUrl)}" alt="お客様控えの画像"></details></div></div><div class="stickyActions one"><button id="qrClose" class="primary">閉じる</button></div>`;
     new window.QRCode($('customerQrCode'),{text:url,width:280,height:280,correctLevel:window.QRCode.CorrectLevel.M});
     $('printCustomerReceipt').onclick=()=>printCustomerCopy(current);$('qrClose').onclick=()=>showDetail(current.localId);
   }catch(error){
     if(!isCurrent())return;
-    $('sheetBody').innerHTML='<div class="step"><div class="receiptError">控え画像を準備できませんでした。注文データは保存されています。接続を確認して再試行してください。</div><button id="retryCustomerReceipt" class="primary fullButton">もう一度準備する</button><button id="receiptBack" class="secondary fullButton">注文詳細へ戻る</button></div>';
+    $('sheetBody').innerHTML=korean?'<div class="step"><div class="receiptError">주문서를 준비할 수 없습니다. 연결을 확인하고 다시 시도해 주세요.</div><button id="retryCustomerReceipt" class="primary fullButton">다시 시도</button><button id="receiptBack" class="secondary fullButton">주문 상세로 돌아가기</button></div>':'<div class="step"><div class="receiptError">控え画像を準備できませんでした。注文データは保存されています。接続を確認して再試行してください。</div><button id="retryCustomerReceipt" class="primary fullButton">もう一度準備する</button><button id="receiptBack" class="secondary fullButton">注文詳細へ戻る</button></div>';
     $('retryCustomerReceipt').onclick=()=>showCustomerReceipt(order);$('receiptBack').onclick=()=>showDetail(order.localId);
   }
 }
+function koreanQrHtml(order,url,expires){
+  return `<div class="step" lang="ko"><div class="qrReceipt">
+    <div class="qrOrderNo">주문 번호 ${esc(receiptOrderNumber(order))}</div>
+    <p>스마트폰으로 QR 코드를 스캔하면 주문서가 열립니다.<br><b>이미지를 길게 눌러 저장할 수 있습니다.</b></p>
+    <div id="customerQrCode"></div>
+    <p class="receiptExpiry">링크 유효 기간　${esc(koreaDateTime(expires))}</p>
+    <a id="openReceiptImage" class="secondary fullButton receiptLink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">주문서 열기</a>
+    <div class="two"><a id="downloadReceiptImage" class="secondary receiptLink" href="${esc(state.receiptBlobUrl)}" download="고객_보관용-${esc(order.localId.slice(0,8))}.png">이미지 저장</a><button id="printCustomerReceipt" class="secondary">주문서 인쇄</button></div>
+    <details><summary>주문서 미리 보기</summary><img class="sharedReceiptPreview" src="${esc(state.receiptBlobUrl)}" alt="고객 보관용 주문서"></details>
+    </div></div><div class="stickyActions one"><button id="qrClose" class="primary">닫기</button></div>`;
+}
+
 function receiptOrderNumber(order){return order.receiptNo||order.orderNo||order.localId||'登録前'}
 function receiptExhibitionName(order){
   const eventName=String(order.exhibitionName||'').trim();
@@ -743,7 +854,32 @@ function receiptPickupScheduleHtml(order,{english=false}={}){
   const label=`${match[1]}/${match[2]}/${match[3]}`;
   return `<div class="receiptPickupSchedule">${english?`Pickup date ${esc(label)}　After 1:00 PM`:`お渡し日 ${esc(label)}　13時以降`}</div>`;
 }
+const koreaDateTime=(value,timeStyle='short')=>{
+  const date=new Date(value||'');
+  return Number.isFinite(date.getTime())?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',dateStyle:'medium',timeStyle}).format(date):'—';
+};
+function koreanReceiptHtml(order,customerCopy){
+  const number=esc(receiptOrderNumber(order)),count=itemCountOf(order);
+  const copy=customerCopy?'고객 보관용':'회사 보관용';
+  const fields=[['매장명',order.store],['성명',order.customer],['전화번호',order.phone],['주문 유형','일반 주문']];
+  if(!customerCopy)fields.push(['담당자',order.staff]);
+  const info=fields.map(([label,value])=>`<div class="receiptInfoCard"><div class="receiptInfoLabel">${label}</div><div class="receiptInfoValue">${esc(value||'—')}</div></div>`).join('');
+  const rows=order.items.map(item=>`<tr><td><b>${esc(item.code)}</b></td><td>${esc(item.name)}</td><td class="num">${esc(item.qty)}</td><td class="num">${won(item.price)}</td><td class="num"><b>${won(item.price*item.qty)}</b></td></tr>`).join('');
+  return `<div lang="ko">
+    <div class="receiptCopyLabel"><strong class="receiptExhibitionName">한국 전시회</strong><span>${copy}</span></div>
+    <div class="receiptHeaderSimple"><div class="receiptBrandBlock"><img class="receiptBrandLogo" src="assets/sun_nishimura_logo.jpg" alt="산 니시무라"><div class="receiptBrandName">산 니시무라</div></div>
+    <div class="receiptDocMeta"><div class="receiptDocTitle">전시회 주문서</div><div class="receiptMetaLine"><b>주문 번호</b> ${number}<br><b>접수 일시</b> ${esc(koreaDateTime(order.createdAt))}</div></div></div>
+    <div class="receiptInfoBand">${info}</div>
+    <div class="receiptSection"><div class="receiptSectionHead"><div class="receiptSectionTitle">주문 내역</div><div class="receiptSectionHint">${count}개</div></div>
+    <table class="receiptTable"><colgroup><col class="code"><col><col class="qty"><col class="unit"><col class="subtotal"></colgroup><thead><tr><th>품번</th><th>상품명</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="receiptFooterGrid"><div class="receiptMemoStack">${order.notes?`<div class="receiptNote"><b>비고</b>${esc(order.notes).replace(/\n/g,'<br>')}</div>`:''}</div>
+    <div><div class="receiptSummaryBox"><div class="receiptSummaryRow total"><span>주문 합계</span><span>${won(totalOf(order))}</span></div></div><div class="receiptCurrencyNote">통화　대한민국 원 (KRW)</div></div></div>
+    <div class="receiptNote koreaDistributor"><b>한국 대리점</b><strong>KY-S Corporation.</strong><br>3F, 16 Sowol-ro,Jung-gu,<br>Seoul, Korea<br>전화 (TEL) +82-2-3789-2440<br>팩스 (FAX) +82-2-3789-2441</div>
+  </div>`;
+}
+
 function receiptDocumentHtml(order,{customerCopy=false}={}){
+  if(isKoreaOrder(order))return koreanReceiptHtml(order,customerCopy);
   if(customerCopy&&order.customerRegion==='overseas')return englishCustomerReceiptHtml(order);
   const orderNumber=receiptOrderNumber(order);
   const itemCount=itemCountOf(order);
@@ -776,6 +912,14 @@ function englishCustomerReceiptHtml(order){
   return `<div lang="en">${receiptCopyLabelHtml(order,{customerCopy:true,english:true})}<div class="receiptHeaderSimple"><div class="receiptBrandBlock"><img class="receiptBrandLogo" src="assets/sun_nishimura_logo.jpg" alt="SAN NISHIMURA CO., LTD."><div><div class="receiptBrandName">SAN NISHIMURA CO., LTD.</div></div></div><div class="receiptDocMeta"><div class="receiptDocTitle">Customer Copy</div><div class="receiptDocSub">Exhibition Order Receipt</div><div class="receiptMetaLine"><b>Order No.</b> ${esc(orderNumber)}<br><b>Created (JST)</b> ${esc(createdAt)}</div></div></div><div class="receiptInfoBand">${infoHtml}</div>${pickup?`<div class="receiptPickupNumber"><span>Pickup No.</span><strong>${esc(pickup)}</strong>${receiptPickupScheduleHtml(order,{english:true})}<small>Please show this number when collecting your order.</small></div>`:''}<div class="receiptSection"><div class="receiptSectionHead"><div class="receiptSectionTitle">Order Details</div><div class="receiptSectionHint">${count} ${count===1?'item':'items'}</div></div><table class="receiptTable"><colgroup><col class="code"><col><col class="qty"><col class="unit"><col class="subtotal"></colgroup><thead><tr><th>Item No.</th><th>Product</th><th class="num">Qty</th><th class="num">Unit Price (excl. tax)</th><th class="num">Amount (excl. tax)</th></tr></thead><tbody>${itemsHtml}</tbody></table></div><div class="receiptFooterGrid"><div class="receiptMemoStack">${notesHtml}</div><div><div class="receiptSummaryBox"><div class="receiptSummaryRow"><span>Items</span><span>${count}</span></div><div class="receiptSummaryRow"><span>Subtotal (excl. tax)</span><span>${yen(tax.subtotal)}</span></div><div class="receiptSummaryRow"><span>Tax (10%)</span><span>${yen(tax.tax)}</span></div><div class="receiptSummaryRow total"><span>Total (incl. tax)</span><span>${yen(tax.total)}</span></div></div><div class="receiptCurrencyNote">Currency: JPY</div></div></div><div class="receiptFooterMini"><span>SAN NISHIMURA CO., LTD.</span><span>Order No. ${esc(orderNumber)}</span></div></div>`;
 }
 
+function koreanBatchCover(list,targetLabel,totalQty,grandTotal){
+  return `<section class="printBatchCover" lang="ko"><div class="eyebrow">한국 전시회</div><h1>전체 주문 내역</h1>
+    <p>접수 기간　${esc(targetLabel==='全期間'?'전체 기간':targetLabel.replace(' ～ ',' ~ '))}</p>
+    <div class="printStats"><div><small>주문 건수</small><b>${list.length}건</b></div><div><small>상품 수량</small><b>${totalQty}개</b></div><div><small>합계</small><b>${won(grandTotal)}</b></div></div>
+    <table class="batchTable"><thead><tr><th>주문 번호</th><th>접수 일시</th><th>매장명</th><th>성명</th><th>금액</th></tr></thead><tbody>
+    ${list.map(order=>`<tr><td>${esc(receiptOrderNumber(order))}</td><td>${esc(koreaDateTime(order.createdAt))}</td><td>${esc(order.store||'—')}</td><td>${esc(order.customer||'—')}</td><td>${won(totalOf(order))}</td></tr>`).join('')}
+    </tbody></table></section>`;
+}
 function printOrders(orders,title,withCover=true,{targetLabel='全期間',customerCopy=false,inputOnly=false,includeAttachments=false}={}){
   if(attachmentOperation){toast('写真の読み込みが終わるまでお待ちください。');return false}
   const list=orders.filter(order=>!order.deleted&&(!withCover||!isUnconfirmed(order))).sort(compareOrdersForPrint);
@@ -783,11 +927,12 @@ function printOrders(orders,title,withCover=true,{targetLabel='全期間',custom
   if(list.some(order=>isPickupOrder(order)&&!pickupNumberLabel(order)))return toast('お渡し番号が未発行です。「お渡し番号を発行する」を先に押してください。');
   const totalQty=list.reduce((sum,order)=>sum+itemCountOf(order),0),grandTotal=list.reduce((sum,order)=>sum+totalOf(order),0);
   const displayEventName=state.exhibition?.name||cfg.eventName||'展示会';
-  const cover=withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(displayEventName)}</div><h1>${esc(title)}</h1><p><b>対象受付日 ${esc(targetLabel)}</b><br>出力日時 ${new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'medium'}).format(new Date())}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計（税抜）</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>受付日時</th><th>区分</th><th>卸屋・帳合先</th><th>店舗・お客様</th><th>合計（税抜）</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(formatDateTime(order.createdAt||order.created_at,true))}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.account||'-')}</td><td>${pickupNumberLabel(order)?`<b>${esc(pickupNumberLabel(order))}</b><br>`:''}${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
+  const korean=list.every(isKoreaOrder);
+  const cover=withCover&&korean?koreanBatchCover(list,targetLabel,totalQty,grandTotal):withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(displayEventName)}</div><h1>${esc(title)}</h1><p><b>対象受付日 ${esc(targetLabel)}</b><br>出力日時 ${new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'medium'}).format(new Date())}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計（税抜）</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>受付日時</th><th>区分</th><th>卸屋・帳合先</th><th>店舗・お客様</th><th>合計（税抜）</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(formatDateTime(order.createdAt||order.created_at,true))}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.account||'-')}</td><td>${pickupNumberLabel(order)?`<b>${esc(pickupNumberLabel(order))}</b><br>`:''}${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
   const englishCopy=customerCopy&&list.every(order=>order.customerRegion==='overseas');
   const printedAt=new Intl.DateTimeFormat(englishCopy?'en-GB':'ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'short'}).format(new Date());
   const photosIncluded=includeAttachments&&!customerCopy&&list.some(order=>attachmentStore.list(order.localId).length);
-  $('printArea').innerHTML=`${cover}${list.map(order=>printSheetHtml(order,{customerCopy})+(photosIncluded?attachmentPagesHtml(order):'')).join('')}<div class="printFoot">${englishCopy?'Printed (JST)':'出力日時'} ${esc(printedAt)}</div>`;
+  $('printArea').innerHTML=`${cover}${list.map(order=>printSheetHtml(order,{customerCopy})+(photosIncluded?attachmentPagesHtml(order):'')).join('')}<div class="printFoot">${korean?'출력 일시':englishCopy?'Printed (JST)':'出力日時'} ${esc(korean?koreaDateTime(new Date()):printedAt)}</div>`;
   const generation=++printGeneration,version=state.sheetVersion;
   const finish=()=>{
     if(generation!==printGeneration||version!==state.sheetVersion)return false;
@@ -898,7 +1043,7 @@ function bindConnectivitySignals(){
 async function refreshPrivateData(){
   if(!state.online||!navigator.onLine)return toast('オンライン接続が必要です');
   $('refreshBtn').disabled=true;setSync('busy','注文と商品を同期中…');
-  try{await Promise.all([loadPrivateReferenceData(),syncOrders()]);markSynced();toast('最新の注文と商品に更新しました')}
+  try{await Promise.all([koreaMode()?loadKoreaProducts():loadPrivateReferenceData(),syncOrders()]);markSynced();toast('最新の注文と商品に更新しました')}
   catch(error){setSync('error','同期できません。接続を確認してください');toast('更新できませんでした')}
   finally{$('refreshBtn').disabled=false}
 }
@@ -917,7 +1062,7 @@ function clearLocalApp(){
   attachmentStore.clear();attachmentOperation=null;attachmentPrintBusy=false;printGeneration++;
   state.dataEpoch++;
   for(const order of state.orders)wipeOrderData(order);state.orders=[];
-  if(state.draft)wipeOrderData(state.draft);state.draft=null;state.rememberDraftInput=null;state.products=[];state.accounts=[];
+  if(state.draft)wipeOrderData(state.draft);state.draft=null;state.rememberDraftInput=null;state.products=[];state.koreaProducts=[];state.accounts=[];
   clearStoredSession();state.session=null;state.staff=null;state.online=false;clearInterval(state.syncTimer);state.syncTimer=null;
   $('loginPassword').value='';closeSheet();$('sheetBody').innerHTML='';$('orders').innerHTML='';$('printArea').innerHTML='';showLogin();
 }

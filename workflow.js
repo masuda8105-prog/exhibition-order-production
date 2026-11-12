@@ -3,6 +3,9 @@ export const HANDOFF = Object.freeze({ NOW:'now', LATER:'later', HOTEL:'hotel', 
 export const PAYMENT = Object.freeze({ CREDIT:'credit', CASH:'cash', ON_PICKUP:'on_pickup', NONE:'none' });
 export const PREP = Object.freeze({ NONE:'none', PREPARING:'preparing', READY:'ready' });
 export const ORDER_STATUS=Object.freeze({active:'要対応',waiting:'受け取り待ち',done:'完了'});
+export const isKoreaExhibition=event=>event?.pickup_prefix==='KR';
+export const isKoreaOrder=order=>order?.market==='KR';
+export const won=value=>`${Number(value).toLocaleString('ko-KR',{maximumFractionDigits:2})}원`;
 
 export const SHIPPING_FEE=700;
 const SHIPPING_FEE_BY_PRODUCT_ID=Object.freeze({'service-shipping-500':500,'service-shipping-600':600,'service-shipping-700':SHIPPING_FEE});
@@ -160,6 +163,10 @@ export function validate(order){
   if((order?.items||[]).some(item=>!String(item?.code||'').trim()||!String(item?.name||'').trim())) errors.push('商品情報が不完全です。商品を選び直してください。');
   if((order?.items||[]).some(item=>!Number.isFinite(Number(item?.price))||Number(item.price)<=0)) errors.push('価格未定の商品は注文できません。');
   if((order?.items||[]).some(item=>!Number.isInteger(Number(item?.qty))||Number(item.qty)<=0)) errors.push('商品数量が不正です。');
+  if(isKoreaOrder(order)){
+    if(order.type!==ORDER_TYPE.NORMAL||order.handoff||shipping.length)errors.push('韓国展示会は通常注文のみ受け付けます。');
+    return errors;
+  }
   if(!String(order?.store||'').trim()) errors.push('店舗名は必須です。');
   if(!String(order?.phone||'').trim()) errors.push('電話番号は必須です。');
   if(order?.type===ORDER_TYPE.NORMAL){
@@ -228,6 +235,7 @@ export function nextAction(order){
 }
 
 export function labelOrder(order){
+  if(isKoreaOrder(order)) return '韓国通常注文';
   if(order?.type===ORDER_TYPE.NORMAL) return '国内通常注文';
   const h={now:'現売り・その場渡し',later:'現売り・後日受取',hotel:'現売り・ホテル配送',ship:'現売り・指定先配送'}[order?.handoff]||'現売り';
   return h;
@@ -248,11 +256,17 @@ export function printFileBase(orders,{customerCopy=false,now=new Date()}={}){
   const value=type=>parts.find(part=>part.type===type)?.value||'';
   const stamp=`${value('year')}${value('month')}${value('day')}_${value('hour')}${value('minute')}`;
   const clean=value=>String(value||'').trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').replace(/[. ]+$/g,'').slice(0,60)||'お客様名なし';
+  if(list.length&&list.every(isKoreaOrder)){
+    if(list.length!==1)return `전체_주문_${stamp}`;
+    const order=list[0];
+    return `${customerCopy?'고객_보관용':'회사_보관용'}_${clean(order.customer||order.store||order.receiptNo||'주문서')}_${stamp}`;
+  }
   if(list.length!==1)return `全注文_${stamp}`;
   return `${customerCopy?(list[0].customerRegion==='overseas'?'Customer_Copy':'お客様控え'):'注文書'}_${clean(list[0].customer||list[0].store)}_${stamp}`;
 }
 
 export function handoffLabel(order){
+  if(isKoreaOrder(order)) return '';
   if(order?.type===ORDER_TYPE.NORMAL) return '帰社後にまとめて印刷';
   if(order?.handoff===HANDOFF.NOW) return 'その場で会計・お渡し';
   if(order?.handoff===HANDOFF.LATER) return order?.pickupDate ? `${order.pickupDate} 受取予定` : '後日受取';
@@ -279,6 +293,10 @@ export function correctedStaffName(name){
 export function orderPayloadForCloud(order){
   const payload={};
   for(const field of CLOUD_ORDER_FIELDS)payload[field]=order?.[field]??'';
+  if(isKoreaOrder(order)){
+    payload.market='KR';
+    payload.priceTier=order.priceTier==='1.65'?'1.65':'1.7';
+  }
   payload.staff=correctedStaffName(payload.staff);
   payload.officePhotoPaths=validOfficePhotoPaths(order?.officePhotoPaths,order?.localId);
   payload.confirmationState=order?.confirmationState||'confirmed';
