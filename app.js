@@ -374,8 +374,14 @@ function renderProductResults(d,query){
   if(!q){wrap.innerHTML='';wrap.classList.remove('open');return}
   const list=orderProducts().map((product,index)=>({product,index,rank:productRank(product,q)})).filter(result=>result.rank<9).sort((a,b)=>a.rank-b.rank||a.index-b.index).slice(0,35);
   wrap.classList.add('open');
-  wrap.innerHTML=list.length?list.map(({product:base,rank})=>{const product=productAtTier(base,d.priceTier);const ordered=d.items.find(item=>item.productId===product.productId);return `<div class="productRow ${rank===0?'exact':''} ${product.orderable?'':'unavailable'}" role="option"><div class="productResultInfo">${isKoreaOrder(d)?productImageHtml(product):''}<div><div class="productCodeLine"><b>${esc(product.code)}</b>${rank===0?'<span class="matchBadge">完全一致</span>':''}</div><small>${esc(product.name)} ／ ${product.orderable?yen(product.price):'価格未定・注文不可'}</small></div></div><button class="addBtn" data-product-id="${esc(product.productId)}" ${product.orderable?'':'disabled'}>${product.orderable?(ordered?`追加済み ${ordered.qty}・＋`:'追加'):'追加不可'}</button></div>`}).join(''):'<div class="empty">該当商品がありません。</div>';
-  if(isKoreaOrder(d))loadProductThumbnails(wrap);
+  wrap.innerHTML=list.length?list.map(({product:base,rank})=>{const product=productAtTier(base,d.priceTier);const ordered=d.items.find(item=>item.productId===product.productId);return `<div class="productRow ${rank===0?'exact':''} ${product.orderable?'':'unavailable'}" role="option"><div class="productResultInfo">${isKoreaOrder(d)?productImageHtml(product):''}<div><div class="productCodeLine"><b>${esc(product.code)}</b>${rank===0?'<span class="matchBadge">完全一致</span>':''}</div><small>${esc(product.name)} ／ ${product.orderable?yen(product.price):'価格未定・注文不可'}</small></div></div><div class="productResultActions">${isKoreaOrder(d)&&product.orderable?`<button type="button" class="secondary koreaShowPrice" data-show-price="${esc(product.productId)}">金額表示</button>`:''}<button class="addBtn" data-product-id="${esc(product.productId)}" ${product.orderable?'':'disabled'}>${product.orderable?(ordered?`追加済み ${ordered.qty}・＋`:'追加'):'追加不可'}</button></div></div>`}).join(''):'<div class="empty">該当商品がありません。</div>';
+  if(isKoreaOrder(d)){
+    loadProductThumbnails(wrap);
+    wrap.querySelectorAll('[data-show-price]').forEach(button=>button.onclick=()=>{
+      const product=list.find(({product})=>product.productId===button.dataset.showPrice)?.product;
+      if(product)showKoreaPrice(productAtTier(product,d.priceTier));
+    });
+  }
   wrap.querySelectorAll('[data-product-id]').forEach(button=>button.onclick=()=>{
     const selected=orderProducts().find(item=>item.productId===button.dataset.productId);if(!selected)return;
     const product=productAtTier(selected,d.priceTier);if(!product.orderable)return;
@@ -384,12 +390,28 @@ function renderProductResults(d,query){
     clearError();renderCart(d);renderProductResults(d,$('productQ').value);toast(`${product.code} を追加`);
   });
 }
+function showKoreaPrice(product){
+  const dialog=$('koreaPriceDisplay');
+  const photo=productImageHtml(product,{presentation:true});
+  dialog.innerHTML=`<div class="koreaPriceDisplayCard">
+    <button type="button" class="iconBtn koreaPriceDisplayClose" aria-label="닫기" autofocus>×</button>
+    <h2 id="koreaPriceDisplayTitle">${esc(product.name)}</h2>
+    <p class="koreaPriceDisplayCode">${esc(product.code)}</p>
+    <div class="koreaPriceDisplayPhoto">${photo}<p>상품 사진을 표시할 수 없습니다.</p></div>
+    <div class="koreaPriceDisplayAmount"><span>상품 단가</span><strong>${won(product.price)}</strong></div>
+  </div>`;
+  dialog.querySelector('.koreaPriceDisplayClose').onclick=()=>dialog.close();
+  dialog.onclick=event=>{if(event.target===dialog)dialog.close()};
+  dialog.showModal();
+  loadProductThumbnails(dialog);
+}
+
 const KOREA_IMAGE_BUCKET='korea-product-images';
-function productImageHtml(product){
+function productImageHtml(product,{presentation=false}={}){
   const path=/^korea-product-images\/([\w-]+\.(?:jpe?g|png|webp))$/i.exec(product.imageUrl)?.[1];
-  if(path)return `<img class="productThumbnail" data-korea-image="${esc(path)}" alt="${esc(product.code)}" loading="lazy" hidden>`;
+  if(path)return `<img class="productThumbnail" data-korea-image="${esc(path)}" alt="${esc(product.code)}" ${presentation?'':'loading="lazy"'} hidden>`;
   const match=/^https:\/\/drive\.google\.com\/file\/d\/([\w-]+)\/view$/.exec(product.imageUrl);
-  if(!match)return '';
+  if(!match||presentation)return '';
   return `<a class="productImageLink" href="${esc(product.imageUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(product.code)} の商品画像を開く"><img class="productThumbnail" src="https://drive.google.com/thumbnail?id=${match[1]}&amp;sz=w160" alt="" loading="lazy" referrerpolicy="no-referrer"><span>画像</span></a>`;
 }
 async function loadProductThumbnails(wrap){

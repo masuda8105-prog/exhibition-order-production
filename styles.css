@@ -263,3 +263,19 @@ button.salesRow{width:100%;font:inherit;cursor:pointer}.salesRow>div:first-child
 .koreaPricePicker{display:flex;align-items:center;gap:8px;margin:6px 0}
 .koreaPricePicker label{margin:0;white-space:nowrap}
 .koreaPricePicker select{width:auto;min-height:34px;padding:4px 8px}
+
+.productResultActions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:5px}
+.koreaShowPrice{min-height:38px;padding:4px 8px;white-space:nowrap}
+.koreaPriceDisplay{width:min(92vw,680px);max-height:92dvh;padding:0;border:0;border-radius:20px;color:#101828;background:#fff;box-shadow:0 20px 60px #10182855}
+.koreaPriceDisplay::backdrop{background:#101828b3}
+.koreaPriceDisplayCard{position:relative;display:grid;justify-items:center;gap:8px;padding:24px clamp(14px,4vw,36px);text-align:center}
+.koreaPriceDisplayClose{position:absolute;top:8px;right:8px}
+.koreaPriceDisplayCard h2{font-size:clamp(18px,4vw,26px);margin:4px 32px 0;overflow-wrap:anywhere}
+.koreaPriceDisplayCode{margin:0;color:#475467}
+.koreaPriceDisplayPhoto{width:100%;min-height:92px;display:grid;place-items:center;background:#f8fafc;border-radius:12px}
+.koreaPriceDisplayPhoto .productThumbnail{width:100%;height:clamp(130px,42dvh,390px);padding:6px;background:none;object-fit:contain}
+.koreaPriceDisplayPhoto img:not([hidden])+p{display:none}
+.koreaPriceDisplayPhoto p{padding:8px;color:#475467}
+.koreaPriceDisplayAmount{display:grid;gap:2px}
+.koreaPriceDisplayAmount span{color:#475467;font-weight:750}
+.koreaPriceDisplayAmount strong{font-size:clamp(34px,9vw,70px);font-weight:900;line-height:1.05;color:#1849a9;overflow-wrap:anywhere}

@@ -39,10 +39,21 @@ try{
   await page.fill('#productQ','TEST-001');
   await page.waitForFunction(()=>document.querySelector('.productThumbnail')?.naturalWidth>0);
   assert.match(await page.locator('#productResults').innerText(),/테스트 상품.*17,000\.5원/);
+  await page.click('[data-show-price="kr-TEST-001"]');
+  const priceDisplay=page.locator('#koreaPriceDisplay');
+  await priceDisplay.waitFor({state:'visible'});
+  await page.waitForFunction(()=>document.querySelector('#koreaPriceDisplay img')?.naturalWidth>0);
+  assert.match(await priceDisplay.locator('.koreaPriceDisplayAmount').innerText(),/17,000\.5원/);
+  await page.keyboard.press('Escape');
+  await priceDisplay.waitFor({state:'hidden'});
+  assert.equal(await page.locator('#toType').isEnabled(),false);
   await page.click('[data-product-id="kr-TEST-001"]');
   await page.selectOption('#koreaPriceTier','1.65');
   assert.match(await page.locator('#productResults').innerText(),/16,500원/);
   assert.match(await page.locator('#cartLines').innerText(),/16,500원/);
+  await page.click('[data-show-price="kr-TEST-001"]');
+  assert.match(await priceDisplay.locator('.koreaPriceDisplayAmount').innerText(),/16,500원/);
+  await priceDisplay.getByRole('button',{name:'닫기'}).click();
   await page.click('#toType');
   assert.equal(await page.locator('#sheetTitle').innerText(),'お客様情報');
   assert.equal(await page.locator('[data-type]').count(),0);
@@ -106,6 +117,7 @@ try{
   await page.click('#newOrderBtn');
   await page.fill('#productQ','TEST-001');
   assert.match(await page.locator('#productResults').innerText(),/検証商品A.*¥100/);
+  assert.equal(await page.locator('[data-show-price]').count(),0);
   assert.deepEqual(errors,[]);
   console.log('PASS: Korea catalog, optional fields, business card, company print, signed QR PNG and domestic switch');
 }finally{
