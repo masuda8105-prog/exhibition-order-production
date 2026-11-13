@@ -828,20 +828,26 @@ async function receiptThumbnailData(url){
   }finally{image.close()}
 }
 
-async function customerReceiptThumbnails(order){
+async function receiptProductThumbnails(orders){
   const catalog=new Map(orderProducts().map(product=>[product.productId,product.imageUrl]));
-  const sources=order.items.map(item=>[item,item.imageUrl||catalog.get(item.productId)]).filter(([,url])=>url);
+  const sources=orders.flatMap(order=>order.items).map(item=>[item,item.imageUrl||catalog.get(item.productId)]).filter(([,url])=>url);
   const paths=[...new Set(sources.map(([,url])=>koreaImagePath(url)).filter(Boolean))];
   const signed=await signedKoreaImageUrls(paths).catch(()=>new Map());
-  const images=new Map(),requests=new Map();
-  await Promise.all(sources.map(async ([item,source])=>{
+  const itemsByUrl=new Map(),images=new Map();
+  for(const [item,source] of sources){
     const path=koreaImagePath(source),id=driveImageId(source);
     const url=path?signed.get(path):id?driveThumbnailUrl(id):/^(?:https:\/\/|assets\/)/i.test(source)?source:'';
-    if(!url)return;
-    if(!requests.has(url))requests.set(url,receiptThumbnailData(url).catch(()=>null));
-    const thumbnail=await requests.get(url);
-    if(thumbnail)images.set(item,thumbnail);
-  }));
+    if(!url)continue;
+    if(!itemsByUrl.has(url))itemsByUrl.set(url,[]);
+    itemsByUrl.get(url).push(item);
+  }
+  const entries=[...itemsByUrl];
+  for(let start=0;start<entries.length;start+=8){
+    await Promise.all(entries.slice(start,start+8).map(async ([url,items])=>{
+      const thumbnail=await receiptThumbnailData(url).catch(()=>null);
+      if(thumbnail)for(const item of items)images.set(item,thumbnail);
+    }));
+  }
   return images;
 }
 
@@ -875,7 +881,7 @@ async function showCustomerReceipt(order){
   try{
     await loadOrders();
     const current=state.orders.find(item=>item.localId===order.localId);if(!current)throw new Error('ORDER_NOT_AVAILABLE');
-    const thumbnails=await customerReceiptThumbnails(current);
+    const thumbnails=await receiptProductThumbnails([current]);
     if(!isCurrent())return;
     const html=receiptDocumentHtml(current,{customerCopy:true,thumbnails}),path=await receiptImagePath(current.localId,`readable-copy-20261009:\n${html}`),blob=await customerReceiptPng(html);
     if(!isCurrent())return;
@@ -952,6 +958,7 @@ function koreanReceiptHtml(order,customerCopy,thumbnails){
 }
 
 function receiptDocumentHtml(order,{customerCopy=false,thumbnails}={}){
+  if(thumbnails?.size&&!order.items?.some(item=>thumbnails.has(item)))thumbnails=undefined;
   if(isKoreaOrder(order))return koreanReceiptHtml(order,customerCopy,thumbnails);
   if(customerCopy&&order.customerRegion==='overseas')return englishCustomerReceiptHtml(order,thumbnails);
   const orderNumber=receiptOrderNumber(order);
@@ -1004,17 +1011,22 @@ function printOrders(orders,title,withCover=true,{targetLabel='全期間',custom
   const cover=withCover&&korean?koreanBatchCover(list,targetLabel,totalQty,grandTotal):withCover?`<section class="printBatchCover"><div class="eyebrow">${esc(displayEventName)}</div><h1>${esc(title)}</h1><p><b>対象受付日 ${esc(targetLabel)}</b><br>出力日時 ${new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'medium'}).format(new Date())}</p><div class="printStats"><div><small>注文数</small><b>${list.length}件</b></div><div><small>商品点数</small><b>${totalQty}点</b></div><div><small>合計（税抜）</small><b>${yen(grandTotal)}</b></div></div><table class="batchTable"><thead><tr><th>No.</th><th>受付日時</th><th>区分</th><th>卸屋・帳合先</th><th>店舗・お客様</th><th>合計（税抜）</th></tr></thead><tbody>${list.map((order,index)=>`<tr><td>${index+1}</td><td>${esc(formatDateTime(order.createdAt||order.created_at,true))}</td><td>${esc(labelOrder(order))}</td><td>${esc(order.account||'-')}</td><td>${pickupNumberLabel(order)?`<b>${esc(pickupNumberLabel(order))}</b><br>`:''}${esc(order.store)}${order.customer?` / ${esc(order.customer)}`:''}</td><td>${yen(totalOf(order))}</td></tr>`).join('')}</tbody></table></section>`:'';
   const englishCopy=customerCopy&&list.every(order=>order.customerRegion==='overseas');
   const printedAt=new Intl.DateTimeFormat(englishCopy?'en-GB':'ja-JP',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'short'}).format(new Date());
-  const photosIncluded=includeAttachments&&!customerCopy&&list.some(order=>attachmentStore.list(order.localId).length);
-  $('printArea').innerHTML=`${cover}${list.map(order=>printSheetHtml(order,{customerCopy,thumbnails})+(photosIncluded?attachmentPagesHtml(order):'')).join('')}<div class="printFoot">${korean?'출력 일시':englishCopy?'Printed (JST)':'出力日時'} ${esc(korean?koreaDateTime(new Date()):printedAt)}</div>`;
   const generation=++printGeneration,version=state.sheetVersion;
-  const finish=()=>{
-    if(generation!==printGeneration||version!==state.sheetVersion)return false;
-    if(!printOriginalTitle)printOriginalTitle=document.title;document.title=printFileBase(list,{customerCopy});
-    window.print();
-    toast(inputOnly?'PDFをSlackへ送った後、共有済みにチェックしてください。':'注文データは保存したままです');return true;
+  const isCurrent=()=>generation===printGeneration&&version===state.sheetVersion;
+  const renderAndPrint=thumbnails=>{
+    if(!isCurrent())return false;
+    const photosIncluded=includeAttachments&&!customerCopy&&list.some(order=>attachmentStore.list(order.localId).length);
+    $('printArea').innerHTML=`${cover}${list.map(order=>printSheetHtml(order,{customerCopy,thumbnails})+(photosIncluded?attachmentPagesHtml(order):'')).join('')}<div class="printFoot">${korean?'출력 일시':englishCopy?'Printed (JST)':'出力日時'} ${esc(korean?koreaDateTime(new Date()):printedAt)}</div>`;
+    const finish=()=>{
+      if(!isCurrent())return false;
+      if(!printOriginalTitle)printOriginalTitle=document.title;document.title=printFileBase(list,{customerCopy});
+      window.print();
+      toast(inputOnly?'PDFをSlackへ送った後、共有済みにチェックしてください。':'注文データは保存したままです');return true;
+    };
+    if(!photosIncluded&&!thumbnails?.size)return finish();
+    return preparePrintImages().then(finish).catch(()=>{if(generation===printGeneration){$('printArea').innerHTML='';toast('写真を印刷用に準備できませんでした。写真を確認して、もう一度お試しください。')}return false});
   };
-  if(!photosIncluded&&!thumbnails?.size)return finish();
-  return preparePrintImages().then(finish).catch(()=>{if(generation===printGeneration){$('printArea').innerHTML='';toast('写真を印刷用に準備できませんでした。写真を確認して、もう一度お試しください。')}return false});
+  return withCover?receiptProductThumbnails(list).then(renderAndPrint):renderAndPrint(thumbnails);
 }
 async function preparePrintImages(){
   const images=[...$('printArea').querySelectorAll('.shareAttachmentPage img,.receiptProductThumbnail')];
@@ -1081,7 +1093,7 @@ function showPrintDateOptions(mode='all',start=today(),end=today()){
         if(version!==state.sheetVersion)return;
         if(supportsOfficePhotos(order)&&officePhotoPaths(order).length)await loadOfficePhotos(order);
       }
-      if(version!==state.sheetVersion)return;
+      if(version!==state.sheetVersion||button!==$('executeBatchPrint'))return;
       await printOrders(list,'展示会 全注文データ',true,{targetLabel,includeAttachments:true});
     }catch(error){
       if(version===state.sheetVersion)showError('写真を読み込めませんでした。通信状態を確認して、もう一度お試しください。');

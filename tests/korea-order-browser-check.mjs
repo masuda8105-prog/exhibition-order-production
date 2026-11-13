@@ -12,12 +12,15 @@ const browser=await chromium.launch({headless:true,args:['--no-proxy-server'],ex
 try{
   const page=await browser.newPage({viewport:{width:390,height:844}});
   const errors=[];
-  let imageAvailable=true;
+  let imageAvailable=true,imageRequests=0;
   page.on('pageerror',error=>errors.push(error.message));
   const photo=await readFile(new URL('../assets/sun_nishimura_logo.jpg',import.meta.url));
   await page.route('http://127.0.0.1:8799/**',async route=>{
     const source=route.request(),url=new URL(source.url());
-    if(!imageAvailable&&url.pathname.endsWith('/test-image.jpg'))return route.fulfill({status:404});
+    if(url.pathname.endsWith('/test-image.jpg')){
+      imageRequests++;
+      if(!imageAvailable)return route.fulfill({status:404});
+    }
     const request=Object.assign(Readable.from([source.postDataBuffer()||Buffer.alloc(0)]),{
       url:url.pathname+url.search,method:source.method(),headers:await source.allHeaders(),
     });
@@ -128,6 +131,16 @@ try{
   await page.click('#toType');
   await page.click('#saveBtn');
   await page.click('#backDash');
+  await page.click('#printMenuBtn');
+  await page.evaluate(()=>{window.printed=''});
+  const requestsBeforePrint=imageRequests;
+  await page.click('#executeBatchPrint');
+  await page.waitForFunction(()=>Boolean(window.printed));
+  const batch=await page.evaluate(()=>window.printed);
+  assert.equal((batch.match(/class="receiptProductThumbnail"/g)||[]).length,2);
+  assert.match(batch,/<th>품번<\/th><th>상품 이미지<\/th><th>상품명<\/th>/);
+  assert.equal(imageRequests-requestsBeforePrint,1,'the same photo is fetched once for the batch');
+  await page.click('#printDateBack');
   await page.click('#changeExhibition');
   await page.click('[data-event-id="neo_2026"]');
   await page.click('#newOrderBtn');
