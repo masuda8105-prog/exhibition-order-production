@@ -88,8 +88,8 @@ try{
     const capture=window.html2canvas;
     window.html2canvas=(node,...args)=>{
       window.qrDocument=node.innerHTML;
-      const image=node.querySelector('.receiptItemCode .receiptProductThumbnail');
-      window.qrThumbnail=image&&{code:image.previousElementSibling.textContent,width:image.width,decoded:image.naturalWidth};
+      const image=node.querySelector('.receiptProductImage .receiptProductThumbnail');
+      window.qrThumbnail=image&&{code:image.closest('td').previousElementSibling.textContent,width:image.width,decoded:image.naturalWidth};
       return capture(node,...args);
     };
   });
@@ -103,7 +103,12 @@ try{
   assert.doesNotMatch(qrDocument,/첨부 자료|담당자/);
   const contentType=await page.locator('#openReceiptImage').evaluate(async link=>(await fetch(link.href)).headers.get('content-type'));
   assert.equal(contentType,'image/png');
-  assert.deepEqual(await page.evaluate(()=>window.qrThumbnail),{code:'TEST-001',width:32,decoded:64});
+  assert.deepEqual(await page.evaluate(()=>window.qrThumbnail),{code:'TEST-001',width:128,decoded:256});
+  assert.match(qrDocument,/<th>품번<\/th><th>상품 이미지<\/th><th>상품명<\/th>/);
+  await page.evaluate(()=>{window.printed=''});
+  await page.click('#printCustomerReceipt');
+  await page.waitForFunction(()=>Boolean(window.printed));
+  assert.match(await page.evaluate(()=>window.printed),/receiptProductImage.*receiptProductThumbnail/);
   await page.click('#qrClose');
   imageAvailable=false;
   await page.click('#customerCopyBtn');
