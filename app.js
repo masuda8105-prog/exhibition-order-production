@@ -407,12 +407,25 @@ function showKoreaPrice(product){
 }
 
 const KOREA_IMAGE_BUCKET='korea-product-images';
+const koreaImagePath=url=>/^korea-product-images\/([\w-]+\.(?:jpe?g|png|webp))$/i.exec(url)?.[1];
+const driveImageId=url=>/^https:\/\/drive\.google\.com\/file\/d\/([\w-]+)\/view$/.exec(url)?.[1];
+const driveThumbnailUrl=id=>`https://drive.google.com/thumbnail?id=${id}&sz=w160`;
 function productImageHtml(product,{presentation=false}={}){
   const path=/^korea-product-images\/([\w-]+\.(?:jpe?g|png|webp))$/i.exec(product.imageUrl)?.[1];
   if(path)return `<img class="productThumbnail" data-korea-image="${esc(path)}" alt="${esc(product.code)}" ${presentation?'':'loading="lazy"'} hidden>`;
   const match=/^https:\/\/drive\.google\.com\/file\/d\/([\w-]+)\/view$/.exec(product.imageUrl);
   if(!match||presentation)return '';
   return `<a class="productImageLink" href="${esc(product.imageUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(product.code)} の商品画像を開く"><img class="productThumbnail" src="https://drive.google.com/thumbnail?id=${match[1]}&amp;sz=w160" alt="" loading="lazy" referrerpolicy="no-referrer"><span>画像</span></a>`;
+}
+async function signedKoreaImageUrls(paths){
+  if(!paths.length)return new Map();
+  await ensureFreshSession();
+  const base=`${sbBase()}/storage/v1`;
+  const signed=await fetchJson(`${base}/object/sign/${KOREA_IMAGE_BUCKET}`,{
+    method:'POST',headers:sbHeaders(),body:JSON.stringify({paths,expiresIn:300}),
+  });
+  return new Map(signed.filter(({path,signedURL})=>signedURL?.startsWith(`/object/sign/${KOREA_IMAGE_BUCKET}/${path}?token=`))
+    .map(({path,signedURL})=>[path,base+signedURL]));
 }
 async function loadProductThumbnails(wrap){
   const images=[...wrap.querySelectorAll('.productThumbnail')];
@@ -424,16 +437,11 @@ async function loadProductThumbnails(wrap){
   if(!storageImages.length)return;
   const paths=[...new Set(storageImages.map(image=>image.dataset.koreaImage))];
   try{
-    await ensureFreshSession();
-    const base=`${sbBase()}/storage/v1`;
-    const signed=await fetchJson(`${base}/object/sign/${KOREA_IMAGE_BUCKET}`,{
-      method:'POST',headers:sbHeaders(),body:JSON.stringify({paths,expiresIn:300}),
-    });
-    const urls=new Map(signed.map(({path,signedURL})=>[path,signedURL]));
+    const urls=await signedKoreaImageUrls(paths);
     for(const image of storageImages){
       const path=image.dataset.koreaImage,url=urls.get(path);
-      if(!image.isConnected||!url?.startsWith(`/object/sign/${KOREA_IMAGE_BUCKET}/${path}?token=`))continue;
-      image.src=base+url;image.hidden=false;
+      if(!image.isConnected||!url)continue;
+      image.src=url;image.hidden=false;
     }
   }catch{/* A thumbnail failure leaves the product searchable and orderable. */}
 }
@@ -802,6 +810,45 @@ async function printOrder(order,{inputOnly=false}={}){
 }
 function printCustomerCopy(order){printOrders([order],'お客様控え',false,{customerCopy:true})}
 
+async function receiptThumbnailData(url){
+  const response=await fetch(url,{signal:AbortSignal.timeout(5000),referrerPolicy:'no-referrer'});
+  if(!response.ok)throw new Error('PRODUCT_IMAGE_UNAVAILABLE');
+  const image=await createImageBitmap(await response.blob());
+  try{
+    const canvas=document.createElement('canvas');
+    canvas.width=canvas.height=64;
+    const scale=Math.min(64/image.width,64/image.height);
+    const width=image.width*scale,height=image.height*scale;
+    const context=canvas.getContext('2d');
+    context.fillStyle='#fff';
+    context.fillRect(0,0,64,64);
+    context.drawImage(image,(64-width)/2,(64-height)/2,width,height);
+    return canvas.toDataURL('image/jpeg',0.85);
+  }finally{image.close()}
+}
+
+async function customerReceiptThumbnails(order){
+  const catalog=new Map(orderProducts().map(product=>[product.productId,product.imageUrl]));
+  const sources=order.items.map(item=>[item,item.imageUrl||catalog.get(item.productId)]).filter(([,url])=>url);
+  const paths=[...new Set(sources.map(([,url])=>koreaImagePath(url)).filter(Boolean))];
+  const signed=await signedKoreaImageUrls(paths).catch(()=>new Map());
+  const images=new Map(),requests=new Map();
+  await Promise.all(sources.map(async ([item,source])=>{
+    const path=koreaImagePath(source),id=driveImageId(source);
+    const url=path?signed.get(path):id?driveThumbnailUrl(id):/^(?:https:\/\/|assets\/)/i.test(source)?source:'';
+    if(!url)return;
+    if(!requests.has(url))requests.set(url,receiptThumbnailData(url).catch(()=>null));
+    const thumbnail=await requests.get(url);
+    if(thumbnail)images.set(item,thumbnail);
+  }));
+  return images;
+}
+
+function receiptItemCodeHtml(item,thumbnails,code=item.code){
+  const label=`<b>${esc(code)}</b>`,src=thumbnails?.get(item);
+  return src?`<span class="receiptItemCode">${label}<img class="receiptProductThumbnail" src="${esc(src)}" alt=""></span>`:label;
+}
+
 async function customerReceiptPng(html){
   if(!window.html2canvas)throw new Error('IMAGE_LIBRARY_UNAVAILABLE');
   await document.fonts?.ready;
@@ -826,7 +873,9 @@ async function showCustomerReceipt(order){
   try{
     await loadOrders();
     const current=state.orders.find(item=>item.localId===order.localId);if(!current)throw new Error('ORDER_NOT_AVAILABLE');
-    const html=receiptDocumentHtml(current,{customerCopy:true}),path=await receiptImagePath(current.localId,`readable-copy-20261009:\n${html}`),blob=await customerReceiptPng(html);
+    const thumbnails=await customerReceiptThumbnails(current);
+    if(!isCurrent())return;
+    const html=receiptDocumentHtml(current,{customerCopy:true,thumbnails}),path=await receiptImagePath(current.localId,`readable-copy-20261009:\n${html}`),blob=await customerReceiptPng(html);
     if(!isCurrent())return;
     await ensureFreshSession();
     const storageBase=`${sbBase()}/storage/v1`;
@@ -880,13 +929,13 @@ const koreaDateTime=(value,timeStyle='short')=>{
   const date=new Date(value||'');
   return Number.isFinite(date.getTime())?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',dateStyle:'medium',timeStyle}).format(date):'—';
 };
-function koreanReceiptHtml(order,customerCopy){
+function koreanReceiptHtml(order,customerCopy,thumbnails){
   const number=esc(receiptOrderNumber(order)),count=itemCountOf(order);
   const copy=customerCopy?'고객 보관용':'회사 보관용';
   const fields=[['매장명',order.store],['성명',order.customer],['전화번호',order.phone],['주문 유형','일반 주문']];
   if(!customerCopy)fields.push(['담당자',order.staff]);
   const info=fields.map(([label,value])=>`<div class="receiptInfoCard"><div class="receiptInfoLabel">${label}</div><div class="receiptInfoValue">${esc(value||'—')}</div></div>`).join('');
-  const rows=order.items.map(item=>`<tr><td><b>${esc(item.code)}</b></td><td>${esc(item.name)}</td><td class="num">${esc(item.qty)}</td><td class="num">${won(item.price)}</td><td class="num"><b>${won(item.price*item.qty)}</b></td></tr>`).join('');
+  const rows=order.items.map(item=>`<tr><td>${receiptItemCodeHtml(item,thumbnails)}</td><td>${esc(item.name)}</td><td class="num">${esc(item.qty)}</td><td class="num">${won(item.price)}</td><td class="num"><b>${won(item.price*item.qty)}</b></td></tr>`).join('');
   return `<div lang="ko">
     <div class="receiptCopyLabel"><strong class="receiptExhibitionName">한국 전시회</strong><span>${copy}</span></div>
     <div class="receiptHeaderSimple"><div class="receiptBrandBlock"><img class="receiptBrandLogo" src="assets/sun_nishimura_logo.jpg" alt="산 니시무라"><div class="receiptBrandName">산 니시무라</div></div>
@@ -900,9 +949,9 @@ function koreanReceiptHtml(order,customerCopy){
   </div>`;
 }
 
-function receiptDocumentHtml(order,{customerCopy=false}={}){
-  if(isKoreaOrder(order))return koreanReceiptHtml(order,customerCopy);
-  if(customerCopy&&order.customerRegion==='overseas')return englishCustomerReceiptHtml(order);
+function receiptDocumentHtml(order,{customerCopy=false,thumbnails}={}){
+  if(isKoreaOrder(order))return koreanReceiptHtml(order,customerCopy,thumbnails);
+  if(customerCopy&&order.customerRegion==='overseas')return englishCustomerReceiptHtml(order,thumbnails);
   const orderNumber=receiptOrderNumber(order);
   const itemCount=itemCountOf(order);
   const tax=orderTaxSummary(order);
@@ -913,13 +962,13 @@ function receiptDocumentHtml(order,{customerCopy=false}={}){
   const createdAtHtml=internalInfo.showCreatedAt?`<br><b>作成日時</b> ${new Date(order.createdAt||Date.now()).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})}`:'';
   const pickupHtml=pickupNumberLabel(order)?`<div class="receiptPickupNumber"><span>お渡し番号</span><strong>${esc(pickupNumberLabel(order))}</strong>${receiptPickupScheduleHtml(order)}<small>お受け取り時に、この番号をご提示ください。</small></div>`:'';
   const infoHtml=info.map(([label,value])=>`<div class="receiptInfoCard"><div class="receiptInfoLabel">${esc(label)}</div><div class="receiptInfoValue">${esc(value||'-')}</div></div>`).join('');
-  const itemsHtml=(order.items||[]).map(item=>`<tr><td><b>${esc(item.code)}</b></td><td>${esc(item.name)}</td><td class="num">${esc(item.qty)}</td><td class="num">${yen(item.price)}</td><td class="num"><b>${yen(item.price*item.qty)}</b></td></tr>`).join('');
+  const itemsHtml=(order.items||[]).map(item=>`<tr><td>${receiptItemCodeHtml(item,thumbnails)}</td><td>${esc(item.name)}</td><td class="num">${esc(item.qty)}</td><td class="num">${yen(item.price)}</td><td class="num"><b>${yen(item.price*item.qty)}</b></td></tr>`).join('');
   const notesHtml=order.notes?`<div class="receiptNote"><b>備考</b>${esc(order.notes).replace(/\n/g,'<br>')}</div>`:'';
   return `${receiptCopyLabelHtml(order,{customerCopy})}<div class="receiptHeaderSimple"><div class="receiptBrandBlock"><img class="receiptBrandLogo" src="assets/sun_nishimura_logo.jpg" alt="株式会社サンニシムラ"><div><div class="receiptBrandName">株式会社サンニシムラ</div><div class="receiptBrandSub">SAN NISHIMURA CO., LTD.</div></div></div><div class="receiptDocMeta"><div class="receiptDocTitle">${customerCopy?'お客様控え':'展示会 注文書'}</div><div class="receiptDocSub">Exhibition Order Receipt</div><div class="receiptMetaLine"><b>注文番号</b> ${esc(orderNumber)}${createdAtHtml}</div></div></div><div class="receiptInfoBand">${infoHtml}</div>${pickupHtml}<div class="receiptSection"><div class="receiptSectionHead"><div class="receiptSectionTitle">注文明細</div><div class="receiptSectionHint">${itemCount}点</div></div><table class="receiptTable"><colgroup><col class="code"><col><col class="qty"><col class="unit"><col class="subtotal"></colgroup><thead><tr><th>品番</th><th>商品名</th><th class="num">数量</th><th class="num">単価（税抜）</th><th class="num">金額（税抜）</th></tr></thead><tbody>${itemsHtml}</tbody></table></div><div class="receiptFooterGrid"><div class="receiptMemoStack">${notesHtml}</div><div><div class="receiptSummaryBox"><div class="receiptSummaryRow"><span>点数</span><span>${itemCount}</span></div><div class="receiptSummaryRow"><span>税抜合計</span><span>${yen(tax.subtotal)}</span></div><div class="receiptSummaryRow"><span>消費税（10%）</span><span>${yen(tax.tax)}</span></div><div class="receiptSummaryRow total"><span>税込合計</span><span>${yen(tax.total)}</span></div></div><div class="receiptCurrencyNote">通貨：JPY</div></div></div><div class="receiptFooterMini"><span>株式会社サンニシムラ ／ ${customerCopy?'お客様控え':'会社控え'}</span><span>注文番号 ${esc(orderNumber)}</span></div>`;
 }
 function printSheetHtml(order,{customerCopy=false}={}){return `<article class="printSheet printPage receiptSheet">${receiptDocumentHtml(order,{customerCopy})}</article>`}
 
-function englishCustomerReceiptHtml(order){
+function englishCustomerReceiptHtml(order,thumbnails){
   const orderNumber=receiptOrderNumber(order),count=itemCountOf(order),pickup=pickupNumberLabel(order),tax=orderTaxSummary(order);
   const orderType=order.type===ORDER_TYPE.NORMAL?'Wholesale order':({now:'Immediate purchase',later:'Pickup at the venue',hotel:'Hotel delivery',ship:'Delivery to specified address'}[order.handoff]||'On-site purchase');
   const info=[['Store',order.store],['Phone',order.phone],['Customer',order.customer],['Order type',orderType],['Wholesaler / Account',order.account||'-']];
@@ -928,7 +977,7 @@ function englishCustomerReceiptHtml(order){
     info.push(['Payment',isPickupPaymentRecorded(order)?`Paid (${method})`:order.paid?'Paid':order.paymentMethod===PAYMENT.ON_PICKUP?'Payment on pickup':`Unpaid (${method})`]);
   }
   const infoHtml=info.map(([label,value])=>`<div class="receiptInfoCard"><div class="receiptInfoLabel">${esc(label)}</div><div class="receiptInfoValue">${esc(value||'-')}</div></div>`).join('');
-  const itemsHtml=(order.items||[]).map(item=>`<tr><td><b>${esc(isShippingItem(item)?'-':item.code)}</b></td><td>${esc(isShippingItem(item)?'Shipping (flat rate)':item.name)}</td><td class="num">${esc(item.qty)}</td><td class="num">${yen(item.price)}</td><td class="num"><b>${yen(item.price*item.qty)}</b></td></tr>`).join('');
+  const itemsHtml=(order.items||[]).map(item=>`<tr><td>${receiptItemCodeHtml(item,thumbnails,isShippingItem(item)?'-':item.code)}</td><td>${esc(isShippingItem(item)?'Shipping (flat rate)':item.name)}</td><td class="num">${esc(item.qty)}</td><td class="num">${yen(item.price)}</td><td class="num"><b>${yen(item.price*item.qty)}</b></td></tr>`).join('');
   const notesHtml=order.notes?`<div class="receiptNote"><b>Notes</b>${esc(order.notes).replace(/\n/g,'<br>')}</div>`:'';
   const createdAt=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tokyo',dateStyle:'medium',timeStyle:'short'}).format(new Date(order.createdAt||Date.now()));
   return `<div lang="en">${receiptCopyLabelHtml(order,{customerCopy:true,english:true})}<div class="receiptHeaderSimple"><div class="receiptBrandBlock"><img class="receiptBrandLogo" src="assets/sun_nishimura_logo.jpg" alt="SAN NISHIMURA CO., LTD."><div><div class="receiptBrandName">SAN NISHIMURA CO., LTD.</div></div></div><div class="receiptDocMeta"><div class="receiptDocTitle">Customer Copy</div><div class="receiptDocSub">Exhibition Order Receipt</div><div class="receiptMetaLine"><b>Order No.</b> ${esc(orderNumber)}<br><b>Created (JST)</b> ${esc(createdAt)}</div></div></div><div class="receiptInfoBand">${infoHtml}</div>${pickup?`<div class="receiptPickupNumber"><span>Pickup No.</span><strong>${esc(pickup)}</strong>${receiptPickupScheduleHtml(order,{english:true})}<small>Please show this number when collecting your order.</small></div>`:''}<div class="receiptSection"><div class="receiptSectionHead"><div class="receiptSectionTitle">Order Details</div><div class="receiptSectionHint">${count} ${count===1?'item':'items'}</div></div><table class="receiptTable"><colgroup><col class="code"><col><col class="qty"><col class="unit"><col class="subtotal"></colgroup><thead><tr><th>Item No.</th><th>Product</th><th class="num">Qty</th><th class="num">Unit Price (excl. tax)</th><th class="num">Amount (excl. tax)</th></tr></thead><tbody>${itemsHtml}</tbody></table></div><div class="receiptFooterGrid"><div class="receiptMemoStack">${notesHtml}</div><div><div class="receiptSummaryBox"><div class="receiptSummaryRow"><span>Items</span><span>${count}</span></div><div class="receiptSummaryRow"><span>Subtotal (excl. tax)</span><span>${yen(tax.subtotal)}</span></div><div class="receiptSummaryRow"><span>Tax (10%)</span><span>${yen(tax.tax)}</span></div><div class="receiptSummaryRow total"><span>Total (incl. tax)</span><span>${yen(tax.total)}</span></div></div><div class="receiptCurrencyNote">Currency: JPY</div></div></div><div class="receiptFooterMini"><span>SAN NISHIMURA CO., LTD.</span><span>Order No. ${esc(orderNumber)}</span></div></div>`;

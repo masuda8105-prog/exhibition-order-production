@@ -31,7 +31,7 @@ test('共有URLは同じSupabaseの署名付き控え画像に限定する',()=>
 
 test('控えはPNGだけを非公開保存し社内情報を含めない',async()=>{
   const app=await readFile(new URL('../app.js',import.meta.url),'utf8');
-  assert.match(app,/receiptDocumentHtml\(current,\{customerCopy:true\}\)/);
+  assert.match(app,/receiptDocumentHtml\(current,\{customerCopy:true,thumbnails\}\)/);
   assert.match(app,/canvas\.toBlob\(resolve,'image\/png'\)/);
   assert.match(app,/'Cache-Control':'max-age=0'/);
   assert.match(app,/expiresIn:RECEIPT_LINK_SECONDS/);

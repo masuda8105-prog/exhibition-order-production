@@ -12,10 +12,12 @@ const browser=await chromium.launch({headless:true,args:['--no-proxy-server'],ex
 try{
   const page=await browser.newPage({viewport:{width:390,height:844}});
   const errors=[];
+  let imageAvailable=true;
   page.on('pageerror',error=>errors.push(error.message));
   const photo=await readFile(new URL('../assets/sun_nishimura_logo.jpg',import.meta.url));
   await page.route('http://127.0.0.1:8799/**',async route=>{
     const source=route.request(),url=new URL(source.url());
+    if(!imageAvailable&&url.pathname.endsWith('/test-image.jpg'))return route.fulfill({status:404});
     const request=Object.assign(Readable.from([source.postDataBuffer()||Buffer.alloc(0)]),{
       url:url.pathname+url.search,method:source.method(),headers:await source.allHeaders(),
     });
@@ -86,6 +88,8 @@ try{
     const capture=window.html2canvas;
     window.html2canvas=(node,...args)=>{
       window.qrDocument=node.innerHTML;
+      const image=node.querySelector('.receiptItemCode .receiptProductThumbnail');
+      window.qrThumbnail=image&&{code:image.previousElementSibling.textContent,width:image.width,decoded:image.naturalWidth};
       return capture(node,...args);
     };
   });
@@ -99,6 +103,13 @@ try{
   assert.doesNotMatch(qrDocument,/첨부 자료|담당자/);
   const contentType=await page.locator('#openReceiptImage').evaluate(async link=>(await fetch(link.href)).headers.get('content-type'));
   assert.equal(contentType,'image/png');
+  assert.deepEqual(await page.evaluate(()=>window.qrThumbnail),{code:'TEST-001',width:32,decoded:64});
+  await page.click('#qrClose');
+  imageAvailable=false;
+  await page.click('#customerCopyBtn');
+  await page.waitForSelector('#customerQrCode');
+  assert.equal(await page.evaluate(()=>window.qrThumbnail),null);
+  imageAvailable=true;
   await page.click('#qrClose');
   await page.click('#detailClose');
   await page.click('[data-edit]');
