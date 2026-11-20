@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {orderPayloadForCloud,orderFromCloudRow,totalOf,validate} from '../workflow.js';
+import {isKoreaOrder,roundKoreaUnitPrice,orderPayloadForCloud,orderFromCloudRow,totalOf,validate} from '../workflow.js';
 const source=readFileSync(new URL('../app.js',import.meta.url),'utf8');
 test('自由入力は必須・単価・整数数量を検証し、同じ品番の別商品も独立して保存する',()=>{
  const nodes=Object.fromEntries(['manual-code','manual-name','manual-price','manual-qty','manualProduct','manualProductError','addManualProduct'].map(id=>[id,{value:''}]));
- let id=0;const context=vm.createContext({$:id=>nodes[id],newUuid:()=>String(++id),clearError(){},renderCart(){},toast(){}});
+ let id=0;const context=vm.createContext({isKoreaOrder,roundKoreaUnitPrice,$:id=>nodes[id],newUuid:()=>String(++id),clearError(){},renderCart(){},toast(){}});
  vm.runInContext(source.slice(source.indexOf('function bindManualProduct('),source.indexOf('function productRank(')),context);
  const draft={items:[]};context.bindManualProduct(draft);const add=()=>nodes.addManualProduct.onclick();
  add();assert.match(nodes.manualProductError.textContent,/品番/);
@@ -17,4 +17,7 @@ test('自由入力は必須・単価・整数数量を検証し、同じ品番�
  const order={...draft,type:'normal',store:'テスト',phone:'000',account:'テスト',staff:'テスト'};
  const saved=orderFromCloudRow({id:'test',payload:orderPayloadForCloud(order)});
  assert.equal(saved.items[0].code,'CUSTOM-1');assert.equal(saved.items[0].name,'未登録商品 <A>');assert.equal(totalOf(saved),3000);assert.deepEqual(validate(saved),[]);
+ const korean={market:'KR',items:[]};context.bindManualProduct(korean);
+ nodes['manual-code'].value='KR';nodes['manual-name'].value='테스트';nodes['manual-price'].value='66500';nodes['manual-qty'].value='2';add();
+ assert.equal(korean.items[0].price,67000);assert.equal(totalOf(korean),134000);
 });

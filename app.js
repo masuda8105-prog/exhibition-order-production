@@ -1,5 +1,5 @@
 import {createOrderPdf} from './order-pdf.js?v=20261001-reference-size1';
-import {isKoreaExhibition,isKoreaOrder,won,isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,SHIPPING_FEE,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,orderTaxSummary,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow,validOfficePhotoPaths} from './workflow.js?v=20261112-korea2';
+import {koreaProductAtTier as productAtTier,roundKoreaUnitPrice,isKoreaExhibition,isKoreaOrder,won,isUnconfirmed,prepareOrderForSharing,canConfirmSharedOrder,confirmSharedOrder,pickupNumberLabel,isShippingItem,addShippingFee,SHIPPING_FEE,ORDER_TYPE,HANDOFF,PAYMENT,PREP,ORDER_STATUS,groupOf,setSlackShared,statusOnConfirmation,isPickupOrder,isPickupPaymentRecorded,paymentMethodOnHandoffChange,paymentMethodLabel,markPickupPaid,markPickupDelivered,needsHeadOfficeShare,needsReceipt,totalOf,orderTaxSummary,itemCountOf,phoneHasUnexpectedCharacters,createdDateInTokyo,filterOrdersByCreatedDate,orderMatchesSearch,batchSummary,customerNameWithHonorific,receiptInternalInfo,validate,labelOrder,compareOrdersForPrint,printFileBase,handoffLabel,normalizeForSave,orderPayloadForCloud,orderFromCloudRow,validOfficePhotoPaths} from './workflow.js?v=20261120-korea-round1';
 import {PERSISTENT_SESSION_KEY,SESSION_STORAGE_KEY,LEGACY_LOCAL_STORAGE_KEYS,wipeOrderData} from './security.js?v=20260903-pickup4';
 import {RECEIPT_BUCKET,RECEIPT_LINK_SECONDS,RECEIPT_MAX_BYTES,receiptImagePath,signedReceiptUrl} from './receipt-share.js?v=20260903-pickup4';
 import {MAX_PHOTOS,createAttachmentStore,preparePhoto} from './order-attachments.js?v=20261009-events1';
@@ -347,10 +347,6 @@ function koreaPricePicker(d){
     <option value="1.65" ${d.priceTier==='1.65'?'selected':''}>1.65倍</option>
   </select></div>`;
 }
-function productAtTier(product,tier){
-  if(tier!=='1.65')return product;
-  return {...product,price:product.price165,orderable:product.orderable&&product.price165>0};
-}
 function bindKoreaPricePicker(d){
   const picker=$('koreaPriceTier');
   picker.onchange=()=>{
@@ -458,7 +454,7 @@ function bindManualProduct(d){
     remember();const value=d.manualProduct,code=value.code.trim(),name=value.name.trim(),price=Number(value.price),qty=Number(value.qty);
     const error=!code?'品番を入力してください。':!name?'商品名を入力してください。':!Number.isFinite(price)||price<=0?'単価は0より大きい金額を入力してください。':!Number.isSafeInteger(qty)||qty<=0?'数量は1以上の整数を入力してください。':'';
     $('manualProductError').textContent=error;if(error)return;
-    const id=newUuid();d.items.push({productId:`manual-${id}`,lineId:`line-${id}`,code,name,price,qty,orderable:true,status:'active',imageUrl:''});
+    const id=newUuid();d.items.push({productId:`manual-${id}`,lineId:`line-${id}`,code,name,price:isKoreaOrder(d)?roundKoreaUnitPrice(price):price,qty,orderable:true,status:'active',imageUrl:''});
     d.manualProduct={};Object.values(fields).forEach(input=>input.value='');fields.qty.value='1';
     clearError();renderCart(d);toast(`${code} を追加`);
   };

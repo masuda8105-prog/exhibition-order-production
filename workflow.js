@@ -6,6 +6,13 @@ export const ORDER_STATUS=Object.freeze({active:'要対応',waiting:'受け取�
 export const isKoreaExhibition=event=>event?.pickup_prefix==='KR';
 export const isKoreaOrder=order=>order?.market==='KR';
 export const won=value=>`${Number(value).toLocaleString('ko-KR',{maximumFractionDigits:2})}원`;
+// Apply only to newly selected Korea unit prices, never to saved orders or totals.
+export const roundKoreaUnitPrice=value=>Math.round(Number(value)/1000)*1000;
+export function koreaProductAtTier(product,tier){
+  if(!product.productId?.startsWith('kr-'))return product;
+  const price=tier==='1.65'?product.price165:product.price;
+  return {...product,price:roundKoreaUnitPrice(price),orderable:product.orderable&&price>0};
+}
 
 export const SHIPPING_FEE=700;
 const SHIPPING_FEE_BY_PRODUCT_ID=Object.freeze({'service-shipping-500':500,'service-shipping-600':600,'service-shipping-700':SHIPPING_FEE});
